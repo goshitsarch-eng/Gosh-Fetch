@@ -119,7 +119,7 @@ Special thanks to the OpenSSL project.
 
 ## Disclaimer
 
-This application is an independent project and is not sponsored by, endorsed by, or affiliated with GitHub or GitHub, Inc.
+This application is an independent project and is not sponsored by, endorsed by, or affiliated with the aria2 project or the OpenSSL project.
 
 This software is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). It is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability or fitness for a particular purpose. Use at your own risk.
 
