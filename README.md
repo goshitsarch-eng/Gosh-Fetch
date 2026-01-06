@@ -51,8 +51,8 @@ We also provide Windows and macOS builds not as a compromise, but as an on-ramp.
 ## Requirements
 
 ### All Platforms
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) 1.70+
+- [Node.js](https://nodejs.org/) 20+
+- [Rust](https://rustup.rs/) 1.77+
 
 ### Linux
 - `libwebkit2gtk-4.1-dev`
