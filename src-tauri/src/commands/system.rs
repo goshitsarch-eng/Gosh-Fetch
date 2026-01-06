@@ -125,9 +125,15 @@ pub fn get_app_info() -> serde_json::Value {
         "attribution": {
             "aria2": {
                 "name": "aria2",
-                "url": "https://aria2.github.io/",
-                "license": "GPL-2.0",
-                "note": "Gosh-Fetch is not affiliated with the aria2 project"
+                "url": "https://github.com/aria2/aria2",
+                "license": "GNU General Public License Version 2, June 1991",
+                "note": "Special thanks to the aria2 project. Gosh-Fetch is not affiliated with the aria2 project."
+            },
+            "openssl": {
+                "name": "OpenSSL",
+                "url": "https://www.openssl.org",
+                "license": "Apache License, Version 2.0",
+                "note": "Special thanks to the OpenSSL project. Used by aria2 for TLS/SSL support."
             }
         }
     })

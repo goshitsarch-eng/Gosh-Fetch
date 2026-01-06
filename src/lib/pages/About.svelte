@@ -15,6 +15,12 @@
         license: string;
         note: string;
       };
+      openssl: {
+        name: string;
+        url: string;
+        license: string;
+        note: string;
+      };
     };
   } | null>(null);
 
@@ -82,6 +88,23 @@
               rel="noopener noreferrer"
             >
               {appInfo.attribution.aria2.url}
+            </a>
+          </div>
+          <hr class="attribution-divider" />
+          <div class="attribution-item">
+            <div class="attribution-header">
+              <strong>{appInfo.attribution.openssl.name}</strong>
+            </div>
+            <p>{appInfo.attribution.openssl.note}</p>
+            <p class="attribution-license">
+              License: {appInfo.attribution.openssl.license}
+            </p>
+            <a
+              href={appInfo.attribution.openssl.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {appInfo.attribution.openssl.url}
             </a>
           </div>
         </div>
@@ -225,6 +248,12 @@
   .attribution-license {
     font-size: 12px;
     color: var(--text-muted);
+  }
+
+  .attribution-divider {
+    border: none;
+    border-top: 1px solid var(--border-primary);
+    margin: var(--space-md) 0;
   }
 
   .privacy-list {
