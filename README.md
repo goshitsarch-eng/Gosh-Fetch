@@ -127,6 +127,10 @@ This software is licensed under the GNU Affero General Public License v3.0 (AGPL
 
 AGPL-3.0 - See [LICENSE](LICENSE)
 
+Third-party licenses:
+- aria2: [LICENSE.aria2](LICENSE.aria2)
+- OpenSSL: [LICENSE.OpenSSL](LICENSE.OpenSSL)
+
 ## Roadmap
 
 Planned features for future releases:
