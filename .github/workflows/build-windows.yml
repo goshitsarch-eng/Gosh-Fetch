@@ -2,6 +2,12 @@ name: Build Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: false
+        default: 'main'
+        type: string
   push:
     tags:
       - 'v*'
@@ -15,6 +21,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
 
       - name: Download aria2c
         run: |
@@ -51,9 +59,22 @@ jobs:
         run: npm ci
 
       - name: Build Tauri app
-        run: npx tauri build --target x86_64-pc-windows-msvc --bundles nsis
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            npx tauri build --target x86_64-pc-windows-msvc --bundles none
+          } else {
+            npx tauri build --target x86_64-pc-windows-msvc --bundles nsis
+          }
+
+      - name: Upload portable exe
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/*.exe
 
       - name: Upload NSIS installer
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           name: windows-nsis-installer-x64
