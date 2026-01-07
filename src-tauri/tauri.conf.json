@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Gosh-Fetch",
+  "productName": "Gosh Fetch",
   "version": "1.0.0",
   "identifier": "com.gosh.fetch",
   "build": {
@@ -36,11 +36,11 @@
   "app": {
     "trayIcon": {
       "iconPath": "icons/icon.png",
-      "iconAsTemplate": true
+      "iconAsTemplate": false
     },
     "windows": [
       {
-        "title": "Gosh-Fetch",
+        "title": "Gosh Fetch",
         "width": 1200,
         "height": 800,
         "minWidth": 900,

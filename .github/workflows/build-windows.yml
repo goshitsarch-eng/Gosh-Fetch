@@ -22,8 +22,13 @@ jobs:
           Expand-Archive -Path aria2.zip -DestinationPath aria2-extract
           Copy-Item "aria2-extract/aria2-1.37.0-win-64bit-build1/aria2c.exe" "src-tauri/binaries/aria2c-x86_64-pc-windows-msvc.exe"
 
-      - name: Generate Windows icon
-        run: magick src-tauri/icons/icon.png -define icon:auto-resize=256,128,64,48,32,16 src-tauri/icons/icon.ico
+      - name: Generate icons from logo
+        run: |
+          magick src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
+          magick src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
+          magick src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
+          magick src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
+          magick src-tauri/icons/logo.png -define icon:auto-resize=256,128,64,48,32,16 src-tauri/icons/icon.ico
 
       - name: Setup Node
         uses: actions/setup-node@v4

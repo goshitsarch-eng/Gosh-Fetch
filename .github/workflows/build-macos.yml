@@ -24,6 +24,29 @@ jobs:
           cp $(which aria2c) src-tauri/binaries/aria2c-aarch64-apple-darwin
           chmod +x src-tauri/binaries/aria2c-aarch64-apple-darwin
 
+      - name: Generate icons from logo
+        run: |
+          # Generate PNG icons
+          sips -z 32 32 src-tauri/icons/logo.png --out src-tauri/icons/32x32.png
+          sips -z 128 128 src-tauri/icons/logo.png --out src-tauri/icons/128x128.png
+          sips -z 256 256 src-tauri/icons/logo.png --out src-tauri/icons/128x128@2x.png
+          sips -z 256 256 src-tauri/icons/logo.png --out src-tauri/icons/icon.png
+
+          # Generate .icns for macOS
+          mkdir -p icon.iconset
+          sips -z 16 16 src-tauri/icons/logo.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32 src-tauri/icons/logo.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32 src-tauri/icons/logo.png --out icon.iconset/icon_32x32.png
+          sips -z 64 64 src-tauri/icons/logo.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128 src-tauri/icons/logo.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256 src-tauri/icons/logo.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256 src-tauri/icons/logo.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512 src-tauri/icons/logo.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512 src-tauri/icons/logo.png --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 src-tauri/icons/logo.png --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o src-tauri/icons/icon.icns
+          rm -rf icon.iconset
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
