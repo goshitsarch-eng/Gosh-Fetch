@@ -30,16 +30,25 @@ fn main() {
                 }
             });
 
-            // Handle window close event - minimize to tray instead of closing
+            // Handle window close event - minimize to tray or quit based on setting
             let handle_for_close = app_handle.clone();
             if let Some(main_window) = app.get_webview_window("main") {
                 main_window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        // Prevent the window from being closed, hide it instead
-                        api.prevent_close();
-                        if let Some(window) = handle_for_close.get_webview_window("main") {
-                            let _ = window.hide();
+                        // Check the close_to_tray setting from AppState
+                        let close_to_tray = handle_for_close
+                            .try_state::<AppState>()
+                            .map(|state| state.get_close_to_tray())
+                            .unwrap_or(true);
+
+                        if close_to_tray {
+                            // Prevent the window from being closed, hide it instead
+                            api.prevent_close();
+                            if let Some(window) = handle_for_close.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
                         }
+                        // If close_to_tray is false, allow the close to proceed normally
                     }
                 });
             }
@@ -71,6 +80,7 @@ fn main() {
             // Settings commands
             commands::get_settings,
             commands::update_settings,
+            commands::set_close_to_tray,
             commands::set_user_agent,
             commands::get_tracker_list,
             commands::update_tracker_list,

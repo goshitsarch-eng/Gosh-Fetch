@@ -60,6 +60,8 @@
             break;
           case 'close_to_tray':
             closeToTray = row.value === 'true';
+            // Sync with backend state
+            await invoke('set_close_to_tray', { value: closeToTray });
             break;
           case 'auto_update_trackers':
             autoUpdateTrackers = row.value === 'true';
@@ -128,6 +130,9 @@
     try {
       // Save to database first
       await saveSettingsToDb();
+
+      // Sync close_to_tray with backend state
+      await invoke('set_close_to_tray', { value: closeToTray });
 
       // Apply to aria2
       await invoke('apply_settings_to_aria2', {

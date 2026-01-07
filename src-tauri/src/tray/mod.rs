@@ -9,7 +9,7 @@ use tauri::{
 pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = create_tray_menu(app)?;
 
-    let _tray = TrayIconBuilder::new()
+    let _tray = TrayIconBuilder::with_id("main")
         .icon(get_tray_icon(app)?)
         .tooltip("Gosh-Fetch")
         .menu(&menu)
@@ -126,31 +126,10 @@ fn toggle_window_visibility(app: &AppHandle) {
 }
 
 fn get_tray_icon(_app: &AppHandle) -> tauri::Result<Image<'static>> {
-    // Create a simple 16x16 green icon
-    // In production, load from resources
-    let size = 16u32;
-    let mut rgba = vec![0u8; (size * size * 4) as usize];
-
-    // Draw a simple down arrow / download icon
-    for y in 0..size {
-        for x in 0..size {
-            let idx = ((y * size + x) * 4) as usize;
-            // Green color for the icon
-            let is_arrow = (y >= 4 && y <= 10 && x >= 6 && x <= 9) // stem
-                || (y >= 8 && y <= 12 && x >= 3 && x <= 12 && (y as i32 - 8) >= (x as i32 - 8).abs() - 4); // arrowhead
-
-            if is_arrow {
-                rgba[idx] = 35;      // R
-                rgba[idx + 1] = 134; // G  (green #238636)
-                rgba[idx + 2] = 54;  // B
-                rgba[idx + 3] = 255; // A
-            } else {
-                rgba[idx + 3] = 0; // Transparent
-            }
-        }
-    }
-
-    Ok(Image::new_owned(rgba, size, size))
+    // Load tray icon from embedded bytes
+    // Using 22x22 for standard displays, Tauri will handle scaling
+    let icon_bytes = include_bytes!("../../icons/tray-icon.png");
+    Image::from_bytes(icon_bytes).map_err(|e| tauri::Error::Anyhow(e.into()))
 }
 
 async fn speed_meter_loop(app: AppHandle) {

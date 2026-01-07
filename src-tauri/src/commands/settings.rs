@@ -21,6 +21,11 @@ pub async fn update_settings(
 }
 
 #[tauri::command]
+pub fn set_close_to_tray(state: State<'_, AppState>, value: bool) {
+    state.set_close_to_tray(value);
+}
+
+#[tauri::command]
 pub async fn set_user_agent(state: State<'_, AppState>, user_agent: String) -> Result<()> {
     let client = state.get_client().await?;
 

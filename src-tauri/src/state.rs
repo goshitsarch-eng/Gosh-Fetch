@@ -4,7 +4,7 @@ use crate::aria2::{
 };
 use crate::db::Database;
 use crate::Result;
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::{mpsc, RwLock};
@@ -18,6 +18,8 @@ pub struct AppState {
     rpc_port: Arc<AtomicU16>,
     rpc_secret: String,
     health_check_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
+    /// Close to tray setting - read synchronously in window close handler
+    close_to_tray: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -29,7 +31,18 @@ impl AppState {
             rpc_port: Arc::new(AtomicU16::new(DEFAULT_RPC_PORT)),
             rpc_secret: secret,
             health_check_handle: Arc::new(RwLock::new(None)),
+            close_to_tray: Arc::new(AtomicBool::new(true)), // Default to true
         }
+    }
+
+    /// Get the close to tray setting (synchronous)
+    pub fn get_close_to_tray(&self) -> bool {
+        self.close_to_tray.load(Ordering::Relaxed)
+    }
+
+    /// Set the close to tray setting
+    pub fn set_close_to_tray(&self, value: bool) {
+        self.close_to_tray.store(value, Ordering::Relaxed);
     }
 
     /// Initialize the app state with supervisor and database
