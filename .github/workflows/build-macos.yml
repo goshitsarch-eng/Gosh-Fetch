@@ -18,6 +18,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Install aria2c
+        run: |
+          brew install aria2
+          cp $(which aria2c) src-tauri/binaries/aria2c-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/aria2c-aarch64-apple-darwin
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
