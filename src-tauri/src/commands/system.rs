@@ -119,7 +119,7 @@ pub fn get_app_info() -> serde_json::Value {
     serde_json::json!({
         "name": "Gosh-Fetch",
         "version": env!("CARGO_PKG_VERSION"),
-        "description": "A Gosh-branded download manager",
+        "description": "Gosh Fetch the modern download manager powered by aria2",
         "license": "AGPL-3.0",
         "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",
         "attribution": {

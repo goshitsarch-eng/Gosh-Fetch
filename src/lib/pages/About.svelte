@@ -122,20 +122,6 @@
         </div>
       </section>
 
-      <section class="about-section">
-        <h3>Gosh Design Philosophy</h3>
-        <div class="card">
-          <p class="philosophy-text">
-            This application follows the Gosh Desktop Design Contract:
-            desktop-first, calm, fast, and intentional. Local-only by default.
-            Opinionated over configurable. Designed to disappear into your workflow.
-          </p>
-          <p class="philosophy-tagline">
-            No hype. No dashboards pretending to be operating systems.
-            This is a serious tool.
-          </p>
-        </div>
-      </section>
     {:else}
       <div class="loading">Loading...</div>
     {/if}
@@ -165,7 +151,6 @@
     flex: 1;
     overflow-y: auto;
     padding: var(--space-lg);
-    max-width: 600px;
   }
 
   .app-hero {
@@ -274,17 +259,6 @@
     content: '✓';
     color: var(--color-success);
     font-weight: bold;
-  }
-
-  .philosophy-text {
-    color: var(--text-secondary);
-    line-height: 1.6;
-  }
-
-  .philosophy-tagline {
-    font-style: italic;
-    color: var(--text-muted);
-    margin-bottom: 0;
   }
 
   .loading {

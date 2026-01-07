@@ -51,29 +51,43 @@ impl Aria2Process {
             .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, e)))?;
 
         // Determine the binary path based on platform
-        let binary_name = if cfg!(target_os = "windows") {
-            "aria2c.exe"
+        // Tauri external binaries use platform-specific suffixes
+        let (binary_name, binary_name_with_suffix) = if cfg!(target_os = "windows") {
+            ("aria2c.exe", format!("aria2c-{}.exe", std::env::consts::ARCH))
         } else {
-            "aria2c"
+            let suffix = format!("aria2c-{}-apple-darwin", std::env::consts::ARCH);
+            ("aria2c", suffix)
         };
 
-        let aria2_path = resource_path.join("binaries").join(binary_name);
+        // In dev mode, try the binaries folder with platform suffix first
+        let dev_binary_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("binaries")
+            .join(&binary_name_with_suffix);
 
-        // If not in resources, try sidecar path
-        let aria2_path = if aria2_path.exists() {
-            aria2_path
+        log::info!("Looking for aria2c binary:");
+        log::info!("  binary_name_with_suffix: {}", binary_name_with_suffix);
+        log::info!("  dev_binary_path: {:?}", dev_binary_path);
+        log::info!("  dev_binary_path exists: {}", dev_binary_path.exists());
+
+        let aria2_path = if dev_binary_path.exists() {
+            log::info!("Using dev binary at {:?}", dev_binary_path);
+            dev_binary_path
         } else {
-            // Try the sidecar path
-            let sidecar_path = app
-                .path()
-                .resource_dir()
-                .map_err(|e| Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, e)))?
-                .join(binary_name);
-            if sidecar_path.exists() {
-                sidecar_path
+            // Try resource dir paths
+            let resource_binary = resource_path.join("binaries").join(binary_name);
+            log::info!("  resource_binary: {:?}, exists: {}", resource_binary, resource_binary.exists());
+            if resource_binary.exists() {
+                resource_binary
             } else {
-                // Fallback to system aria2c
-                std::path::PathBuf::from(binary_name)
+                let resource_binary_suffix = resource_path.join("binaries").join(&binary_name_with_suffix);
+                log::info!("  resource_binary_suffix: {:?}, exists: {}", resource_binary_suffix, resource_binary_suffix.exists());
+                if resource_binary_suffix.exists() {
+                    resource_binary_suffix
+                } else {
+                    // Fallback to system aria2c
+                    log::warn!("aria2c binary not found in expected locations, falling back to system");
+                    std::path::PathBuf::from(binary_name)
+                }
             }
         };
 
@@ -108,8 +122,6 @@ impl Aria2Process {
             "--bt-enable-lpd=true".to_string(),
             "--bt-max-peers=55".to_string(),
             "--bt-request-peer-speed-limit=50K".to_string(),
-            // UPnP and NAT-PMP
-            "--enable-upnp=true".to_string(),
             // Session persistence
             format!("--save-session={}", session_file.display()),
             format!("--input-file={}", session_file.display()),
@@ -118,6 +130,10 @@ impl Aria2Process {
             "--auto-file-renaming=true".to_string(),
             "--allow-overwrite=false".to_string(),
             "--disk-cache=64M".to_string(),
+            // falloc is not supported on macOS, use none instead
+            #[cfg(target_os = "macos")]
+            "--file-allocation=none".to_string(),
+            #[cfg(not(target_os = "macos"))]
             "--file-allocation=falloc".to_string(),
             "--log-level=warn".to_string(),
         ];
@@ -129,8 +145,9 @@ impl Aria2Process {
         }
 
         log::info!("Starting aria2c at {:?} with port {}", aria2_path, port);
+        log::info!("aria2c args: {:?}", args);
 
-        let child = Command::new(&aria2_path)
+        let mut child = Command::new(&aria2_path)
             .args(&args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -140,6 +157,23 @@ impl Aria2Process {
                 log::error!("Failed to start aria2c: {}", e);
                 Error::Aria2(format!("Failed to start aria2c: {}", e))
             })?;
+
+        // Give aria2c a moment to start and check if it immediately exits
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // Check if process exited immediately (indicates an error)
+        if let Ok(Some(status)) = child.try_wait() {
+            // Process exited, try to get stderr
+            if let Some(mut stderr) = child.stderr.take() {
+                use tokio::io::AsyncReadExt;
+                let mut stderr_output = String::new();
+                let _ = stderr.read_to_string(&mut stderr_output).await;
+                log::error!("aria2c exited immediately with status {:?}, stderr: {}", status, stderr_output);
+                return Err(Error::Aria2(format!("aria2c exited immediately: {}", stderr_output)));
+            }
+            log::error!("aria2c exited immediately with status {:?}", status);
+            return Err(Error::Aria2(format!("aria2c exited immediately with status {:?}", status)));
+        }
 
         Ok(Self {
             child: Some(child),
