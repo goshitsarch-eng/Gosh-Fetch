@@ -74,6 +74,12 @@ pub async fn apply_settings_to_aria2(
 
     let mut options = serde_json::Map::new();
 
+    // Set the download directory
+    options.insert(
+        "dir".to_string(),
+        serde_json::Value::String(settings.download_path.clone()),
+    );
+
     options.insert(
         "max-concurrent-downloads".to_string(),
         serde_json::Value::String(settings.max_concurrent_downloads.to_string()),

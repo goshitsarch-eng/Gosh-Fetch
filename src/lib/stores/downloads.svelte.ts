@@ -1,9 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
+import Database from '@tauri-apps/plugin-sql';
 import type { Download, DownloadOptions } from '../types/download';
 
 let downloads = $state<Download[]>([]);
+let completedHistory = $state<Download[]>([]);
 let isLoading = $state(false);
 let error = $state<string | null>(null);
+
+// Track GIDs we've already saved to avoid duplicates
+const savedGids = new Set<string>();
 
 export function getDownloads() {
   return downloads;
@@ -22,7 +27,14 @@ export function getActiveDownloads() {
 }
 
 export function getCompletedDownloads() {
-  return downloads.filter(d => d.status === 'complete');
+  // Combine aria2 completed downloads with history from database
+  const aria2Completed = downloads.filter(d => d.status === 'complete');
+  const aria2Gids = new Set(aria2Completed.map(d => d.gid));
+
+  // Add history items that aren't in aria2's list
+  const historyOnly = completedHistory.filter(d => !aria2Gids.has(d.gid));
+
+  return [...aria2Completed, ...historyOnly];
 }
 
 export function getPausedDownloads() {
@@ -33,11 +45,115 @@ export function getErrorDownloads() {
   return downloads.filter(d => d.status === 'error');
 }
 
+interface DownloadRow {
+  id: number;
+  gid: string;
+  name: string;
+  url: string | null;
+  magnet_uri: string | null;
+  info_hash: string | null;
+  download_type: string;
+  status: string;
+  total_size: number;
+  completed_size: number;
+  download_speed: number;
+  upload_speed: number;
+  save_path: string;
+  created_at: string;
+  completed_at: string | null;
+  error_message: string | null;
+  selected_files: string | null;
+}
+
+function rowToDownload(row: DownloadRow): Download {
+  return {
+    id: row.id,
+    gid: row.gid,
+    name: row.name,
+    url: row.url,
+    magnetUri: row.magnet_uri,
+    infoHash: row.info_hash,
+    downloadType: row.download_type as any,
+    status: row.status as any,
+    totalSize: row.total_size,
+    completedSize: row.completed_size,
+    downloadSpeed: row.download_speed,
+    uploadSpeed: row.upload_speed,
+    savePath: row.save_path,
+    createdAt: row.created_at,
+    completedAt: row.completed_at,
+    errorMessage: row.error_message,
+    connections: 0,
+    seeders: 0,
+    selectedFiles: row.selected_files ? JSON.parse(row.selected_files) : null,
+  };
+}
+
+async function loadCompletedHistory() {
+  try {
+    const db = await Database.load('sqlite:gosh-fetch.db');
+    const rows = await db.select<DownloadRow[]>(
+      'SELECT * FROM downloads WHERE status = ? ORDER BY completed_at DESC LIMIT 100',
+      ['complete']
+    );
+    completedHistory = rows.map(rowToDownload);
+    // Track saved GIDs
+    for (const d of completedHistory) {
+      savedGids.add(d.gid);
+    }
+  } catch (e) {
+    console.error('Failed to load completed history:', e);
+  }
+}
+
+async function saveCompletedDownload(download: Download) {
+  if (savedGids.has(download.gid)) return;
+
+  try {
+    const db = await Database.load('sqlite:gosh-fetch.db');
+    await db.execute(
+      `INSERT OR REPLACE INTO downloads
+       (gid, name, url, magnet_uri, info_hash, download_type, status, total_size, completed_size,
+        download_speed, upload_speed, save_path, created_at, completed_at, error_message, selected_files)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)`,
+      [
+        download.gid,
+        download.name,
+        download.url,
+        download.magnetUri,
+        download.infoHash,
+        download.downloadType,
+        download.status,
+        download.totalSize,
+        download.completedSize,
+        download.downloadSpeed,
+        download.uploadSpeed,
+        download.savePath,
+        download.createdAt,
+        download.errorMessage,
+        download.selectedFiles ? JSON.stringify(download.selectedFiles) : null,
+      ]
+    );
+    savedGids.add(download.gid);
+  } catch (e) {
+    console.error('Failed to save completed download:', e);
+  }
+}
+
 export async function refreshDownloads() {
   isLoading = true;
   error = null;
   try {
-    downloads = await invoke<Download[]>('get_all_downloads');
+    const aria2Downloads = await invoke<Download[]>('get_all_downloads');
+
+    // Save any newly completed downloads to database
+    for (const d of aria2Downloads) {
+      if (d.status === 'complete' && !savedGids.has(d.gid)) {
+        await saveCompletedDownload(d);
+      }
+    }
+
+    downloads = aria2Downloads;
   } catch (e) {
     error = e as string;
   } finally {
@@ -98,11 +214,41 @@ export async function setSpeedLimit(downloadLimit?: number, uploadLimit?: number
   await invoke('set_speed_limit', { downloadLimit, uploadLimit });
 }
 
+export async function removeFromHistory(gid: string): Promise<void> {
+  try {
+    const db = await Database.load('sqlite:gosh-fetch.db');
+    await db.execute('DELETE FROM downloads WHERE gid = ?', [gid]);
+    savedGids.delete(gid);
+    completedHistory = completedHistory.filter(d => d.gid !== gid);
+  } catch (e) {
+    console.error('Failed to remove from history:', e);
+  }
+}
+
+export async function clearHistory(): Promise<void> {
+  try {
+    const db = await Database.load('sqlite:gosh-fetch.db');
+    await db.execute('DELETE FROM downloads WHERE status = ?', ['complete']);
+    savedGids.clear();
+    completedHistory = [];
+  } catch (e) {
+    console.error('Failed to clear history:', e);
+  }
+}
+
 // Start polling for download updates
 let pollingInterval: ReturnType<typeof setInterval> | null = null;
+let historyLoaded = false;
 
-export function startPolling() {
+export async function startPolling() {
   if (pollingInterval) return;
+
+  // Load completed history from database on first start
+  if (!historyLoaded) {
+    await loadCompletedHistory();
+    historyLoaded = true;
+  }
+
   pollingInterval = setInterval(refreshDownloads, 1000);
   refreshDownloads();
 }

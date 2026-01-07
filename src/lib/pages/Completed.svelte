@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import DownloadCard from '../components/downloads/DownloadCard.svelte';
-  import { getCompletedDownloads, startPolling, stopPolling } from '../stores/downloads.svelte';
+  import { getCompletedDownloads, startPolling, stopPolling, clearHistory } from '../stores/downloads.svelte';
   import { formatBytes } from '../utils/format';
 
   const completedDownloads = $derived(getCompletedDownloads());
@@ -10,6 +10,8 @@
     completedDownloads.reduce((sum, d) => sum + d.totalSize, 0)
   );
 
+  let isClearing = $state(false);
+
   onMount(() => {
     startPolling();
   });
@@ -17,6 +19,14 @@
   onDestroy(() => {
     stopPolling();
   });
+
+  async function handleClearHistory() {
+    if (confirm('Are you sure you want to clear download history? This will not delete the downloaded files.')) {
+      isClearing = true;
+      await clearHistory();
+      isClearing = false;
+    }
+  }
 </script>
 
 <div class="page">
@@ -29,6 +39,11 @@
         <span class="stat">{formatBytes(totalSize)} total</span>
       </div>
     </div>
+    {#if completedDownloads.length > 0}
+      <button class="btn btn-secondary" onclick={handleClearHistory} disabled={isClearing}>
+        {isClearing ? 'Clearing...' : 'Clear History'}
+      </button>
+    {/if}
   </header>
 
   <div class="downloads-list">

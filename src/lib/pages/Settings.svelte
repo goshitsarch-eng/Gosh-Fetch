@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core';
   import { open } from '@tauri-apps/plugin-dialog';
+  import Database from '@tauri-apps/plugin-sql';
   import { onMount } from 'svelte';
 
   let downloadPath = $state('');
@@ -19,10 +20,91 @@
   let isSaving = $state(false);
   let saveMessage = $state<string | null>(null);
 
+  interface SettingRow {
+    key: string;
+    value: string;
+  }
+
+  async function loadSettingsFromDb() {
+    try {
+      const db = await Database.load('sqlite:gosh-fetch.db');
+      const rows = await db.select<SettingRow[]>('SELECT key, value FROM settings');
+
+      for (const row of rows) {
+        switch (row.key) {
+          case 'download_path':
+            downloadPath = row.value === '~/Downloads'
+              ? await invoke<string>('get_default_download_path')
+              : row.value;
+            break;
+          case 'max_concurrent_downloads':
+            maxConcurrent = parseInt(row.value) || 5;
+            break;
+          case 'max_connections_per_server':
+            maxConnections = parseInt(row.value) || 16;
+            break;
+          case 'split_count':
+            splitCount = parseInt(row.value) || 16;
+            break;
+          case 'download_speed_limit':
+            downloadSpeedLimit = parseInt(row.value) || 0;
+            break;
+          case 'upload_speed_limit':
+            uploadSpeedLimit = parseInt(row.value) || 0;
+            break;
+          case 'user_agent':
+            userAgent = row.value;
+            break;
+          case 'enable_notifications':
+            enableNotifications = row.value === 'true';
+            break;
+          case 'close_to_tray':
+            closeToTray = row.value === 'true';
+            break;
+          case 'auto_update_trackers':
+            autoUpdateTrackers = row.value === 'true';
+            break;
+          case 'delete_files_on_remove':
+            deleteFilesOnRemove = row.value === 'true';
+            break;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load settings from database:', e);
+      // Fallback to default download path
+      downloadPath = await invoke<string>('get_default_download_path');
+    }
+  }
+
+  async function saveSettingsToDb() {
+    const db = await Database.load('sqlite:gosh-fetch.db');
+
+    const settings: Record<string, string> = {
+      download_path: downloadPath,
+      max_concurrent_downloads: maxConcurrent.toString(),
+      max_connections_per_server: maxConnections.toString(),
+      split_count: splitCount.toString(),
+      download_speed_limit: downloadSpeedLimit.toString(),
+      upload_speed_limit: uploadSpeedLimit.toString(),
+      user_agent: userAgent,
+      enable_notifications: enableNotifications.toString(),
+      close_to_tray: closeToTray.toString(),
+      auto_update_trackers: autoUpdateTrackers.toString(),
+      delete_files_on_remove: deleteFilesOnRemove.toString(),
+    };
+
+    for (const [key, value] of Object.entries(settings)) {
+      await db.execute(
+        'INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime("now"))',
+        [key, value]
+      );
+    }
+  }
+
   onMount(async () => {
     try {
-      downloadPath = await invoke<string>('get_default_download_path');
       userAgentPresets = await invoke<[string, string][]>('get_user_agent_presets');
+      await loadSettingsFromDb();
     } catch (e) {
       console.error('Failed to load settings:', e);
     }
@@ -44,6 +126,10 @@
     saveMessage = null;
 
     try {
+      // Save to database first
+      await saveSettingsToDb();
+
+      // Apply to aria2
       await invoke('apply_settings_to_aria2', {
         settings: {
           download_path: downloadPath,
