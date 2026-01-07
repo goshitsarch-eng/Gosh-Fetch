@@ -1,0 +1,86 @@
+name: Build macOS
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    environment: production
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: aarch64-apple-darwin
+
+      - name: Import macOS signing certificate
+        run: |
+          echo "${{ secrets.MACOS_CERT_P12_GH }}" | base64 --decode > cert.p12
+
+          security create-keychain -p "" build.keychain
+          security import cert.p12 \
+            -k build.keychain \
+            -P "${{ secrets.MACOS_CERT_PASSWORD_GH }}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          security list-keychains -s build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain build.keychain
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s build.keychain
+
+      - name: Extract signing identity
+        id: signing
+        run: |
+          IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "identity=$IDENTITY" >> $GITHUB_OUTPUT
+          echo "Found signing identity: $IDENTITY"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build, sign & notarize
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ steps.signing.outputs.identity }}
+          APPLE_ID: ${{ secrets.APPLE_ID_GH }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD_GH }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID_GH }}
+        run: npx tauri build --target aarch64-apple-darwin
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg-arm64
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          fail_on_unmatched_files: true

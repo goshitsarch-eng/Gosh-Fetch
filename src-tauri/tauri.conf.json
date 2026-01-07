@@ -28,6 +28,9 @@
       "appimage": {
         "bundleMediaFramework": false
       }
+    },
+    "macOS": {
+      "signingIdentity": null
     }
   },
   "app": {

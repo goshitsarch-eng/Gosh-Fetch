@@ -42,7 +42,6 @@ lerna-debug.log*
 
 # Tauri
 src-tauri/WixTools/
-src-tauri/binaries/aria2c*
 src-tauri/gen/
 src-tauri/*.deb
 src-tauri/*.AppImage
