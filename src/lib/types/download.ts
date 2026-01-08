@@ -1,6 +1,6 @@
 export type DownloadType = 'http' | 'ftp' | 'torrent' | 'magnet';
 
-// Legacy state (maps to aria2 raw states)
+// Download state from backend engine
 export type DownloadState = 'active' | 'waiting' | 'paused' | 'complete' | 'error' | 'removed';
 
 // New normalized app state with better UX

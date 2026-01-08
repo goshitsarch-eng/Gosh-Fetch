@@ -27,14 +27,14 @@ export function getActiveDownloads() {
 }
 
 export function getCompletedDownloads() {
-  // Combine aria2 completed downloads with history from database
-  const aria2Completed = downloads.filter(d => d.status === 'complete');
-  const aria2Gids = new Set(aria2Completed.map(d => d.gid));
+  // Combine engine completed downloads with history from database
+  const engineCompleted = downloads.filter(d => d.status === 'complete');
+  const engineGids = new Set(engineCompleted.map(d => d.gid));
 
-  // Add history items that aren't in aria2's list
-  const historyOnly = completedHistory.filter(d => !aria2Gids.has(d.gid));
+  // Add history items that aren't in engine's list
+  const historyOnly = completedHistory.filter(d => !engineGids.has(d.gid));
 
-  return [...aria2Completed, ...historyOnly];
+  return [...engineCompleted, ...historyOnly];
 }
 
 export function getPausedDownloads() {
@@ -144,16 +144,16 @@ export async function refreshDownloads() {
   isLoading = true;
   error = null;
   try {
-    const aria2Downloads = await invoke<Download[]>('get_all_downloads');
+    const engineDownloads = await invoke<Download[]>('get_all_downloads');
 
     // Save any newly completed downloads to database
-    for (const d of aria2Downloads) {
+    for (const d of engineDownloads) {
       if (d.status === 'complete' && !savedGids.has(d.gid)) {
         await saveCompletedDownload(d);
       }
     }
 
-    downloads = aria2Downloads;
+    downloads = engineDownloads;
   } catch (e) {
     error = e as string;
   } finally {

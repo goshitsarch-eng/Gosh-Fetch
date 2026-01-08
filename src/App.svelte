@@ -82,9 +82,9 @@
         settings.download_path = await invoke<string>('get_default_download_path');
       }
 
-      // Apply settings to aria2
-      await invoke('apply_settings_to_aria2', { settings });
-      console.log('Settings applied to aria2 on startup');
+      // Apply settings to download engine
+      await invoke('apply_settings_to_engine', { settings });
+      console.log('Settings applied to engine on startup');
     } catch (e) {
       console.error('Failed to load and apply settings:', e);
     }

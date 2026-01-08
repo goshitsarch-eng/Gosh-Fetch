@@ -8,29 +8,22 @@
     description: string;
     license: string;
     repository: string;
-    attribution: {
-      aria2: {
-        name: string;
-        url: string;
-        license: string;
-        note: string;
-      };
-      openssl: {
-        name: string;
-        url: string;
-        license: string;
-        note: string;
-      };
+    engine: {
+      name: string;
+      version: string;
+      url: string;
+      license: string;
+      description: string;
     };
   } | null>(null);
 
-  let aria2Version = $state<string | null>(null);
+  let engineRunning = $state<boolean>(false);
 
   onMount(async () => {
     try {
       appInfo = await invoke('get_app_info');
-      const versionInfo = await invoke<{ version: string }>('get_aria2_version');
-      aria2Version = versionInfo.version;
+      const versionInfo = await invoke<{ running: boolean }>('get_engine_version');
+      engineRunning = versionInfo.running;
     } catch (e) {
       console.error('Failed to load app info:', e);
     }
@@ -45,7 +38,7 @@
   <div class="about-content">
     {#if appInfo}
       <div class="app-hero">
-        <div class="app-icon">⬇</div>
+        <div class="app-icon">&#11015;</div>
         <h2>{appInfo.name}</h2>
         <p class="app-version">Version {appInfo.version}</p>
         <p class="app-description">{appInfo.description}</p>
@@ -63,50 +56,49 @@
             target="_blank"
             rel="noopener noreferrer"
           >
-            View source on GitHub →
+            View source on GitHub
           </a>
         </div>
       </section>
 
       <section class="about-section">
-        <h3>Third-Party Software</h3>
+        <h3>Download Engine</h3>
         <div class="card">
           <div class="attribution-item">
             <div class="attribution-header">
-              <strong>{appInfo.attribution.aria2.name}</strong>
-              {#if aria2Version}
-                <span class="version-badge">v{aria2Version}</span>
+              <strong>{appInfo.engine.name}</strong>
+              <span class="version-badge">v{appInfo.engine.version}</span>
+              {#if engineRunning}
+                <span class="status-badge running">Running</span>
+              {:else}
+                <span class="status-badge stopped">Stopped</span>
               {/if}
             </div>
-            <p>{appInfo.attribution.aria2.note}</p>
+            <p>{appInfo.engine.description}</p>
             <p class="attribution-license">
-              License: {appInfo.attribution.aria2.license}
+              License: {appInfo.engine.license}
             </p>
             <a
-              href={appInfo.attribution.aria2.url}
+              href={appInfo.engine.url}
               target="_blank"
               rel="noopener noreferrer"
             >
-              {appInfo.attribution.aria2.url}
+              {appInfo.engine.url}
             </a>
           </div>
-          <hr class="attribution-divider" />
-          <div class="attribution-item">
-            <div class="attribution-header">
-              <strong>{appInfo.attribution.openssl.name}</strong>
-            </div>
-            <p>{appInfo.attribution.openssl.note}</p>
-            <p class="attribution-license">
-              License: {appInfo.attribution.openssl.license}
-            </p>
-            <a
-              href={appInfo.attribution.openssl.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {appInfo.attribution.openssl.url}
-            </a>
-          </div>
+        </div>
+      </section>
+
+      <section class="about-section">
+        <h3>Features</h3>
+        <div class="card">
+          <ul class="feature-list">
+            <li>HTTP/HTTPS segmented downloads with resume support</li>
+            <li>BitTorrent downloads from .torrent files</li>
+            <li>Magnet URI support</li>
+            <li>DHT, PEX, and LPD peer discovery</li>
+            <li>Native Rust engine - no external dependencies</li>
+          </ul>
         </div>
       </section>
 
@@ -230,23 +222,36 @@
     color: var(--text-muted);
   }
 
+  .status-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+  }
+
+  .status-badge.running {
+    background: color-mix(in srgb, var(--color-success) 20%, transparent);
+    color: var(--color-success);
+  }
+
+  .status-badge.stopped {
+    background: color-mix(in srgb, var(--color-error) 20%, transparent);
+    color: var(--color-error);
+  }
+
   .attribution-license {
     font-size: 12px;
     color: var(--text-muted);
   }
 
-  .attribution-divider {
-    border: none;
-    border-top: 1px solid var(--border-primary);
-    margin: var(--space-md) 0;
-  }
-
+  .feature-list,
   .privacy-list {
     list-style: none;
     padding: 0;
     margin: 0;
   }
 
+  .feature-list li,
   .privacy-list li {
     display: flex;
     align-items: center;
@@ -255,8 +260,14 @@
     color: var(--text-secondary);
   }
 
+  .feature-list li::before {
+    content: '>';
+    color: var(--color-primary);
+    font-weight: bold;
+  }
+
   .privacy-list li::before {
-    content: '✓';
+    content: '\2713';
     color: var(--color-success);
     font-weight: bold;
   }

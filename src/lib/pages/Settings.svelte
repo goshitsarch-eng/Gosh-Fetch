@@ -134,8 +134,8 @@
       // Sync close_to_tray with backend state
       await invoke('set_close_to_tray', { value: closeToTray });
 
-      // Apply to aria2
-      await invoke('apply_settings_to_aria2', {
+      // Apply to download engine
+      await invoke('apply_settings_to_engine', {
         settings: {
           download_path: downloadPath,
           max_concurrent_downloads: maxConcurrent,
