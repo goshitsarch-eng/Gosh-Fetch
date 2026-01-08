@@ -73,8 +73,8 @@ fn handle_menu_event(app: &AppHandle, event_id: &str) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 if let Some(state) = app.try_state::<AppState>() {
-                    if let Ok(client) = state.get_client().await {
-                        let _ = client.pause_all().await;
+                    if let Ok(adapter) = state.get_adapter().await {
+                        let _ = adapter.pause_all().await;
                     }
                 }
             });
@@ -83,8 +83,8 @@ fn handle_menu_event(app: &AppHandle, event_id: &str) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 if let Some(state) = app.try_state::<AppState>() {
-                    if let Ok(client) = state.get_client().await {
-                        let _ = client.unpause_all().await;
+                    if let Ok(adapter) = state.get_adapter().await {
+                        let _ = adapter.resume_all().await;
                     }
                 }
             });
@@ -98,14 +98,11 @@ fn handle_menu_event(app: &AppHandle, event_id: &str) {
             }
         }
         "quit" => {
-            // Save session and stop aria2 before quitting
+            // Shutdown download engine before quitting
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 if let Some(state) = app.try_state::<AppState>() {
-                    if let Ok(client) = state.get_client().await {
-                        let _ = client.save_session().await;
-                    }
-                    let _ = state.stop_aria2().await;
+                    let _ = state.shutdown().await;
                 }
                 app.exit(0);
             });
@@ -135,36 +132,35 @@ fn get_tray_icon(_app: &AppHandle) -> tauri::Result<Image<'static>> {
 async fn speed_meter_loop(app: AppHandle) {
     loop {
         if let Some(state) = app.try_state::<AppState>() {
-            if let Ok(client) = state.get_client().await {
-                if let Ok(stats) = client.get_global_stat().await {
-                    let download_speed: u64 = stats.download_speed.parse().unwrap_or(0);
-                    let upload_speed: u64 = stats.upload_speed.parse().unwrap_or(0);
-                    let num_active: u32 = stats.num_active.parse().unwrap_or(0);
+            if let Ok(adapter) = state.get_adapter().await {
+                let stats = adapter.get_global_stats();
+                let download_speed: u64 = stats.download_speed.parse().unwrap_or(0);
+                let upload_speed: u64 = stats.upload_speed.parse().unwrap_or(0);
+                let num_active: u32 = stats.num_active.parse().unwrap_or(0);
 
-                    let tooltip = format!(
-                        "Gosh-Fetch\n↓ {}  ↑ {}\n{} active",
-                        format_speed(download_speed),
-                        format_speed(upload_speed),
-                        num_active
-                    );
+                let tooltip = format!(
+                    "Gosh-Fetch\n↓ {}  ↑ {}\n{} active",
+                    format_speed(download_speed),
+                    format_speed(upload_speed),
+                    num_active
+                );
 
-                    // Update tray tooltip
-                    if let Some(tray) = app.tray_by_id("main") {
-                        let _ = tray.set_tooltip(Some(&tooltip));
-                    }
-
-                    // Emit stats to frontend
-                    let _ = app.emit(
-                        "global-stats",
-                        serde_json::json!({
-                            "downloadSpeed": download_speed,
-                            "uploadSpeed": upload_speed,
-                            "numActive": num_active,
-                            "numWaiting": stats.num_waiting.parse::<u32>().unwrap_or(0),
-                            "numStopped": stats.num_stopped.parse::<u32>().unwrap_or(0),
-                        }),
-                    );
+                // Update tray tooltip
+                if let Some(tray) = app.tray_by_id("main") {
+                    let _ = tray.set_tooltip(Some(&tooltip));
                 }
+
+                // Emit stats to frontend
+                let _ = app.emit(
+                    "global-stats",
+                    serde_json::json!({
+                        "downloadSpeed": download_speed,
+                        "uploadSpeed": upload_speed,
+                        "numActive": num_active,
+                        "numWaiting": stats.num_waiting.parse::<u32>().unwrap_or(0),
+                        "numStopped": stats.num_stopped.parse::<u32>().unwrap_or(0),
+                    }),
+                );
             }
         }
 

@@ -247,7 +247,7 @@ impl Storage for SqliteStorage {
                     "#,
                     params![id_str],
                     |row| {
-                        Ok(row_to_status(row)?)
+                        row_to_status(row)
                     },
                 )
                 .optional()?;
@@ -276,7 +276,7 @@ impl Storage for SqliteStorage {
                 "#,
             )?;
 
-            let iter = stmt.query_map([], |row| Ok(row_to_status(row)?))?;
+            let iter = stmt.query_map([], row_to_status)?;
 
             let mut results = Vec::new();
             for status in iter {

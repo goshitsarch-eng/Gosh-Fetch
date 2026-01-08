@@ -125,7 +125,7 @@ impl DownloadEngine {
         let filename = options.filename.clone().or_else(|| {
             parsed_url
                 .path_segments()
-                .and_then(|segments| segments.last())
+                .and_then(|mut segments| segments.next_back())
                 .map(|s| s.to_string())
                 .filter(|s| !s.is_empty())
         });

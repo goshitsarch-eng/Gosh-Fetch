@@ -72,6 +72,7 @@ impl HttpDownloader {
     /// Download a file from a URL
     ///
     /// Returns the final path of the downloaded file
+    #[allow(clippy::too_many_arguments)]
     pub async fn download<F>(
         &self,
         url: &str,
@@ -131,7 +132,7 @@ impl HttpDownloader {
                     .headers()
                     .get("content-disposition")
                     .and_then(|v| v.to_str().ok())
-                    .and_then(|v| parse_content_disposition(v));
+                    .and_then(parse_content_disposition);
 
                 (length, supports_range, suggested)
             }
@@ -392,6 +393,7 @@ impl HttpDownloader {
     ///
     /// This method probes the server first and uses segmented downloads
     /// if the server supports Range requests and the file is large enough.
+    #[allow(clippy::too_many_arguments)]
     pub async fn download_segmented<F>(
         &self,
         url: &str,
@@ -499,10 +501,10 @@ fn parse_content_disposition(header: &str) -> Option<String> {
     // Look for filename="..." or filename*=UTF-8''...
     if let Some(start) = header.find("filename=") {
         let rest = &header[start + 9..];
-        if rest.starts_with('"') {
+        if let Some(stripped) = rest.strip_prefix('"') {
             // Quoted filename
-            let end = rest[1..].find('"').map(|i| i + 1)?;
-            return Some(rest[1..end].to_string());
+            let end = stripped.find('"')?;
+            return Some(stripped[..end].to_string());
         } else {
             // Unquoted filename
             let end = rest.find(';').unwrap_or(rest.len());
@@ -531,7 +533,7 @@ fn extract_filename_from_url(url: &str) -> Option<String> {
     url::Url::parse(url)
         .ok()?
         .path_segments()?
-        .last()
+        .next_back()
         .filter(|s| !s.is_empty())
         .map(|s| {
             // URL decode the filename

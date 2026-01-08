@@ -3,8 +3,8 @@ name = "gosh-dl"
 version = "0.1.0"
 edition = "2021"
 description = "A fast, safe, and reliable download engine written in Rust"
-license = "AGPL-3.0"
-repository = "https://github.com/gosh/gosh-dl"
+license = "MIT"
+repository = "https://github.com/goshitsarch-eng/gosh-dl"
 keywords = ["download", "http", "bittorrent", "async"]
 categories = ["network-programming", "asynchronous"]
 

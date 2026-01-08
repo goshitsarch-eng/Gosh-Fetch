@@ -1,9 +1,12 @@
+//! Utility modules for Gosh-Fetch
+
 use crate::{Error, Result};
 use chrono::{DateTime, Utc};
 
 const TRACKER_LIST_URL: &str =
     "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt";
 
+/// Fetches and manages BitTorrent tracker lists
 pub struct TrackerUpdater {
     last_update: Option<DateTime<Utc>>,
     trackers: Vec<String>,

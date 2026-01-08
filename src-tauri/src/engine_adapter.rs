@@ -4,15 +4,35 @@
 //! Tauri command interface, maintaining backwards compatibility
 //! with the frontend.
 
-use crate::aria2::{Download, DownloadOptions as Aria2Options, DownloadState, DownloadType, GlobalStat};
+use crate::types::{Download, DownloadOptions as FrontendOptions, DownloadState, DownloadType, GlobalStat};
 use gosh_dl::{
     DownloadEngine, DownloadId, DownloadOptions, DownloadState as EngineState, DownloadStatus,
-    EngineConfig, GlobalStats,
+    PeerInfo as EnginePeerInfo, TorrentFile,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Torrent file info for frontend compatibility
+#[derive(Debug, Clone)]
+pub struct TorrentFileInfo {
+    pub path: PathBuf,
+    pub size: u64,
+    pub completed: u64,
+    pub selected: bool,
+}
+
+/// Peer info for frontend compatibility
+#[derive(Debug, Clone)]
+pub struct PeerInfo {
+    pub ip: String,
+    pub port: u16,
+    pub client: Option<String>,
+    pub download_speed: u64,
+    pub upload_speed: u64,
+}
+
 /// Adapter to convert between gosh-dl types and existing frontend types
+#[derive(Clone)]
 pub struct EngineAdapter {
     engine: Arc<DownloadEngine>,
 }
@@ -32,7 +52,7 @@ impl EngineAdapter {
     pub async fn add_download(
         &self,
         url: String,
-        options: Option<Aria2Options>,
+        options: Option<FrontendOptions>,
     ) -> Result<String, gosh_dl::EngineError> {
         let opts = options.map(convert_options).unwrap_or_default();
         let id = self.engine.add_http(&url, opts).await?;
@@ -43,7 +63,7 @@ impl EngineAdapter {
     pub async fn add_urls(
         &self,
         urls: Vec<String>,
-        options: Option<Aria2Options>,
+        options: Option<FrontendOptions>,
     ) -> Result<Vec<String>, gosh_dl::EngineError> {
         let opts = options.map(convert_options).unwrap_or_default();
         let mut gids = Vec::new();
@@ -137,6 +157,67 @@ impl EngineAdapter {
         config.global_upload_limit = upload_limit;
         self.engine.set_config(config)
     }
+
+    /// Add a torrent from file data
+    pub async fn add_torrent(
+        &self,
+        torrent_data: &[u8],
+        options: Option<FrontendOptions>,
+    ) -> Result<String, gosh_dl::EngineError> {
+        let opts = options.map(convert_options).unwrap_or_default();
+        let id = self.engine.add_torrent(torrent_data, opts).await?;
+        Ok(id.to_gid())
+    }
+
+    /// Add a magnet link
+    pub async fn add_magnet(
+        &self,
+        magnet_uri: &str,
+        options: Option<FrontendOptions>,
+    ) -> Result<String, gosh_dl::EngineError> {
+        let opts = options.map(convert_options).unwrap_or_default();
+        let id = self.engine.add_magnet(magnet_uri, opts).await?;
+        Ok(id.to_gid())
+    }
+
+    /// Get torrent files
+    pub fn get_torrent_files(&self, gid: &str) -> Option<Vec<TorrentFileInfo>> {
+        let id = parse_gid(gid).ok()?;
+        let status = self.engine.status(id)?;
+
+        // Convert gosh-dl TorrentFile to TorrentFileInfo
+        status.torrent_info.map(|info| {
+            info.files
+                .into_iter()
+                .map(|f: TorrentFile| TorrentFileInfo {
+                    path: f.path,
+                    size: f.size,
+                    completed: f.completed,
+                    selected: f.selected,
+                })
+                .collect()
+        })
+    }
+
+    /// Get peer info for a torrent
+    pub fn get_peers(&self, gid: &str) -> Option<Vec<PeerInfo>> {
+        let id = parse_gid(gid).ok()?;
+        let status = self.engine.status(id)?;
+
+        // Convert gosh-dl PeerInfo to local PeerInfo
+        status.peers.map(|peers| {
+            peers
+                .into_iter()
+                .map(|p: EnginePeerInfo| PeerInfo {
+                    ip: p.ip,
+                    port: p.port,
+                    client: p.client,
+                    download_speed: p.download_speed,
+                    upload_speed: p.upload_speed,
+                })
+                .collect()
+        })
+    }
 }
 
 /// Parse a GID string to a DownloadId
@@ -147,7 +228,7 @@ fn parse_gid(gid: &str) -> Result<DownloadId, gosh_dl::EngineError> {
 }
 
 /// Convert aria2 options to gosh-dl options
-fn convert_options(opts: Aria2Options) -> DownloadOptions {
+fn convert_options(opts: FrontendOptions) -> DownloadOptions {
     let mut headers = Vec::new();
 
     // Parse header strings like "Key: Value"

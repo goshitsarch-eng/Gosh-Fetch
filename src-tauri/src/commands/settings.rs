@@ -1,12 +1,13 @@
-use crate::aria2::TrackerUpdater;
+use crate::utils::TrackerUpdater;
 use crate::db::Settings;
 use crate::{AppState, Result};
+use std::path::PathBuf;
 use tauri::State;
 
 #[tauri::command]
 pub async fn get_settings(_state: State<'_, AppState>) -> Result<Settings> {
-    // Settings are stored in the database, but for now return defaults
-    // The frontend will use tauri-plugin-sql to read/write settings directly
+    // Settings are stored in the database and managed by the frontend
+    // Return defaults here - frontend uses tauri-plugin-sql directly
     Ok(Settings::default())
 }
 
@@ -16,7 +17,7 @@ pub async fn update_settings(
     _settings: Settings,
 ) -> Result<()> {
     // Settings are updated via tauri-plugin-sql from the frontend
-    // This command can be used to apply settings to aria2
+    // Use apply_settings_to_engine to apply to the download engine
     Ok(())
 }
 
@@ -27,18 +28,10 @@ pub fn set_close_to_tray(state: State<'_, AppState>, value: bool) {
 
 #[tauri::command]
 pub async fn set_user_agent(state: State<'_, AppState>, user_agent: String) -> Result<()> {
-    let client = state.get_client().await?;
-
-    let mut options = serde_json::Map::new();
-    options.insert(
-        "user-agent".to_string(),
-        serde_json::Value::String(user_agent),
-    );
-
-    client
-        .change_global_option(serde_json::Value::Object(options))
-        .await?;
-
+    let engine = state.get_engine().await?;
+    let mut config = engine.get_config();
+    config.user_agent = user_agent;
+    engine.set_config(config)?;
     Ok(())
 }
 
@@ -53,87 +46,57 @@ pub async fn update_tracker_list(state: State<'_, AppState>) -> Result<Vec<Strin
     let mut updater = TrackerUpdater::new();
     let trackers = updater.fetch_trackers().await?;
 
-    // Apply trackers to aria2 global options
-    let client = state.get_client().await?;
-    let tracker_string = updater.get_tracker_string();
-
-    let mut options = serde_json::Map::new();
-    options.insert(
-        "bt-tracker".to_string(),
-        serde_json::Value::String(tracker_string),
-    );
-
-    client
-        .change_global_option(serde_json::Value::Object(options))
-        .await?;
+    // Store trackers in engine config for future torrents
+    // Note: gosh-dl uses dht_bootstrap_nodes for DHT, trackers are per-torrent
+    let _engine = state.get_engine().await?;
+    // TODO: Store tracker list for use when adding new torrents
 
     Ok(trackers)
 }
 
 #[tauri::command]
+pub async fn apply_settings_to_engine(
+    state: State<'_, AppState>,
+    settings: Settings,
+) -> Result<()> {
+    let engine = state.get_engine().await?;
+    let mut config = engine.get_config();
+
+    // Apply settings to engine config
+    config.download_dir = PathBuf::from(&settings.download_path);
+    config.max_concurrent_downloads = settings.max_concurrent_downloads as usize;
+    config.max_connections_per_download = settings.max_connections_per_server as usize;
+
+    if settings.download_speed_limit > 0 {
+        config.global_download_limit = Some(settings.download_speed_limit);
+    } else {
+        config.global_download_limit = None;
+    }
+
+    if settings.upload_speed_limit > 0 {
+        config.global_upload_limit = Some(settings.upload_speed_limit);
+    } else {
+        config.global_upload_limit = None;
+    }
+
+    config.user_agent = settings.user_agent;
+    config.enable_dht = settings.bt_enable_dht;
+    config.enable_pex = settings.bt_enable_pex;
+    config.enable_lpd = settings.bt_enable_lpd;
+    config.max_peers = settings.bt_max_peers as usize;
+    config.seed_ratio = settings.bt_seed_ratio;
+
+    engine.set_config(config)?;
+    Ok(())
+}
+
+// Keep the old name for backwards compatibility
+#[tauri::command]
 pub async fn apply_settings_to_aria2(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<()> {
-    let client = state.get_client().await?;
-
-    let mut options = serde_json::Map::new();
-
-    // Set the download directory
-    options.insert(
-        "dir".to_string(),
-        serde_json::Value::String(settings.download_path.clone()),
-    );
-
-    options.insert(
-        "max-concurrent-downloads".to_string(),
-        serde_json::Value::String(settings.max_concurrent_downloads.to_string()),
-    );
-
-    options.insert(
-        "split".to_string(),
-        serde_json::Value::String(settings.split_count.to_string()),
-    );
-
-    options.insert(
-        "max-connection-per-server".to_string(),
-        serde_json::Value::String(settings.max_connections_per_server.to_string()),
-    );
-
-    if settings.download_speed_limit > 0 {
-        options.insert(
-            "max-overall-download-limit".to_string(),
-            serde_json::Value::String(settings.download_speed_limit.to_string()),
-        );
-    }
-
-    if settings.upload_speed_limit > 0 {
-        options.insert(
-            "max-overall-upload-limit".to_string(),
-            serde_json::Value::String(settings.upload_speed_limit.to_string()),
-        );
-    }
-
-    options.insert(
-        "user-agent".to_string(),
-        serde_json::Value::String(settings.user_agent),
-    );
-
-    options.insert(
-        "bt-max-peers".to_string(),
-        serde_json::Value::String(settings.bt_max_peers.to_string()),
-    );
-
-    options.insert(
-        "seed-ratio".to_string(),
-        serde_json::Value::String(settings.bt_seed_ratio.to_string()),
-    );
-
-    client
-        .change_global_option(serde_json::Value::Object(options))
-        .await?;
-
-    Ok(())
+    apply_settings_to_engine(state, settings).await
 }
 
 // User-Agent presets

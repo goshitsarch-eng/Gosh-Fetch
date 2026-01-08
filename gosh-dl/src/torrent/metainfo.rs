@@ -231,7 +231,7 @@ impl Metainfo {
 
         // Verify piece count matches total size
         let expected_pieces =
-            (total_size + piece_length - 1) / piece_length; // Ceiling division
+            total_size.div_ceil(piece_length); // Ceiling division
         if pieces.len() as u64 != expected_pieces {
             return Err(EngineError::protocol(
                 ProtocolErrorKind::InvalidTorrent,

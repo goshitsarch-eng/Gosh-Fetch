@@ -3,6 +3,13 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("download engine error: {0}")]
+    Engine(String),
+
+    #[error("engine not initialized")]
+    EngineNotInitialized,
+
+    // Legacy error types for backwards compatibility
     #[error("aria2 error: {0}")]
     Aria2(String),
 
@@ -32,6 +39,20 @@ pub enum Error {
 
     #[error("network error: {0}")]
     Network(String),
+}
+
+impl From<gosh_dl::EngineError> for Error {
+    fn from(err: gosh_dl::EngineError) -> Self {
+        match err {
+            gosh_dl::EngineError::NotFound(msg) => Error::NotFound(msg),
+            gosh_dl::EngineError::InvalidInput { field, message } => {
+                Error::InvalidInput(format!("{}: {}", field, message))
+            }
+            gosh_dl::EngineError::Network { message, .. } => Error::Network(message),
+            gosh_dl::EngineError::Storage { message, .. } => Error::Database(message),
+            other => Error::Engine(other.to_string()),
+        }
+    }
 }
 
 impl Serialize for Error {

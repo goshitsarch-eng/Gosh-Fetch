@@ -19,7 +19,7 @@ fn main() {
             // Setup system tray
             tray::setup_tray(&app_handle)?;
 
-            // Initialize app state (database, aria2)
+            // Initialize app state (database, download engine)
             let state = app.state::<AppState>();
             let state_clone = (*state).clone();
             let handle = app_handle.clone();
@@ -29,6 +29,12 @@ fn main() {
                     log::error!("Failed to initialize app: {}", e);
                 }
             });
+
+            // Shutdown handler
+            let state_for_shutdown = (*app.state::<AppState>()).clone();
+            app.on_menu_event(move |_app, _event| {});
+
+            // Note: Shutdown will happen when app exits
 
             // Handle window close event - minimize to tray or quit based on setting
             let handle_for_close = app_handle.clone();
@@ -85,10 +91,13 @@ fn main() {
             commands::get_tracker_list,
             commands::update_tracker_list,
             commands::apply_settings_to_aria2,
+            commands::apply_settings_to_engine,
             commands::get_user_agent_presets,
             // System commands
             commands::get_aria2_version,
+            commands::get_engine_version,
             commands::restart_aria2,
+            commands::restart_engine,
             commands::show_window,
             commands::hide_window,
             commands::quit_app,

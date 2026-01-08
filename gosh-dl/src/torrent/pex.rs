@@ -68,7 +68,7 @@ impl PexMessage {
         let added = dict
             .get(b"added".as_slice())
             .and_then(|v| v.as_bytes())
-            .map(|b| parse_compact_peers_v4(b))
+            .map(parse_compact_peers_v4)
             .unwrap_or_default();
 
         // Parse added flags
@@ -82,14 +82,14 @@ impl PexMessage {
         let dropped = dict
             .get(b"dropped".as_slice())
             .and_then(|v| v.as_bytes())
-            .map(|b| parse_compact_peers_v4(b))
+            .map(parse_compact_peers_v4)
             .unwrap_or_default();
 
         // Parse IPv6 added peers
         let added6 = dict
             .get(b"added6".as_slice())
             .and_then(|v| v.as_bytes())
-            .map(|b| parse_compact_peers_v6(b))
+            .map(parse_compact_peers_v6)
             .unwrap_or_default();
 
         // Parse added6 flags
@@ -103,7 +103,7 @@ impl PexMessage {
         let dropped6 = dict
             .get(b"dropped6".as_slice())
             .and_then(|v| v.as_bytes())
-            .map(|b| parse_compact_peers_v6(b))
+            .map(parse_compact_peers_v6)
             .unwrap_or_default();
 
         Ok(Self {

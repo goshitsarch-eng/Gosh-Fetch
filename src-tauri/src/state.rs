@@ -1,37 +1,32 @@
-use crate::aria2::{
-    create_shared_supervisor, spawn_health_check_loop, Aria2Client, SharedSupervisor,
-    SupervisorEvent,
-};
-use crate::db::Database;
+use crate::db::{Database, Settings};
+use crate::engine_adapter::EngineAdapter;
 use crate::Result;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use gosh_dl::{DownloadEngine, DownloadEvent, EngineConfig};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::AppHandle;
-use tokio::sync::{mpsc, RwLock};
-
-const DEFAULT_RPC_PORT: u16 = 6800;
+use tauri::{AppHandle, Emitter};
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 pub struct AppState {
-    supervisor: Arc<RwLock<Option<SharedSupervisor>>>,
+    engine: Arc<RwLock<Option<Arc<DownloadEngine>>>>,
+    adapter: Arc<RwLock<Option<EngineAdapter>>>,
     pub db: Arc<RwLock<Option<Database>>>,
-    rpc_port: Arc<AtomicU16>,
-    rpc_secret: String,
-    health_check_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
     /// Close to tray setting - read synchronously in window close handler
     close_to_tray: Arc<AtomicBool>,
+    /// Event listener handle
+    event_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
-        let secret = generate_secret();
         Self {
-            supervisor: Arc::new(RwLock::new(None)),
+            engine: Arc::new(RwLock::new(None)),
+            adapter: Arc::new(RwLock::new(None)),
             db: Arc::new(RwLock::new(None)),
-            rpc_port: Arc::new(AtomicU16::new(DEFAULT_RPC_PORT)),
-            rpc_secret: secret,
-            health_check_handle: Arc::new(RwLock::new(None)),
-            close_to_tray: Arc::new(AtomicBool::new(true)), // Default to true
+            close_to_tray: Arc::new(AtomicBool::new(true)),
+            event_handle: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -45,101 +40,86 @@ impl AppState {
         self.close_to_tray.store(value, Ordering::Relaxed);
     }
 
-    /// Initialize the app state with supervisor and database
+    /// Initialize the app state with download engine and database
     pub async fn initialize(&self, app: &AppHandle) -> Result<()> {
         // Initialize database
         let db = Database::new(app).await?;
         *self.db.write().await = Some(db);
 
-        // Create and start supervisor
-        let port = self.rpc_port.load(Ordering::Relaxed);
-        let supervisor = create_shared_supervisor(app.clone(), port, self.rpc_secret.clone());
+        // Use default settings - frontend will apply stored settings via apply_settings_to_engine
+        let settings = Settings::default();
 
-        // Start aria2 via supervisor
-        let actual_port;
-        {
-            let mut sup = supervisor.lock().await;
-            sup.start().await?;
-            actual_port = sup.get_port();
+        // Build engine config from default settings
+        let mut config = EngineConfig::default();
+        config.download_dir = PathBuf::from(&settings.download_path);
+        config.max_concurrent_downloads = settings.max_concurrent_downloads as usize;
+        config.max_connections_per_download = settings.max_connections_per_server as usize;
+        config.user_agent = settings.user_agent.clone();
+        config.enable_dht = settings.bt_enable_dht;
+        config.enable_pex = settings.bt_enable_pex;
+        config.enable_lpd = settings.bt_enable_lpd;
+        config.max_peers = settings.bt_max_peers as usize;
+        config.seed_ratio = settings.bt_seed_ratio;
+
+        if settings.download_speed_limit > 0 {
+            config.global_download_limit = Some(settings.download_speed_limit);
         }
-        self.rpc_port.store(actual_port, Ordering::Relaxed);
+        if settings.upload_speed_limit > 0 {
+            config.global_upload_limit = Some(settings.upload_speed_limit);
+        }
 
-        // Store supervisor
-        *self.supervisor.write().await = Some(supervisor.clone());
+        // Create and start the download engine
+        let engine = DownloadEngine::new(config).await?;
 
-        // Spawn health check loop
-        let handle = spawn_health_check_loop(supervisor, None);
-        *self.health_check_handle.write().await = Some(handle);
+        // Create adapter
+        let adapter = EngineAdapter::new(engine.clone());
 
-        log::info!("App state initialized with aria2 on port {}", actual_port);
+        // Store engine and adapter
+        *self.engine.write().await = Some(engine.clone());
+        *self.adapter.write().await = Some(adapter);
+
+        // Start event listener to emit events to frontend
+        let app_handle = app.clone();
+        let mut events = engine.subscribe();
+        let handle = tokio::spawn(async move {
+            while let Ok(event) = events.recv().await {
+                // Emit events to frontend
+                let event_name = match &event {
+                    DownloadEvent::Added { .. } => "download:added",
+                    DownloadEvent::Started { .. } => "download:started",
+                    DownloadEvent::Progress { .. } => "download:progress",
+                    DownloadEvent::StateChanged { .. } => "download:state-changed",
+                    DownloadEvent::Completed { .. } => "download:completed",
+                    DownloadEvent::Failed { .. } => "download:failed",
+                    DownloadEvent::Removed { .. } => "download:removed",
+                    DownloadEvent::Paused { .. } => "download:paused",
+                    DownloadEvent::Resumed { .. } => "download:resumed",
+                };
+                let _ = app_handle.emit(event_name, &event);
+            }
+        });
+        *self.event_handle.write().await = Some(handle);
+
+        log::info!("App state initialized with gosh-dl engine");
         Ok(())
     }
 
-    /// Initialize with event channel for supervisor events
-    pub async fn initialize_with_events(
-        &self,
-        app: &AppHandle,
-    ) -> Result<mpsc::Receiver<SupervisorEvent>> {
-        // Initialize database
-        let db = Database::new(app).await?;
-        *self.db.write().await = Some(db);
-
-        // Create and start supervisor
-        let port = self.rpc_port.load(Ordering::Relaxed);
-        let supervisor = create_shared_supervisor(app.clone(), port, self.rpc_secret.clone());
-
-        // Start aria2 via supervisor
-        let actual_port;
-        {
-            let mut sup = supervisor.lock().await;
-            sup.start().await?;
-            actual_port = sup.get_port();
-        }
-        self.rpc_port.store(actual_port, Ordering::Relaxed);
-
-        // Store supervisor
-        *self.supervisor.write().await = Some(supervisor.clone());
-
-        // Create event channel
-        let (tx, rx) = mpsc::channel(32);
-
-        // Spawn health check loop with event channel
-        let handle = spawn_health_check_loop(supervisor, Some(tx));
-        *self.health_check_handle.write().await = Some(handle);
-
-        log::info!(
-            "App state initialized with events on port {}",
-            actual_port
-        );
-        Ok(rx)
+    /// Get the engine adapter for download operations
+    pub async fn get_adapter(&self) -> Result<EngineAdapter> {
+        self.adapter
+            .read()
+            .await
+            .clone()
+            .ok_or(crate::Error::EngineNotInitialized)
     }
 
-    /// Stop aria2 gracefully
-    pub async fn stop_aria2(&self) -> Result<()> {
-        // Stop health check loop
-        if let Some(handle) = self.health_check_handle.write().await.take() {
-            handle.abort();
-        }
-
-        // Stop supervisor
-        if let Some(ref supervisor) = *self.supervisor.read().await {
-            let mut sup = supervisor.lock().await;
-            sup.stop().await?;
-        }
-
-        log::info!("aria2 stopped");
-        Ok(())
-    }
-
-    /// Get the aria2 client
-    pub async fn get_client(&self) -> Result<Aria2Client> {
-        let supervisor_opt = self.supervisor.read().await;
-        let supervisor = supervisor_opt
-            .as_ref()
-            .ok_or(crate::Error::Aria2NotRunning)?;
-
-        let sup = supervisor.lock().await;
-        sup.get_client_clone()
+    /// Get the raw engine (for advanced operations)
+    pub async fn get_engine(&self) -> Result<Arc<DownloadEngine>> {
+        self.engine
+            .read()
+            .await
+            .clone()
+            .ok_or(crate::Error::EngineNotInitialized)
     }
 
     /// Get the database
@@ -151,42 +131,32 @@ impl AppState {
             .ok_or(crate::Error::Database("Database not initialized".into()))
     }
 
-    /// Check if aria2 is running
-    pub async fn is_aria2_running(&self) -> bool {
-        if let Some(ref supervisor) = *self.supervisor.read().await {
-            let sup = supervisor.lock().await;
-            sup.is_running()
-        } else {
-            false
+    /// Shutdown the download engine gracefully
+    pub async fn shutdown(&self) -> Result<()> {
+        // Stop event listener
+        if let Some(handle) = self.event_handle.write().await.take() {
+            handle.abort();
         }
-    }
 
-    /// Get supervisor restart count
-    pub async fn get_restart_count(&self) -> u32 {
-        if let Some(ref supervisor) = *self.supervisor.read().await {
-            let sup = supervisor.lock().await;
-            sup.get_restart_count()
-        } else {
-            0
+        // Shutdown engine
+        if let Some(ref engine) = *self.engine.read().await {
+            engine.shutdown().await?;
         }
+
+        log::info!("Download engine shut down");
+        Ok(())
     }
 
-    /// Get the current RPC port
-    pub fn get_rpc_port(&self) -> u16 {
-        self.rpc_port.load(Ordering::Relaxed)
+    /// Check if engine is running
+    pub async fn is_engine_running(&self) -> bool {
+        self.engine.read().await.is_some()
     }
 
-    /// Restart aria2 (stop and start)
-    pub async fn restart_aria2(&self, app: &AppHandle) -> Result<()> {
-        log::info!("Restarting aria2...");
-
-        // Stop if running
-        self.stop_aria2().await?;
-
-        // Re-initialize (this will create a new supervisor)
-        self.initialize(app).await?;
-
-        log::info!("aria2 restarted successfully");
+    /// Update engine configuration
+    pub async fn update_config(&self, config: EngineConfig) -> Result<()> {
+        if let Some(ref engine) = *self.engine.read().await {
+            engine.set_config(config)?;
+        }
         Ok(())
     }
 }
@@ -194,42 +164,5 @@ impl AppState {
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Generate a random 32-character hex secret for RPC authentication
-fn generate_secret() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let bytes: [u8; 16] = rng.gen();
-    hex::encode(bytes)
-}
-
-/// Persist the secret to a file for security
-#[allow(dead_code)]
-fn persist_secret(app_data_dir: &std::path::Path, secret: &str) -> std::io::Result<()> {
-    let secret_file = app_data_dir.join("rpc.secret");
-    std::fs::write(&secret_file, secret)?;
-
-    // Set restrictive permissions on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&secret_file, std::fs::Permissions::from_mode(0o600))?;
-    }
-
-    Ok(())
-}
-
-/// Load the secret from file, or generate a new one
-#[allow(dead_code)]
-fn load_or_create_secret(app_data_dir: &std::path::Path) -> std::io::Result<String> {
-    let secret_file = app_data_dir.join("rpc.secret");
-    if secret_file.exists() {
-        std::fs::read_to_string(&secret_file)
-    } else {
-        let secret = generate_secret();
-        persist_secret(app_data_dir, &secret)?;
-        Ok(secret)
     }
 }

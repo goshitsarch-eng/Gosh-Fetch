@@ -601,9 +601,9 @@ fn parse_content_disposition(header: &str) -> Option<String> {
     // Look for filename="..." or filename*=UTF-8''...
     if let Some(start) = header.find("filename=") {
         let rest = &header[start + 9..];
-        if rest.starts_with('"') {
-            let end = rest[1..].find('"').map(|i| i + 1)?;
-            return Some(rest[1..end].to_string());
+        if let Some(stripped) = rest.strip_prefix('"') {
+            let end = stripped.find('"')?;
+            return Some(stripped[..end].to_string());
         } else {
             let end = rest.find(';').unwrap_or(rest.len());
             return Some(rest[..end].trim().to_string());

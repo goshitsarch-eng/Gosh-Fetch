@@ -115,6 +115,7 @@ pub enum TorrentState {
 }
 
 /// Torrent download coordinator
+#[allow(dead_code)]
 pub struct TorrentDownloader {
     /// Download ID
     id: DownloadId,
@@ -150,6 +151,7 @@ pub struct TorrentDownloader {
 
 /// Information about a connected peer
 #[derive(Debug)]
+#[allow(dead_code)]
 struct PeerInfo {
     /// Socket address
     addr: SocketAddr,
@@ -174,6 +176,7 @@ struct PeerInfo {
 }
 
 /// Torrent statistics
+#[allow(dead_code)]
 struct TorrentStats {
     downloaded: AtomicU64,
     uploaded: AtomicU64,
@@ -337,6 +340,7 @@ impl TorrentDownloader {
     }
 
     /// Start the download
+    #[allow(clippy::await_holding_lock)]
     pub async fn start(&self) -> Result<()> {
         // Verify existing files if we have metainfo
         if let Some(ref pm) = *self.piece_manager.read() {
@@ -366,6 +370,7 @@ impl TorrentDownloader {
     }
 
     /// Announce to all known trackers
+    #[allow(clippy::await_holding_lock)]
     async fn announce_to_trackers(&self, event: AnnounceEvent) -> Result<()> {
         let trackers = self.get_tracker_urls();
 

@@ -2,20 +2,34 @@ use crate::{AppState, Result};
 use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
+pub async fn get_engine_version(state: State<'_, AppState>) -> Result<serde_json::Value> {
+    let is_running = state.is_engine_running().await;
+    Ok(serde_json::json!({
+        "name": "gosh-dl",
+        "version": "0.1.0",
+        "running": is_running,
+    }))
+}
+
+// Keep old name for backwards compatibility
+#[tauri::command]
 pub async fn get_aria2_version(state: State<'_, AppState>) -> Result<serde_json::Value> {
-    let client = state.get_client().await?;
-    client.get_version().await
+    get_engine_version(state).await
 }
 
 #[tauri::command]
-pub async fn restart_aria2(state: State<'_, AppState>, app: AppHandle) -> Result<()> {
-    // Save session first
-    if let Ok(client) = state.get_client().await {
-        let _ = client.save_session().await;
-    }
-
-    state.restart_aria2(&app).await?;
+pub async fn restart_engine(state: State<'_, AppState>, app: AppHandle) -> Result<()> {
+    // Shutdown and reinitialize engine
+    state.shutdown().await?;
+    state.initialize(&app).await?;
+    log::info!("Download engine restarted");
     Ok(())
+}
+
+// Keep old name for backwards compatibility
+#[tauri::command]
+pub async fn restart_aria2(state: State<'_, AppState>, app: AppHandle) -> Result<()> {
+    restart_engine(state, app).await
 }
 
 #[tauri::command]
@@ -119,22 +133,15 @@ pub fn get_app_info() -> serde_json::Value {
     serde_json::json!({
         "name": "Gosh-Fetch",
         "version": env!("CARGO_PKG_VERSION"),
-        "description": "Gosh Fetch the modern download manager powered by aria2",
+        "description": "Gosh Fetch - the modern download manager powered by gosh-dl",
         "license": "AGPL-3.0",
         "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",
-        "attribution": {
-            "aria2": {
-                "name": "aria2",
-                "url": "https://github.com/aria2/aria2",
-                "license": "GNU General Public License Version 2, June 1991",
-                "note": "Special thanks to the aria2 project. Gosh-Fetch is not affiliated with the aria2 project."
-            },
-            "openssl": {
-                "name": "OpenSSL",
-                "url": "https://www.openssl.org",
-                "license": "Apache License, Version 2.0",
-                "note": "Special thanks to the OpenSSL project. Used by aria2 for TLS/SSL support."
-            }
+        "engine": {
+            "name": "gosh-dl",
+            "version": "0.1.0",
+            "url": "https://github.com/goshitsarch-eng/gosh-dl",
+            "license": "MIT",
+            "description": "A fast, safe, and reliable download engine written in Rust"
         }
     })
 }

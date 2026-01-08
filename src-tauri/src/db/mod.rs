@@ -1,4 +1,4 @@
-use crate::aria2::{Download, DownloadState, DownloadType};
+use crate::types::DownloadType;
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -80,7 +80,7 @@ impl Database {
     }
 }
 
-// Helper functions for database operations (called via tauri-plugin-sql from frontend)
+// Helper functions for database operations
 pub fn download_type_from_url(url: &str) -> DownloadType {
     let lower = url.to_lowercase();
     if lower.starts_with("magnet:") {
@@ -91,59 +91,5 @@ pub fn download_type_from_url(url: &str) -> DownloadType {
         DownloadType::Ftp
     } else {
         DownloadType::Http
-    }
-}
-
-pub fn parse_download_status(
-    status: &crate::aria2::DownloadStatus,
-    db_record: Option<&Download>,
-) -> Download {
-    let name = status
-        .bittorrent
-        .as_ref()
-        .and_then(|bt| bt.info.as_ref())
-        .and_then(|info| info.name.clone())
-        .or_else(|| {
-            status.files.first().map(|f| {
-                std::path::Path::new(&f.path)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "Unknown".to_string())
-            })
-        })
-        .unwrap_or_else(|| "Unknown".to_string());
-
-    let download_type = if status.bittorrent.is_some() {
-        DownloadType::Torrent
-    } else if status.info_hash.is_some() {
-        DownloadType::Magnet
-    } else {
-        db_record
-            .map(|r| r.download_type)
-            .unwrap_or(DownloadType::Http)
-    };
-
-    Download {
-        id: db_record.map(|r| r.id).unwrap_or(0),
-        gid: status.gid.clone(),
-        name,
-        url: db_record.and_then(|r| r.url.clone()),
-        magnet_uri: db_record.and_then(|r| r.magnet_uri.clone()),
-        info_hash: status.info_hash.clone(),
-        download_type,
-        status: DownloadState::from(status.status.as_str()),
-        total_size: status.total_length.parse().unwrap_or(0),
-        completed_size: status.completed_length.parse().unwrap_or(0),
-        download_speed: status.download_speed.parse().unwrap_or(0),
-        upload_speed: status.upload_speed.parse().unwrap_or(0),
-        save_path: status.dir.clone(),
-        created_at: db_record
-            .map(|r| r.created_at.clone())
-            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
-        completed_at: db_record.and_then(|r| r.completed_at.clone()),
-        error_message: status.error_message.clone(),
-        connections: status.connections.as_ref().and_then(|s| s.parse().ok()).unwrap_or(0),
-        seeders: status.num_seeders.as_ref().and_then(|s| s.parse().ok()).unwrap_or(0),
-        selected_files: db_record.and_then(|r| r.selected_files.clone()),
     }
 }

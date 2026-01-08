@@ -65,7 +65,7 @@ impl PendingPiece {
     /// Create a new pending piece
     pub fn new(index: u32, piece_length: u64) -> Self {
         let block_size = BLOCK_SIZE as u64;
-        let num_blocks = ((piece_length + block_size - 1) / block_size) as usize;
+        let num_blocks = piece_length.div_ceil(block_size) as usize;
 
         Self {
             index,
@@ -377,10 +377,11 @@ impl PieceManager {
                 tokio::fs::create_dir_all(parent).await?;
             }
 
-            // Open or create file
+            // Open or create file (don't truncate - we write pieces at specific offsets)
             let mut file = OpenOptions::new()
                 .write(true)
                 .create(true)
+                .truncate(false)
                 .open(&file_path)
                 .await?;
 
@@ -523,7 +524,7 @@ impl PieceManager {
     /// Get pieces for endgame mode (when only a few pieces remain)
     pub fn endgame_pieces(&self) -> Vec<u32> {
         let have = self.have.read();
-        let pending = self.pending.read();
+        let _pending = self.pending.read();
 
         let remaining: Vec<u32> = (0..self.num_pieces() as u32)
             .filter(|&i| !have[i as usize])
