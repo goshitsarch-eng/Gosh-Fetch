@@ -86,6 +86,35 @@ impl PendingPiece {
             return false;
         }
 
+        // Validate offset is aligned to block size
+        if !offset.is_multiple_of(self.block_size) {
+            tracing::warn!(
+                "Block offset {} is not aligned to block size {}",
+                offset,
+                self.block_size
+            );
+            return false;
+        }
+
+        // Validate block size is correct
+        let expected_size = if block_index == self.blocks.len() - 1 {
+            // Last block may be smaller
+            let remaining = self.length - offset as u64;
+            remaining.min(self.block_size as u64) as usize
+        } else {
+            self.block_size as usize
+        };
+
+        if data.len() != expected_size {
+            tracing::warn!(
+                "Block {} has wrong size: expected {}, got {}",
+                block_index,
+                expected_size,
+                data.len()
+            );
+            return false;
+        }
+
         // Don't count duplicates
         if self.blocks[block_index].is_none() {
             self.blocks_received += 1;
@@ -354,6 +383,26 @@ impl PieceManager {
         Ok(true)
     }
 
+    /// Validate a path component to prevent directory traversal attacks
+    fn validate_path_component(component: &std::path::Component) -> Result<()> {
+        use std::path::Component;
+        match component {
+            Component::ParentDir => {
+                Err(EngineError::protocol(
+                    ProtocolErrorKind::InvalidTorrent,
+                    "Invalid torrent: file path contains parent directory reference (..)",
+                ))
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                Err(EngineError::protocol(
+                    ProtocolErrorKind::InvalidTorrent,
+                    "Invalid torrent: file path contains absolute path",
+                ))
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Write piece data to the appropriate files
     async fn write_piece(&self, index: u32, data: &[u8]) -> Result<()> {
         let files_for_piece = self.metainfo.files_for_piece(index as usize);
@@ -363,10 +412,21 @@ impl PieceManager {
         for (file_idx, file_offset, length) in files_for_piece {
             let file_info = &self.metainfo.info.files[file_idx];
 
-            // Build full file path
+            // Build full file path with security validation
             let file_path = if self.metainfo.info.is_single_file {
+                // Validate single file name
+                for component in std::path::Path::new(&self.metainfo.info.name).components() {
+                    Self::validate_path_component(&component)?;
+                }
                 self.save_dir.join(&self.metainfo.info.name)
             } else {
+                // Validate torrent name and file path components
+                for component in std::path::Path::new(&self.metainfo.info.name).components() {
+                    Self::validate_path_component(&component)?;
+                }
+                for component in std::path::Path::new(&file_info.path).components() {
+                    Self::validate_path_component(&component)?;
+                }
                 self.save_dir
                     .join(&self.metainfo.info.name)
                     .join(&file_info.path)
@@ -490,9 +550,19 @@ impl PieceManager {
         for (file_idx, file_offset, length) in files_for_piece {
             let file_info = &self.metainfo.info.files[file_idx];
 
+            // Build and validate file path (security check)
             let file_path = if self.metainfo.info.is_single_file {
+                for component in std::path::Path::new(&self.metainfo.info.name).components() {
+                    Self::validate_path_component(&component)?;
+                }
                 self.save_dir.join(&self.metainfo.info.name)
             } else {
+                for component in std::path::Path::new(&self.metainfo.info.name).components() {
+                    Self::validate_path_component(&component)?;
+                }
+                for component in std::path::Path::new(&file_info.path).components() {
+                    Self::validate_path_component(&component)?;
+                }
                 self.save_dir
                     .join(&self.metainfo.info.name)
                     .join(&file_info.path)

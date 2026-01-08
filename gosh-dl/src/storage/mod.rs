@@ -182,6 +182,8 @@ mod tests {
                 referer: None,
                 headers: vec![],
             },
+            torrent_info: None,
+            peers: None,
             created_at: Utc::now(),
             completed_at: None,
         }

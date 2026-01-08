@@ -233,7 +233,7 @@ impl DownloadEngine {
                         selected: true,
                     })
                     .collect(),
-                piece_length: metainfo.info.piece_length as u64,
+                piece_length: metainfo.info.piece_length,
                 pieces_count: metainfo.info.pieces.len() / 20,
                 private: metainfo.info.private,
             }),
@@ -714,7 +714,7 @@ impl DownloadEngine {
                     h.cancel_token.cancel();
                 }
                 DownloadHandle::Torrent(h) => {
-                    let _ = h.downloader.stop();
+                    drop(h.downloader.stop());
                     h.task.abort();
                 }
             }
@@ -856,7 +856,7 @@ impl DownloadEngine {
                     ).await;
                 }
                 DownloadHandle::Torrent(h) => {
-                    let _ = h.downloader.stop();
+                    drop(h.downloader.stop());
                     // Wait for task to finish (with timeout)
                     let _ = tokio::time::timeout(
                         std::time::Duration::from_secs(5),

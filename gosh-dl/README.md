@@ -1,10 +1,64 @@
 # gosh-dl
 
-A fast, safe, and reliable download engine written in Rust.
+A fast, safe, and reliable download engine written in Rust. Built as a modern, embeddable alternative to aria2.
 
 [![Crates.io](https://img.shields.io/crates/v/gosh-dl.svg)](https://crates.io/crates/gosh-dl)
 [![Documentation](https://docs.rs/gosh-dl/badge.svg)](https://docs.rs/gosh-dl)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Why gosh-dl?
+
+We built gosh-dl because integrating aria2 into applications comes with significant pain points:
+
+### The Problem with aria2
+
+[aria2](https://aria2.github.io/) is an excellent standalone download utility, but using it as an embedded download engine in applications is painful:
+
+| Challenge | aria2 | gosh-dl |
+|-----------|-------|---------|
+| **Integration** | Spawns external process, requires JSON-RPC over HTTP/WebSocket | Native library, direct function calls |
+| **Deployment** | Must bundle 5+ platform-specific binaries (Linux, macOS, Windows x ARM/x64) | Single Rust crate, compiles for any target |
+| **Binary Size** | ~8MB per platform binary | Compiles into your app, no extra binaries |
+| **Process Management** | Must handle process lifecycle, crashes, zombies | No processes to manage |
+| **IPC Overhead** | JSON serialization + HTTP roundtrip for every call | Zero-cost async function calls |
+| **Error Handling** | Parse JSON error responses, handle connection failures | Native Rust `Result<T, E>` types |
+| **Type Safety** | Stringly-typed JSON API | Fully typed Rust API with compile-time checks |
+| **Memory Safety** | C++ codebase | Rust with no unsafe in core paths |
+
+### Real-World Pain We Solved
+
+When building [Gosh-Fetch](https://github.com/goshitsarch-eng/Gosh-Fetch), we experienced these aria2 issues firsthand:
+
+1. **Build Complexity**: Our CI/CD had to download and bundle aria2 binaries for 6 different platform/architecture combinations
+2. **Startup Latency**: Spawning aria2 and waiting for RPC to be ready added 500ms+ to app startup
+3. **Crash Recovery**: When aria2 crashed, we lost download state and had to implement complex recovery logic
+4. **Resource Usage**: Running a separate process meant duplicate memory usage and context switching overhead
+5. **Cross-Platform Bugs**: aria2 behaved differently across platforms, requiring platform-specific workarounds
+
+### gosh-dl Advantages
+
+```
+Your App                          Your App + aria2
+┌─────────────────────┐           ┌─────────────────────┐
+│                     │           │                     │
+│   Your Rust Code    │           │   Your Rust Code    │
+│         │           │           │         │           │
+│         ▼           │           │         ▼           │
+│   ┌───────────┐     │           │   JSON-RPC Client   │
+│   │  gosh-dl  │     │           │         │           │
+│   │ (library) │     │           └─────────┼───────────┘
+│   └───────────┘     │                     │ HTTP/WS
+│                     │                     ▼
+└─────────────────────┘           ┌─────────────────────┐
+                                  │   aria2c process    │
+ Single process                   │   (external bin)    │
+ ~2MB additional code             └─────────────────────┘
+ Direct function calls
+ Shared memory                     Two processes
+                                   ~8MB aria2 binary
+                                   IPC serialization
+                                   Separate memory space
+```
 
 ## Features
 
@@ -31,7 +85,7 @@ A fast, safe, and reliable download engine written in Rust.
 
 - **Memory-safe**: Written in Rust with no unsafe code in core paths
 
-- **Async**: Built on Tokio for efficient concurrent downloads
+- **Async-native**: Built on Tokio for efficient concurrent downloads
 
 ## Installation
 
@@ -133,21 +187,46 @@ while let Ok(event) = events.recv().await {
 }
 ```
 
+## Migrating from aria2
+
+If you're currently using aria2 via JSON-RPC, gosh-dl provides a familiar API:
+
+| aria2 RPC | gosh-dl |
+|-----------|---------|
+| `aria2.addUri(urls)` | `engine.add_http(url, opts)` |
+| `aria2.addTorrent(torrent)` | `engine.add_torrent(bytes, opts)` |
+| `aria2.pause(gid)` | `engine.pause(id)` |
+| `aria2.unpause(gid)` | `engine.resume(id)` |
+| `aria2.remove(gid)` | `engine.cancel(id, false)` |
+| `aria2.tellStatus(gid)` | `engine.status(id)` |
+| `aria2.tellActive()` | `engine.active()` |
+| `aria2.getGlobalStat()` | `engine.global_stats()` |
+
 ## Building
 
 ```bash
 # Build
 cargo build --release
 
-# Run tests
+# Run tests (98 total: 79 unit + 18 integration + 1 doc test)
 cargo test
 
 # Generate docs
 cargo doc --open
 ```
 
-See [BUILDING.md](BUILDING.md) for detailed build instructions and architecture documentation.
+See [technical_spec.md](technical_spec.md) for detailed build instructions and architecture documentation.
+
+## Contributing
+
+Contributions are welcome! Please see [technical_spec.md](technical_spec.md) for development setup and guidelines.
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- Inspired by the excellent work of the [aria2](https://aria2.github.io/) project
+- Built with [Tokio](https://tokio.rs/) for async runtime
+- Uses [mainline](https://crates.io/crates/mainline) for DHT support

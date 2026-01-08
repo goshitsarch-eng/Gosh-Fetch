@@ -92,8 +92,13 @@ impl DhtClient {
         }
 
         // Convert Sha1Hash to mainline Id
-        let id = Id::from_bytes(info_hash)
-            .expect("Sha1Hash should always be 20 bytes");
+        let id = match Id::from_bytes(info_hash) {
+            Ok(id) => id,
+            Err(e) => {
+                tracing::error!("Failed to convert info_hash to DHT Id: {}", e);
+                return vec![];
+            }
+        };
 
         // Collect peers from the DHT lookup
         // The mainline crate's get_peers returns Result<IntoIter<Vec<SocketAddr>>>
@@ -158,8 +163,12 @@ impl DhtClient {
             ));
         }
 
-        let id = Id::from_bytes(info_hash)
-            .expect("Sha1Hash should always be 20 bytes");
+        let id = Id::from_bytes(info_hash).map_err(|e| {
+            EngineError::protocol(
+                ProtocolErrorKind::DhtError,
+                format!("Failed to convert info_hash to DHT Id: {}", e),
+            )
+        })?;
 
         // Announce with our listen port
         // The mainline crate's announce_peer returns a result we can map

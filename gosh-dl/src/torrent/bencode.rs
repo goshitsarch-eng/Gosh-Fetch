@@ -11,6 +11,10 @@
 //! - Dicts:      d<pairs>e         Example: d3:cow3:moo4:spam4:eggse
 
 use std::collections::BTreeMap;
+
+/// Maximum allowed length for a bencode string (100 MiB)
+/// This prevents malicious torrents from causing memory exhaustion
+const MAX_STRING_LENGTH: usize = 100 * 1024 * 1024;
 use std::fmt;
 
 use crate::error::{EngineError, ProtocolErrorKind, Result};
@@ -173,6 +177,17 @@ impl BencodeValue {
                 "Invalid string length number",
             )
         })?;
+
+        // Prevent memory exhaustion attacks with extremely large strings
+        if len > MAX_STRING_LENGTH {
+            return Err(EngineError::protocol(
+                ProtocolErrorKind::BencodeParse,
+                format!(
+                    "String length {} exceeds maximum allowed {} bytes",
+                    len, MAX_STRING_LENGTH
+                ),
+            ));
+        }
 
         let start = colon + 1;
         let end = start + len;

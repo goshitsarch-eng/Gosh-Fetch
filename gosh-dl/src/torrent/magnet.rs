@@ -294,9 +294,9 @@ fn base32_decode(input: &str) -> Option<Sha1Hash> {
     }
 }
 
-/// URL-decode a string
+/// URL-decode a string with proper UTF-8 handling
 fn url_decode(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
+    let mut bytes = Vec::with_capacity(s.len());
     let mut chars = s.chars().peekable();
 
     while let Some(c) = chars.next() {
@@ -315,21 +315,25 @@ fn url_decode(s: &str) -> String {
             }
             if hex.len() == 2 {
                 if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                    result.push(byte as char);
+                    bytes.push(byte);
                     continue;
                 }
             }
             // Invalid escape, keep as-is
-            result.push('%');
-            result.push_str(&hex);
+            bytes.push(b'%');
+            bytes.extend(hex.as_bytes());
         } else if c == '+' {
-            result.push(' ');
+            bytes.push(b' ');
         } else {
-            result.push(c);
+            // Non-ASCII chars are multi-byte, so we need to encode them properly
+            let mut buf = [0u8; 4];
+            let encoded = c.encode_utf8(&mut buf);
+            bytes.extend(encoded.as_bytes());
         }
     }
 
-    result
+    // Convert bytes to string, using lossy conversion for invalid UTF-8
+    String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).to_string())
 }
 
 /// URL-encode a string

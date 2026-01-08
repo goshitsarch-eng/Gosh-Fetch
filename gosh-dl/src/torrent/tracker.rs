@@ -20,6 +20,14 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Magic constant for UDP tracker protocol
 const UDP_PROTOCOL_ID: i64 = 0x41727101980;
 
+/// Minimum allowed announce interval (60 seconds)
+/// Prevents aggressive tracker spam
+const MIN_ANNOUNCE_INTERVAL: u32 = 60;
+
+/// Maximum allowed announce interval (3600 seconds = 1 hour)
+/// Prevents excessively long intervals that could make peers stale
+const MAX_ANNOUNCE_INTERVAL: u32 = 3600;
+
 /// Tracker client for HTTP and UDP trackers
 pub struct TrackerClient {
     http_client: reqwest::Client,
@@ -309,8 +317,8 @@ impl TrackerClient {
             }
         }
 
-        // Parse interval
-        let interval = dict
+        // Parse interval and clamp to safe range
+        let raw_interval = dict
             .get(b"interval".as_slice())
             .and_then(|v| v.as_uint())
             .ok_or_else(|| {
@@ -319,11 +327,12 @@ impl TrackerClient {
                     "Missing 'interval' in tracker response",
                 )
             })? as u32;
+        let interval = raw_interval.clamp(MIN_ANNOUNCE_INTERVAL, MAX_ANNOUNCE_INTERVAL);
 
         let min_interval = dict
             .get(b"min interval".as_slice())
             .and_then(|v| v.as_uint())
-            .map(|v| v as u32);
+            .map(|v| (v as u32).clamp(MIN_ANNOUNCE_INTERVAL, MAX_ANNOUNCE_INTERVAL));
 
         let tracker_id = dict
             .get(b"tracker id".as_slice())
@@ -619,10 +628,12 @@ impl TrackerClient {
                 )
             })?;
 
-        if len < 20 {
+        // Minimum response is 8 bytes (action + transaction_id) for error responses
+        // Announce responses need 20 bytes minimum
+        if len < 8 {
             return Err(EngineError::protocol(
                 ProtocolErrorKind::TrackerError,
-                "UDP announce response too short",
+                "UDP announce response too short (< 8 bytes)",
             ));
         }
 
@@ -632,8 +643,12 @@ impl TrackerClient {
             i32::from_be_bytes([response[4], response[5], response[6], response[7]]);
 
         if action == 3 {
-            // Error
-            let error_msg = String::from_utf8_lossy(&response[8..len]).to_string();
+            // Error response - message starts at byte 8 (may be empty)
+            let error_msg = if len > 8 {
+                String::from_utf8_lossy(&response[8..len]).to_string()
+            } else {
+                String::from("(no message)")
+            };
             return Err(EngineError::protocol(
                 ProtocolErrorKind::TrackerError,
                 format!("UDP tracker error: {}", error_msg),
@@ -647,6 +662,14 @@ impl TrackerClient {
             ));
         }
 
+        // Announce response needs at least 20 bytes
+        if len < 20 {
+            return Err(EngineError::protocol(
+                ProtocolErrorKind::TrackerError,
+                "UDP announce response too short (< 20 bytes)",
+            ));
+        }
+
         if resp_transaction_id != transaction_id {
             return Err(EngineError::protocol(
                 ProtocolErrorKind::TrackerError,
@@ -654,7 +677,10 @@ impl TrackerClient {
             ));
         }
 
-        let interval = u32::from_be_bytes([response[8], response[9], response[10], response[11]]);
+        let raw_interval =
+            u32::from_be_bytes([response[8], response[9], response[10], response[11]]);
+        // Clamp interval to safe range (prevents tracker spam and stale peers)
+        let interval = raw_interval.clamp(MIN_ANNOUNCE_INTERVAL, MAX_ANNOUNCE_INTERVAL);
         let incomplete =
             u32::from_be_bytes([response[12], response[13], response[14], response[15]]);
         let complete =

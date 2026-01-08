@@ -165,19 +165,30 @@ impl HttpDownloader {
             })?;
         }
 
-        // Validate save path is within allowed directory (security)
-        let save_path = save_dir.join(&final_filename);
-        let _canonical_dir = save_dir.canonicalize().unwrap_or_else(|_| save_dir.to_path_buf());
-        let _canonical_path = save_path.parent().unwrap_or(save_dir);
-
-        // Simple path traversal check
-        if final_filename.contains("..") || final_filename.starts_with('/') {
-            return Err(EngineError::storage(
-                StorageErrorKind::PathTraversal,
-                &save_path,
-                "Invalid filename: potential path traversal",
-            ));
+        // Validate filename for path traversal attacks (security)
+        // Check each path component to prevent directory traversal
+        use std::path::Component;
+        for component in Path::new(&final_filename).components() {
+            match component {
+                Component::ParentDir => {
+                    return Err(EngineError::storage(
+                        StorageErrorKind::PathTraversal,
+                        Path::new(&final_filename),
+                        "Invalid filename: contains parent directory reference (..)",
+                    ));
+                }
+                Component::RootDir | Component::Prefix(_) => {
+                    return Err(EngineError::storage(
+                        StorageErrorKind::PathTraversal,
+                        Path::new(&final_filename),
+                        "Invalid filename: contains absolute path",
+                    ));
+                }
+                _ => {}
+            }
         }
+
+        let save_path = save_dir.join(&final_filename);
 
         // Use .part extension during download
         let part_path = save_path.with_extension(
@@ -252,9 +263,6 @@ impl HttpDownloader {
 
         // Download with progress tracking
         let downloaded = Arc::new(AtomicU64::new(existing_size));
-        let _start_time = Instant::now();
-        let _last_progress_time = Arc::new(std::sync::Mutex::new(Instant::now()));
-        let _last_progress_bytes = Arc::new(AtomicU64::new(existing_size));
 
         // Stream the response body
         let result = self
@@ -311,7 +319,7 @@ impl HttpDownloader {
         response: Response,
         mut file: File,
         downloaded: Arc<AtomicU64>,
-        _total_size: Option<u64>,
+        total_size: Option<u64>,
         cancel_token: CancellationToken,
         progress_callback: F,
     ) -> Result<()>
@@ -385,6 +393,19 @@ impl HttpDownloader {
         // Final progress update
         let final_size = downloaded.load(Ordering::Relaxed);
         progress_callback(final_size, 0);
+
+        // Validate received size matches expected (if known)
+        if let Some(expected) = total_size {
+            if final_size < expected {
+                return Err(EngineError::network(
+                    NetworkErrorKind::Other,
+                    format!(
+                        "Incomplete download: received {} bytes, expected {} bytes",
+                        final_size, expected
+                    ),
+                ));
+            }
+        }
 
         Ok(())
     }

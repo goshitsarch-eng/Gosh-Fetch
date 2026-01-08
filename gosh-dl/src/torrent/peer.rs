@@ -679,8 +679,20 @@ impl PeerConnection {
                 }
             }
             PeerMessage::Bitfield { bitfield } => {
-                // Copy bitfield
-                for (i, byte) in bitfield.iter().enumerate() {
+                // Validate bitfield size (should be ceil(num_pieces / 8) bytes)
+                let expected_size = self.num_pieces.div_ceil(8);
+                if bitfield.len() != expected_size {
+                    tracing::warn!(
+                        "Peer sent bitfield with wrong size: expected {} bytes, got {}",
+                        expected_size,
+                        bitfield.len()
+                    );
+                    // Still process it but only up to the valid portion
+                }
+
+                // Copy bitfield (limit to prevent DoS from oversized bitfields)
+                let max_bytes = expected_size.min(bitfield.len());
+                for (i, byte) in bitfield.iter().take(max_bytes).enumerate() {
                     for bit in 0..8 {
                         let piece_idx = i * 8 + bit;
                         if piece_idx < self.num_pieces {

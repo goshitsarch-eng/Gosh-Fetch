@@ -162,6 +162,28 @@ impl Metainfo {
                 )
             })?;
 
+        // Validate piece length is non-zero (prevents division by zero)
+        if piece_length == 0 {
+            return Err(EngineError::protocol(
+                ProtocolErrorKind::InvalidTorrent,
+                "Invalid 'piece length': must be greater than zero",
+            ));
+        }
+
+        // Validate piece length is reasonable (16 KiB to 64 MiB)
+        // BitTorrent typically uses 256 KiB to 16 MiB piece sizes
+        const MIN_PIECE_LENGTH: u64 = 16 * 1024; // 16 KiB
+        const MAX_PIECE_LENGTH: u64 = 64 * 1024 * 1024; // 64 MiB
+        if !(MIN_PIECE_LENGTH..=MAX_PIECE_LENGTH).contains(&piece_length) {
+            tracing::warn!(
+                "Unusual piece length {} (typical range: {} - {})",
+                piece_length,
+                MIN_PIECE_LENGTH,
+                MAX_PIECE_LENGTH
+            );
+            // Don't reject, just warn - some old torrents have unusual sizes
+        }
+
         // Pieces (required) - concatenated 20-byte SHA-1 hashes
         let pieces_bytes = dict
             .get(b"pieces".as_slice())
