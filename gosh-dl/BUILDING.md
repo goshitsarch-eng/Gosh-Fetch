@@ -128,7 +128,7 @@ cargo install cargo-doc
 |-------|--------|-------------|
 | Phase 1 | ✅ COMPLETE | Core Infrastructure & Basic HTTP |
 | Phase 2 | ✅ COMPLETE | Segmented HTTP & Reliability |
-| Phase 3 | 🔲 NOT STARTED | BitTorrent Core |
+| Phase 3 | ✅ COMPLETE | BitTorrent Core |
 | Phase 4 | 🔲 NOT STARTED | BitTorrent P2P Features |
 | Phase 5 | 🔲 NOT STARTED | Optimization & Distribution |
 
@@ -155,12 +155,13 @@ gosh-dl/
 │   │   └── resume.rs          # Resume detection ✅
 │   │
 │   ├── torrent/               # BitTorrent engine
-│   │   ├── mod.rs             # TorrentDownloader [Phase 3]
-│   │   ├── bencode.rs         # Bencode parser [Phase 3]
-│   │   ├── metainfo.rs        # Torrent file parser [Phase 3]
-│   │   ├── tracker.rs         # HTTP/UDP tracker clients [Phase 3]
-│   │   ├── peer.rs            # Peer wire protocol [Phase 3]
-│   │   ├── piece.rs           # Piece management [Phase 3]
+│   │   ├── mod.rs             # TorrentDownloader ✅
+│   │   ├── bencode.rs         # Bencode parser ✅
+│   │   ├── metainfo.rs        # Torrent file parser ✅
+│   │   ├── magnet.rs          # Magnet URI parser ✅
+│   │   ├── tracker.rs         # HTTP/UDP tracker clients ✅
+│   │   ├── peer.rs            # Peer wire protocol ✅
+│   │   ├── piece.rs           # Piece management ✅
 │   │   ├── dht.rs             # DHT client [Phase 4]
 │   │   ├── pex.rs             # Peer Exchange [Phase 4]
 │   │   └── lpd.rs             # Local Peer Discovery [Phase 4]
@@ -713,7 +714,7 @@ cargo bench segment
 
 ## Phase 3: BitTorrent Core
 
-**Status: 🔲 NOT STARTED**
+**Status: ✅ COMPLETE**
 
 ### Goals
 - Bencode parser
@@ -723,17 +724,55 @@ cargo bench segment
 - Peer wire protocol
 - Piece management with SHA-1 verification
 
-### Files to Create
+### Files Created
 
 | File | Purpose |
 |------|---------|
-| `src/torrent/bencode.rs` | Bencode serialization/deserialization |
-| `src/torrent/metainfo.rs` | .torrent file parser |
-| `src/torrent/magnet.rs` | Magnet URI parser |
-| `src/torrent/tracker.rs` | HTTP/UDP tracker clients |
-| `src/torrent/peer.rs` | Peer wire protocol |
-| `src/torrent/piece.rs` | Piece management |
+| `src/torrent/bencode.rs` | Bencode serialization/deserialization with raw byte preservation |
+| `src/torrent/metainfo.rs` | .torrent file parser with info_hash calculation |
+| `src/torrent/magnet.rs` | Magnet URI parser (hex and base32 hash support) |
+| `src/torrent/tracker.rs` | HTTP (BEP 3) and UDP (BEP 15) tracker clients |
+| `src/torrent/peer.rs` | Peer wire protocol with extension support |
+| `src/torrent/piece.rs` | Piece management with rarest-first selection |
 | `src/torrent/mod.rs` | TorrentDownloader coordinator |
+
+### Implementation Summary
+
+**Bencode Parser (`src/torrent/bencode.rs`):**
+- Custom parser that preserves raw bytes for info_hash calculation
+- Supports integers, byte strings, lists, and dictionaries
+- Validates dictionary key ordering
+- Provides encoding and accessor methods
+
+**Metainfo Parser (`src/torrent/metainfo.rs`):**
+- Parses single-file and multi-file torrents
+- Calculates SHA-1 info_hash from raw info dictionary
+- Supports announce-list (BEP 12)
+- Provides piece range and file mapping utilities
+
+**Magnet URI Parser (`src/torrent/magnet.rs`):**
+- Parses magnet URIs with info_hash (hex and base32)
+- Supports display name, trackers, web seeds
+- URL encoding/decoding utilities
+
+**Tracker Client (`src/torrent/tracker.rs`):**
+- HTTP tracker announce and scrape
+- UDP tracker protocol (BEP 15) with connection handshake
+- Compact and dictionary peer response parsing
+- Azureus-style peer ID generation
+
+**Peer Wire Protocol (`src/torrent/peer.rs`):**
+- Full message encoding/decoding
+- Handshake with extension negotiation
+- Connection state management (choking, interested)
+- Bitfield tracking for peer pieces
+
+**Piece Manager (`src/torrent/piece.rs`):**
+- Block-level piece assembly
+- SHA-1 hash verification
+- Rarest-first piece selection
+- Endgame mode support
+- File writing with proper offset handling
 
 ### Bencode Format
 
@@ -1348,10 +1387,10 @@ cargo publish
 
 | Category | Count | Description |
 |----------|-------|-------------|
-| Unit Tests | 24 | Core functionality tests in `src/` |
+| Unit Tests | 60 | Core functionality tests in `src/` |
 | Integration Tests | 18 | End-to-end tests using wiremock |
 | Doc Tests | 1 | Example code verification |
-| **Total** | **43** | All tests passing |
+| **Total** | **79** | All tests passing |
 
 ### Running Tests
 
