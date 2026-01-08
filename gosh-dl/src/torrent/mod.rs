@@ -340,10 +340,11 @@ impl TorrentDownloader {
     }
 
     /// Start the download
-    #[allow(clippy::await_holding_lock)]
     pub async fn start(&self) -> Result<()> {
         // Verify existing files if we have metainfo
-        if let Some(ref pm) = *self.piece_manager.read() {
+        // Clone the Arc to avoid holding the lock across await
+        let pm_clone = self.piece_manager.read().clone();
+        if let Some(pm) = pm_clone {
             *self.state.write() = TorrentState::Checking;
 
             let valid = pm.verify_existing().await?;
@@ -370,7 +371,6 @@ impl TorrentDownloader {
     }
 
     /// Announce to all known trackers
-    #[allow(clippy::await_holding_lock)]
     async fn announce_to_trackers(&self, event: AnnounceEvent) -> Result<()> {
         let trackers = self.get_tracker_urls();
 
@@ -382,14 +382,16 @@ impl TorrentDownloader {
             return Ok(());
         }
 
-        let pm_guard = self.piece_manager.read();
-        let (downloaded, left) = if let Some(ref pm) = *pm_guard {
-            let progress = pm.progress();
-            (progress.verified_bytes, progress.bytes_remaining())
-        } else {
-            (0, 0)
+        // Get progress data in a block so the lock is dropped before await
+        let (downloaded, left) = {
+            let pm_guard = self.piece_manager.read();
+            if let Some(ref pm) = *pm_guard {
+                let progress = pm.progress();
+                (progress.verified_bytes, progress.bytes_remaining())
+            } else {
+                (0, 0)
+            }
         };
-        drop(pm_guard);
 
         let request = AnnounceRequest {
             info_hash: self.info_hash,

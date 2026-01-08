@@ -53,6 +53,7 @@ pub use error::{EngineError, NetworkErrorKind, ProtocolErrorKind, Result, Storag
 pub use types::{
     DownloadEvent, DownloadId, DownloadKind, DownloadMetadata, DownloadOptions, DownloadProgress,
     DownloadState, DownloadStatus, GlobalStats, PeerInfo, TorrentFile, TorrentInfo,
+    TorrentStatusInfo,
 };
 
 // Storage exports

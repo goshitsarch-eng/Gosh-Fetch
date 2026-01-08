@@ -7,9 +7,11 @@
 use crate::config::EngineConfig;
 use crate::error::{EngineError, Result};
 use crate::http::HttpDownloader;
+use crate::torrent::{MagnetUri, Metainfo, TorrentConfig, TorrentDownloader};
 use crate::types::{
     DownloadEvent, DownloadId, DownloadKind, DownloadMetadata, DownloadOptions,
-    DownloadProgress, DownloadState, DownloadStatus, GlobalStats,
+    DownloadProgress, DownloadState, DownloadStatus, GlobalStats, TorrentFile,
+    TorrentStatusInfo,
 };
 
 use chrono::Utc;
@@ -31,12 +33,18 @@ struct ManagedDownload {
 /// Handle to control a running download
 enum DownloadHandle {
     Http(HttpDownloadHandle),
-    // Torrent(TorrentDownloadHandle), // TODO: Phase 3
+    Torrent(TorrentDownloadHandle),
 }
 
 /// Handle for an HTTP download task
 struct HttpDownloadHandle {
     cancel_token: tokio_util::sync::CancellationToken,
+    task: tokio::task::JoinHandle<Result<()>>,
+}
+
+/// Handle for a torrent download
+struct TorrentDownloadHandle {
+    downloader: Arc<TorrentDownloader>,
     task: tokio::task::JoinHandle<Result<()>>,
 }
 
@@ -149,6 +157,8 @@ impl DownloadEngine {
                 referer: options.referer.clone(),
                 headers: options.headers.clone(),
             },
+            torrent_info: None,
+            peers: None,
             created_at: Utc::now(),
             completed_at: None,
         };
@@ -172,6 +182,287 @@ impl DownloadEngine {
         self.start_download(id, url.to_string(), options).await?;
 
         Ok(id)
+    }
+
+    /// Add a BitTorrent download from torrent file data
+    pub async fn add_torrent(
+        self: &Arc<Self>,
+        torrent_data: &[u8],
+        options: DownloadOptions,
+    ) -> Result<DownloadId> {
+        // Parse torrent file
+        let metainfo = Metainfo::parse(torrent_data)?;
+
+        // Generate download ID
+        let id = DownloadId::new();
+
+        // Determine save directory
+        let save_dir = options
+            .save_dir
+            .clone()
+            .unwrap_or_else(|| self.config.read().download_dir.clone());
+
+        // Create download status
+        let status = DownloadStatus {
+            id,
+            kind: DownloadKind::Torrent,
+            state: DownloadState::Queued,
+            progress: DownloadProgress::default(),
+            metadata: DownloadMetadata {
+                name: metainfo.info.name.clone(),
+                url: None,
+                magnet_uri: None,
+                info_hash: Some(hex::encode(metainfo.info_hash)),
+                save_dir: save_dir.clone(),
+                filename: Some(metainfo.info.name.clone()),
+                user_agent: options.user_agent.clone(),
+                referer: None,
+                headers: Vec::new(),
+            },
+            torrent_info: Some(TorrentStatusInfo {
+                files: metainfo
+                    .info
+                    .files
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| TorrentFile {
+                        index: i,
+                        path: f.path.clone(),
+                        size: f.length,
+                        completed: 0,
+                        selected: true,
+                    })
+                    .collect(),
+                piece_length: metainfo.info.piece_length as u64,
+                pieces_count: metainfo.info.pieces.len() / 20,
+                private: metainfo.info.private,
+            }),
+            peers: Some(Vec::new()),
+            created_at: Utc::now(),
+            completed_at: None,
+        };
+
+        // Insert into downloads map
+        {
+            let mut downloads = self.downloads.write();
+            downloads.insert(
+                id,
+                ManagedDownload {
+                    status,
+                    handle: None,
+                },
+            );
+        }
+
+        // Emit event
+        let _ = self.event_tx.send(DownloadEvent::Added { id });
+
+        // Start the torrent download
+        self.start_torrent(id, metainfo, save_dir, options).await?;
+
+        Ok(id)
+    }
+
+    /// Add a BitTorrent download from a magnet URI
+    pub async fn add_magnet(
+        self: &Arc<Self>,
+        magnet_uri: &str,
+        options: DownloadOptions,
+    ) -> Result<DownloadId> {
+        // Parse magnet URI
+        let magnet = MagnetUri::parse(magnet_uri)?;
+
+        // Generate download ID
+        let id = DownloadId::new();
+
+        // Determine save directory
+        let save_dir = options
+            .save_dir
+            .clone()
+            .unwrap_or_else(|| self.config.read().download_dir.clone());
+
+        // Create download status
+        let status = DownloadStatus {
+            id,
+            kind: DownloadKind::Magnet,
+            state: DownloadState::Queued,
+            progress: DownloadProgress::default(),
+            metadata: DownloadMetadata {
+                name: magnet.name(),
+                url: None,
+                magnet_uri: Some(magnet_uri.to_string()),
+                info_hash: Some(hex::encode(magnet.info_hash)),
+                save_dir: save_dir.clone(),
+                filename: magnet.display_name.clone(),
+                user_agent: options.user_agent.clone(),
+                referer: None,
+                headers: Vec::new(),
+            },
+            torrent_info: None, // Will be populated when metadata is received
+            peers: Some(Vec::new()),
+            created_at: Utc::now(),
+            completed_at: None,
+        };
+
+        // Insert into downloads map
+        {
+            let mut downloads = self.downloads.write();
+            downloads.insert(
+                id,
+                ManagedDownload {
+                    status,
+                    handle: None,
+                },
+            );
+        }
+
+        // Emit event
+        let _ = self.event_tx.send(DownloadEvent::Added { id });
+
+        // Start the magnet download
+        self.start_magnet(id, magnet, save_dir, options).await?;
+
+        Ok(id)
+    }
+
+    /// Start a torrent download task
+    async fn start_torrent(
+        self: &Arc<Self>,
+        id: DownloadId,
+        metainfo: Metainfo,
+        save_dir: std::path::PathBuf,
+        _options: DownloadOptions,
+    ) -> Result<()> {
+        let config = self.config.read();
+        let torrent_config = TorrentConfig {
+            max_peers: config.max_peers,
+            enable_dht: config.enable_dht,
+            enable_pex: config.enable_pex,
+            enable_lpd: config.enable_lpd,
+            seed_ratio: Some(config.seed_ratio),
+            max_upload_speed: config.global_upload_limit.unwrap_or(0),
+            max_download_speed: config.global_download_limit.unwrap_or(0),
+            ..TorrentConfig::default()
+        };
+        drop(config);
+
+        let downloader = Arc::new(TorrentDownloader::from_torrent(
+            id,
+            metainfo,
+            save_dir,
+            torrent_config,
+            self.event_tx.clone(),
+        )?);
+
+        let downloader_clone = Arc::clone(&downloader);
+        let engine = Arc::clone(self);
+
+        // Update state
+        self.update_state(id, DownloadState::Connecting)?;
+
+        let task = tokio::spawn(async move {
+            // Start the download
+            if let Err(e) = downloader_clone.start().await {
+                let error_msg = e.to_string();
+                engine.update_state(
+                    id,
+                    DownloadState::Error {
+                        kind: format!("{:?}", e),
+                        message: error_msg.clone(),
+                        retryable: e.is_retryable(),
+                    },
+                )?;
+                let _ = engine.event_tx.send(DownloadEvent::Failed {
+                    id,
+                    error: error_msg,
+                    retryable: e.is_retryable(),
+                });
+            }
+            Ok(())
+        });
+
+        // Store the handle
+        {
+            let mut downloads = self.downloads.write();
+            if let Some(download) = downloads.get_mut(&id) {
+                download.handle = Some(DownloadHandle::Torrent(TorrentDownloadHandle {
+                    downloader,
+                    task,
+                }));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Start a magnet download task
+    async fn start_magnet(
+        self: &Arc<Self>,
+        id: DownloadId,
+        magnet: MagnetUri,
+        save_dir: std::path::PathBuf,
+        _options: DownloadOptions,
+    ) -> Result<()> {
+        let config = self.config.read();
+        let torrent_config = TorrentConfig {
+            max_peers: config.max_peers,
+            enable_dht: config.enable_dht,
+            enable_pex: config.enable_pex,
+            enable_lpd: config.enable_lpd,
+            seed_ratio: Some(config.seed_ratio),
+            max_upload_speed: config.global_upload_limit.unwrap_or(0),
+            max_download_speed: config.global_download_limit.unwrap_or(0),
+            ..TorrentConfig::default()
+        };
+        drop(config);
+
+        let downloader = Arc::new(TorrentDownloader::from_magnet(
+            id,
+            magnet,
+            save_dir,
+            torrent_config,
+            self.event_tx.clone(),
+        )?);
+
+        let downloader_clone = Arc::clone(&downloader);
+        let engine = Arc::clone(self);
+
+        // Update state
+        self.update_state(id, DownloadState::Connecting)?;
+
+        let task = tokio::spawn(async move {
+            // Start the download
+            if let Err(e) = downloader_clone.start().await {
+                let error_msg = e.to_string();
+                engine.update_state(
+                    id,
+                    DownloadState::Error {
+                        kind: format!("{:?}", e),
+                        message: error_msg.clone(),
+                        retryable: e.is_retryable(),
+                    },
+                )?;
+                let _ = engine.event_tx.send(DownloadEvent::Failed {
+                    id,
+                    error: error_msg,
+                    retryable: e.is_retryable(),
+                });
+            }
+            Ok(())
+        });
+
+        // Store the handle
+        {
+            let mut downloads = self.downloads.write();
+            if let Some(download) = downloads.get_mut(&id) {
+                download.handle = Some(DownloadHandle::Torrent(TorrentDownloadHandle {
+                    downloader,
+                    task,
+                }));
+            }
+        }
+
+        Ok(())
     }
 
     /// Start a download task
@@ -335,6 +626,10 @@ impl DownloadEngine {
                     h.cancel_token.cancel();
                     // Don't await the task here to avoid blocking
                 }
+                DownloadHandle::Torrent(h) => {
+                    h.downloader.pause();
+                    // Don't await the task
+                }
             }
         }
 
@@ -417,6 +712,10 @@ impl DownloadEngine {
             match handle {
                 DownloadHandle::Http(h) => {
                     h.cancel_token.cancel();
+                }
+                DownloadHandle::Torrent(h) => {
+                    let _ = h.downloader.stop();
+                    h.task.abort();
                 }
             }
         }
@@ -550,6 +849,14 @@ impl DownloadEngine {
             match handle {
                 DownloadHandle::Http(h) => {
                     h.cancel_token.cancel();
+                    // Wait for task to finish (with timeout)
+                    let _ = tokio::time::timeout(
+                        std::time::Duration::from_secs(5),
+                        h.task,
+                    ).await;
+                }
+                DownloadHandle::Torrent(h) => {
+                    let _ = h.downloader.stop();
                     // Wait for task to finish (with timeout)
                     let _ = tokio::time::timeout(
                         std::time::Duration::from_secs(5),

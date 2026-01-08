@@ -550,6 +550,8 @@ fn row_to_status(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadStatus> {
             referer,
             headers,
         },
+        torrent_info: None,
+        peers: None,
         created_at,
         completed_at,
     })
@@ -585,6 +587,8 @@ mod tests {
                 referer: None,
                 headers: vec![("X-Custom".to_string(), "value".to_string())],
             },
+            torrent_info: None,
+            peers: None,
             created_at: Utc::now(),
             completed_at: None,
         }

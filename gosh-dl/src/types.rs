@@ -190,10 +190,29 @@ pub struct DownloadStatus {
     pub progress: DownloadProgress,
     /// Metadata
     pub metadata: DownloadMetadata,
+    /// Torrent-specific info (only for torrent/magnet downloads)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub torrent_info: Option<TorrentStatusInfo>,
+    /// Connected peers (only for torrent downloads)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peers: Option<Vec<PeerInfo>>,
     /// When the download was created
     pub created_at: DateTime<Utc>,
     /// When the download completed (if completed)
     pub completed_at: Option<DateTime<Utc>>,
+}
+
+/// Torrent status information embedded in DownloadStatus
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TorrentStatusInfo {
+    /// Files in the torrent
+    pub files: Vec<TorrentFile>,
+    /// Piece length
+    pub piece_length: u64,
+    /// Number of pieces
+    pub pieces_count: usize,
+    /// Is private torrent
+    pub private: bool,
 }
 
 impl DownloadStatus {

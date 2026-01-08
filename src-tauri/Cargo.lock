@@ -1770,7 +1770,6 @@ dependencies = [
 [[package]]
 name = "gosh-dl"
 version = "0.1.0"
-source = "git+ssh://git@github.com/goshitsarch-eng/gosh-dl.git#8696606f48e0cb9d8f3760a8dff54fe1bba33013"
 dependencies = [
  "async-trait",
  "bitvec",
