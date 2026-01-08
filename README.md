@@ -18,7 +18,7 @@ We also provide Windows and macOS builds not as a compromise, but as an on-ramp.
 - Download HTTP/HTTPS, FTP, and BitTorrent files
 - Magnet link support with metadata retrieval
 - Multi-segment downloads for faster speeds
-- SHA-256/MD5 checksum verification support
+- Native Rust download engine - no external dependencies
 - Cross-platform: Windows, Linux, macOS
 - Light/Dark/System theme support
 - System tray integration with minimize-to-tray
@@ -47,6 +47,29 @@ We also provide Windows and macOS builds not as a compromise, but as an on-ramp.
 - Segments per download (1-64)
 - Global download/upload speed limits
 - Custom user agent support
+
+## Download Engine
+
+Gosh-Fetch uses [gosh-dl](https://github.com/goshitsarch-eng/gosh-dl), a native Rust download engine built specifically for this project.
+
+### Why a Native Engine?
+
+| Feature | gosh-dl | External Tools |
+|---------|---------|----------------|
+| No external binaries | Yes | No |
+| Memory safe | Yes (Rust) | Varies |
+| Single binary distribution | Yes | No |
+| Integrated error handling | Yes | Limited |
+| Custom protocol support | Easy to add | Depends |
+
+### gosh-dl Features
+
+- **HTTP/HTTPS**: Segmented downloads with automatic resume
+- **BitTorrent**: Full protocol support with DHT, PEX, LPD
+- **Async I/O**: Built on Tokio for efficient concurrent downloads
+- **Progress Events**: Real-time download status via event channels
+
+gosh-dl is licensed under MIT. See [gosh-dl repository](https://github.com/goshitsarch-eng/gosh-dl) for more details.
 
 ## Requirements
 
@@ -86,10 +109,10 @@ npm run tauri build
 
 ## Usage
 
-1. **Add Download** — Click the + button and enter a URL, magnet link, or select a torrent file
-2. **Monitor Progress** — View real-time speed, progress, and ETA for each download
-3. **Manage Downloads** — Pause, resume, or remove downloads individually or in batch
-4. **View Completed** — Access download history and open completed files
+1. **Add Download** - Click the + button and enter a URL, magnet link, or select a torrent file
+2. **Monitor Progress** - View real-time speed, progress, and ETA for each download
+3. **Manage Downloads** - Pause, resume, or remove downloads individually or in batch
+4. **View Completed** - Access download history and open completed files
 
 The download list auto-refreshes in real-time. Downloads use configurable multi-segment transfers for optimal performance.
 
@@ -99,27 +122,14 @@ The download list auto-refreshes in real-time. Downloads use configurable multi-
 - **Connection failed:** Unable to reach the server. Verify the URL and your network connection.
 - **Torrent has no seeds:** No peers available to download from. The torrent may be inactive.
 
-## Third-Party Software
+## Privacy
 
-### aria2
-
-This application uses [aria2](https://github.com/aria2/aria2) as its download engine.
-
-aria2 is licensed under the **GNU General Public License Version 2, June 1991**.
-
-Special thanks to the aria2 project. Gosh-Fetch is not affiliated with the aria2 project.
-
-### OpenSSL
-
-aria2 links with [OpenSSL](https://www.openssl.org) for TLS/SSL support.
-
-OpenSSL is licensed under the **Apache License, Version 2.0** (OpenSSL 3.0+) and the **OpenSSL License / SSLeay License** (dual BSD-style licenses for earlier versions).
-
-Special thanks to the OpenSSL project.
+- No telemetry or analytics
+- No data collection
+- No network activity unless explicitly initiated by you
+- All data stored locally on your device
 
 ## Disclaimer
-
-This application is an independent project and is not sponsored by, endorsed by, or affiliated with the aria2 project or the OpenSSL project.
 
 This software is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). It is provided "as is", without warranty of any kind, express or implied, including but not limited to the warranties of merchantability or fitness for a particular purpose. Use at your own risk.
 
@@ -127,20 +137,18 @@ This software is licensed under the GNU Affero General Public License v3.0 (AGPL
 
 AGPL-3.0 - See [LICENSE](LICENSE)
 
-Third-party licenses:
-- aria2: [LICENSE.aria2](LICENSE.aria2)
-- OpenSSL: [LICENSE.OpenSSL](LICENSE.OpenSSL)
+The gosh-dl download engine is licensed under MIT.
 
 ## Roadmap
 
 Planned features for future releases:
 
-- **Browser Extension** — One-click downloads from your browser
-- **Download Scheduler** — Schedule downloads for off-peak hours
-- **Bandwidth Scheduler** — Time-based speed limit profiles
-- **RSS Feed Support** — Automatic downloads from RSS/podcast feeds
-- **Download Categories** — Organize downloads by type with custom save locations
-- **Import/Export** — Backup and restore download history and settings
+- **Browser Extension** - One-click downloads from your browser
+- **Download Scheduler** - Schedule downloads for off-peak hours
+- **Bandwidth Scheduler** - Time-based speed limit profiles
+- **RSS Feed Support** - Automatic downloads from RSS/podcast feeds
+- **Download Categories** - Organize downloads by type with custom save locations
+- **Import/Export** - Backup and restore download history and settings
 
 ## Contributing
 
