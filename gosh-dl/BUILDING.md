@@ -170,9 +170,7 @@ gosh-dl/
 │       └── sqlite.rs          # SQLite backend ✅
 │
 ├── tests/                     # Integration tests
-│   ├── http_tests.rs
-│   ├── torrent_tests.rs
-│   └── storage_tests.rs
+│   └── integration_tests.rs   # 18 end-to-end tests using wiremock
 │
 ├── benches/                   # Benchmarks [Phase 5]
 │   └── download_bench.rs
@@ -1346,35 +1344,109 @@ cargo publish
 
 ## Testing Guide
 
-### Unit Tests
+### Test Summary
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| Unit Tests | 24 | Core functionality tests in `src/` |
+| Integration Tests | 18 | End-to-end tests using wiremock |
+| Doc Tests | 1 | Example code verification |
+| **Total** | **43** | All tests passing |
+
+### Running Tests
 
 ```bash
-# Run all unit tests
+# Run all tests (unit + integration + doc tests)
 cargo test
+
+# Run only unit tests
+cargo test --lib
+
+# Run only integration tests
+cargo test --test integration_tests
 
 # Run specific module tests
 cargo test http
-cargo test torrent
 cargo test storage
+cargo test config
 
-# Run with output
+# Run with output visible
 cargo test -- --nocapture
 
-# Run ignored (integration) tests
+# Run ignored (network-dependent) tests
 cargo test -- --ignored
+
+# Run a single test
+cargo test test_basic_http_download
 ```
 
-### Integration Tests
+### Unit Tests (24 tests)
 
-```bash
-# HTTP download test
-cargo test --test http_tests
+Located in `src/` modules with `#[cfg(test)]` blocks:
 
-# Torrent download test (requires network)
-cargo test --test torrent_tests -- --ignored
+| Module | Tests | Description |
+|--------|-------|-------------|
+| `config.rs` | 4 | Configuration validation and builder |
+| `http/segment.rs` | 3 | Segment calculation and initialization |
+| `http/resume.rs` | 3 | Content-Range parsing, resume validation |
+| `http/connection.rs` | 3 | Retry policy, speed calculator |
+| `http/mod.rs` | 2 | Content-Disposition parsing, filename extraction |
+| `storage/mod.rs` | 3 | Segment types, MemoryStorage |
+| `storage/sqlite.rs` | 6 | SQLite CRUD, health checks, segments |
 
-# Storage persistence test
-cargo test --test storage_tests
+### Integration Tests (18 tests)
+
+Located in `tests/integration_tests.rs`, using wiremock for HTTP mocking:
+
+| Category | Tests | Description |
+|----------|-------|-------------|
+| **Basic Downloads** | 3 | Basic HTTP download, custom filename, Content-Disposition |
+| **Event System** | 1 | Event sequence verification (Added → Started → Completed) |
+| **Concurrent Downloads** | 2 | Multiple simultaneous downloads, limit enforcement |
+| **Pause/Cancel** | 2 | Pause active download, cancel with file deletion |
+| **Error Handling** | 3 | 404 errors, 500 errors, invalid URLs |
+| **Engine Lifecycle** | 3 | Shutdown, config update, download listing |
+| **Custom Headers** | 2 | User-Agent, Referer headers |
+| **Progress Tracking** | 2 | Progress updates, global statistics |
+
+#### Integration Test Details
+
+```rust
+// tests/integration_tests.rs
+
+// Basic download tests
+test_basic_http_download         // Download file and verify content
+test_download_with_custom_filename // Override output filename
+test_download_content_disposition_filename // Parse filename from headers
+
+// Event system
+test_download_events_sequence    // Verify Added → Started → Progress → Completed
+
+// Concurrent downloads
+test_concurrent_downloads        // 3 simultaneous downloads
+test_concurrent_limit_respected  // Verify semaphore limits
+
+// Pause/Cancel
+test_pause_download              // Pause active download
+test_cancel_download             // Cancel and delete files
+
+// Error handling
+test_download_404_error          // Handle 404 Not Found
+test_download_500_error          // Handle 500 Server Error
+test_invalid_url                 // Reject malformed URLs
+
+// Engine lifecycle
+test_engine_shutdown             // Graceful shutdown
+test_config_update               // Update config at runtime
+test_list_downloads              // List active/stopped downloads
+
+// Custom headers
+test_custom_user_agent           // Set User-Agent header
+test_custom_referer              // Set Referer header
+
+// Progress
+test_progress_updates            // Verify progress events
+test_global_stats                // Global statistics
 ```
 
 ### Test Coverage
@@ -1388,32 +1460,143 @@ cargo tarpaulin --out Html
 
 # Open report
 open tarpaulin-report.html
+
+# Coverage with specific options
+cargo tarpaulin --out Html --skip-clean --ignore-tests
 ```
 
-### Mock Servers
+### Mock Servers with Wiremock
+
+Integration tests use `wiremock` to simulate HTTP servers:
 
 ```rust
-// tests/common/mock_server.rs
-
 use wiremock::{MockServer, Mock, ResponseTemplate};
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, header};
 
-pub async fn create_mock_http_server() -> MockServer {
-    let server = MockServer::start().await;
+#[tokio::test]
+async fn test_example() {
+    let mock_server = MockServer::start().await;
+    let test_content = b"Hello, World!";
 
-    // Mock file download
-    Mock::given(method("GET"))
-        .and(path("/file.zip"))
+    // Mock HEAD request (for capability detection)
+    Mock::given(method("HEAD"))
+        .and(path("/file.txt"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_bytes(vec![0u8; 1024 * 1024])
-                .insert_header("Content-Length", "1048576")
-                .insert_header("Accept-Ranges", "bytes")
+                .insert_header("Content-Length", test_content.len().to_string())
+                .insert_header("Accept-Ranges", "bytes"),
         )
-        .mount(&server)
+        .mount(&mock_server)
         .await;
 
-    server
+    // Mock GET request (for actual download)
+    Mock::given(method("GET"))
+        .and(path("/file.txt"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Content-Length", test_content.len().to_string())
+                .set_body_bytes(test_content.to_vec()),
+        )
+        .mount(&mock_server)
+        .await;
+
+    // Use mock_server.uri() as the download URL
+    let url = format!("{}/file.txt", mock_server.uri());
+    // ... test download
+}
+```
+
+### Async Event Waiting
+
+Tests use a helper function to wait for specific events:
+
+```rust
+async fn wait_for_event<F>(
+    rx: &mut broadcast::Receiver<DownloadEvent>,
+    predicate: F,
+    timeout_duration: Duration,
+) -> Option<DownloadEvent>
+where
+    F: Fn(&DownloadEvent) -> bool,
+{
+    let result = timeout(timeout_duration, async {
+        loop {
+            match rx.recv().await {
+                Ok(event) if predicate(&event) => return Some(event),
+                Ok(_) => continue,
+                Err(_) => return None,
+            }
+        }
+    }).await;
+    result.unwrap_or(None)
+}
+
+// Usage:
+let completed = wait_for_event(
+    &mut events,
+    |e| matches!(e, DownloadEvent::Completed { id: eid } if *eid == id),
+    Duration::from_secs(10),
+).await;
+assert!(completed.is_some(), "Download should complete");
+```
+
+### Slow/Delayed Response Testing
+
+Test timeout and retry behavior with delayed responses:
+
+```rust
+Mock::given(method("GET"))
+    .and(path("/slow-file.bin"))
+    .respond_with(
+        ResponseTemplate::new(200)
+            .insert_header("Content-Length", "1024")
+            .set_body_bytes(vec![0u8; 1024])
+            .set_delay(Duration::from_secs(5)), // 5 second delay
+    )
+    .mount(&mock_server)
+    .await;
+```
+
+### Error Simulation
+
+Test error handling with HTTP error responses:
+
+```rust
+// 404 Not Found
+Mock::given(method("GET"))
+    .and(path("/not-found.txt"))
+    .respond_with(ResponseTemplate::new(404))
+    .mount(&mock_server)
+    .await;
+
+// 500 Server Error
+Mock::given(method("GET"))
+    .and(path("/server-error.txt"))
+    .respond_with(ResponseTemplate::new(500))
+    .mount(&mock_server)
+    .await;
+```
+
+### Test Isolation
+
+Each integration test uses `tempfile::TempDir` for isolation:
+
+```rust
+#[tokio::test]
+async fn test_example() {
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+
+    let config = EngineConfig {
+        download_dir: temp_dir.path().to_path_buf(),
+        ..Default::default()
+    };
+
+    let engine = DownloadEngine::new(config).await.expect("Failed to create engine");
+
+    // ... run test
+
+    engine.shutdown().await.ok();
+    // temp_dir automatically cleaned up when dropped
 }
 ```
 
