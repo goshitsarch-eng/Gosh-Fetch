@@ -6,22 +6,31 @@
 //! - Tracker communication (HTTP/UDP)
 //! - Peer wire protocol
 //! - Piece management with SHA-1 verification
-//!
-//! Phase 3 implementation includes core BitTorrent functionality.
-//! Phase 4 will add DHT, PEX, and LPD peer discovery.
+//! - DHT peer discovery (BEP 5)
+//! - Peer Exchange (BEP 11)
+//! - Local Peer Discovery (BEP 14)
+//! - Choking algorithm
 
 pub mod bencode;
+pub mod choking;
+pub mod dht;
+pub mod lpd;
 pub mod magnet;
 pub mod metainfo;
 pub mod peer;
+pub mod pex;
 pub mod piece;
 pub mod tracker;
 
 // Re-export commonly used types
 pub use bencode::BencodeValue;
+pub use choking::{ChokingConfig, ChokingDecision, ChokingManager, PeerStats};
+pub use dht::{DhtClient, DhtManager};
+pub use lpd::{LocalPeer, LpdManager, LpdService};
 pub use magnet::MagnetUri;
 pub use metainfo::{FileInfo, Info, Metainfo, Sha1Hash};
-pub use peer::{ConnectionState, PeerConnection, PeerMessage, BLOCK_SIZE};
+pub use peer::{ConnectionState, PeerConnection, PeerMessage, BLOCK_SIZE, OUR_PEX_EXTENSION_ID};
+pub use pex::{ExtensionHandshake, PexMessage, PexState, PEX_EXTENSION_NAME};
 pub use piece::{BlockRequest, PendingPiece, PieceManager, PieceProgress};
 pub use tracker::{
     AnnounceEvent, AnnounceRequest, AnnounceResponse, PeerAddr, ScrapeInfo, ScrapeRequest,
@@ -486,6 +495,47 @@ impl TorrentDownloader {
     /// Get list of known peer addresses
     pub fn known_peer_addresses(&self) -> Vec<SocketAddr> {
         self.known_peers.read().iter().cloned().collect()
+    }
+
+    /// Check if this is a private torrent.
+    ///
+    /// Private torrents should not use DHT, PEX, or LPD (BEP 27).
+    pub fn is_private(&self) -> bool {
+        self.metainfo
+            .read()
+            .as_ref()
+            .map(|m| m.info.private)
+            .unwrap_or(false)
+    }
+
+    /// Add discovered peers to the known peers list.
+    ///
+    /// This is used by DHT, PEX, and LPD to add discovered peers.
+    pub fn add_known_peers(&self, peers: impl IntoIterator<Item = SocketAddr>) {
+        let mut known = self.known_peers.write();
+        for peer in peers {
+            known.insert(peer);
+        }
+    }
+
+    /// Get the configuration.
+    pub fn config(&self) -> &TorrentConfig {
+        &self.config
+    }
+
+    /// Check if DHT is enabled for this torrent.
+    pub fn dht_enabled(&self) -> bool {
+        self.config.enable_dht && !self.is_private()
+    }
+
+    /// Check if PEX is enabled for this torrent.
+    pub fn pex_enabled(&self) -> bool {
+        self.config.enable_pex && !self.is_private()
+    }
+
+    /// Check if LPD is enabled for this torrent.
+    pub fn lpd_enabled(&self) -> bool {
+        self.config.enable_lpd && !self.is_private()
     }
 }
 

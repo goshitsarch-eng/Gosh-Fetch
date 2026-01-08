@@ -3,6 +3,7 @@
 //! This module implements the BitTorrent peer wire protocol as defined in BEP 3.
 //! It handles connections to peers, message encoding/decoding, and state management.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
@@ -13,6 +14,7 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 
 use super::metainfo::Sha1Hash;
+use super::pex::{self, PexMessage, PEX_EXTENSION_NAME};
 use crate::error::{EngineError, NetworkErrorKind, ProtocolErrorKind, Result};
 
 /// Protocol string for BitTorrent
@@ -364,6 +366,9 @@ impl PeerMessage {
     }
 }
 
+/// Our extension ID for ut_pex (what we advertise to peers).
+pub const OUR_PEX_EXTENSION_ID: u8 = 1;
+
 /// Peer connection
 pub struct PeerConnection {
     stream: TcpStream,
@@ -392,6 +397,16 @@ pub struct PeerConnection {
 
     // Buffer for reading
     read_buffer: BytesMut,
+
+    // Extension protocol state (BEP 10)
+    /// Whether extension handshake has been completed.
+    extension_handshake_done: bool,
+    /// Peer's extension ID mappings (extension name -> ID).
+    peer_extensions: HashMap<String, u8>,
+    /// Peer's client identification string.
+    peer_client: Option<String>,
+    /// Peer's listen port (from extension handshake).
+    peer_listen_port: Option<u16>,
 }
 
 impl PeerConnection {
@@ -435,6 +450,11 @@ impl PeerConnection {
             last_activity: Instant::now(),
 
             read_buffer: BytesMut::with_capacity(MAX_MESSAGE_SIZE),
+
+            extension_handshake_done: false,
+            peer_extensions: HashMap::new(),
+            peer_client: None,
+            peer_listen_port: None,
         };
 
         conn.handshake().await?;
@@ -473,6 +493,11 @@ impl PeerConnection {
             last_activity: Instant::now(),
 
             read_buffer: BytesMut::with_capacity(MAX_MESSAGE_SIZE),
+
+            extension_handshake_done: false,
+            peer_extensions: HashMap::new(),
+            peer_client: None,
+            peer_listen_port: None,
         };
 
         conn.handshake().await?;
@@ -811,6 +836,95 @@ impl PeerConnection {
     /// Check if peer supports DHT
     pub fn supports_dht(&self) -> bool {
         self.peer_reserved.supports_dht()
+    }
+
+    // Extension Protocol Methods (BEP 10)
+
+    /// Send extension handshake to peer.
+    ///
+    /// Should be called after the regular handshake if both peers support extensions.
+    pub async fn send_extension_handshake(&mut self, listen_port: Option<u16>) -> Result<()> {
+        if !self.supports_extensions() {
+            return Ok(()); // Peer doesn't support extensions
+        }
+
+        let payload = pex::build_extension_handshake(OUR_PEX_EXTENSION_ID, listen_port);
+        self.send(PeerMessage::Extended { id: 0, payload }).await
+    }
+
+    /// Handle received extension message.
+    ///
+    /// Returns discovered peers if this was a PEX message.
+    pub fn handle_extension_message(&mut self, id: u8, payload: &[u8]) -> Result<Option<Vec<SocketAddr>>> {
+        if id == 0 {
+            // Extension handshake
+            self.handle_extension_handshake(payload)?;
+            return Ok(None);
+        }
+
+        // Check if this is a PEX message
+        if let Some(&pex_id) = self.peer_extensions.get(PEX_EXTENSION_NAME) {
+            if id == pex_id {
+                let pex_msg = PexMessage::parse(payload)?;
+                return Ok(Some(pex_msg.all_added()));
+            }
+        }
+
+        // Unknown extension - ignore
+        Ok(None)
+    }
+
+    /// Handle extension handshake message.
+    fn handle_extension_handshake(&mut self, payload: &[u8]) -> Result<()> {
+        let handshake = pex::parse_extension_handshake(payload)?;
+
+        self.peer_extensions = handshake.extensions;
+        self.peer_client = handshake.client;
+        self.peer_listen_port = handshake.listen_port;
+        self.extension_handshake_done = true;
+
+        Ok(())
+    }
+
+    /// Check if peer supports PEX.
+    pub fn supports_pex(&self) -> bool {
+        self.peer_extensions.contains_key(PEX_EXTENSION_NAME)
+    }
+
+    /// Get peer's PEX extension ID.
+    pub fn peer_pex_id(&self) -> Option<u8> {
+        self.peer_extensions.get(PEX_EXTENSION_NAME).copied()
+    }
+
+    /// Send a PEX message to the peer.
+    pub async fn send_pex(&mut self, msg: &PexMessage) -> Result<()> {
+        let pex_id = match self.peer_pex_id() {
+            Some(id) => id,
+            None => return Ok(()), // Peer doesn't support PEX
+        };
+
+        let payload = msg.encode();
+        self.send(PeerMessage::Extended { id: pex_id, payload }).await
+    }
+
+    /// Check if extension handshake has been completed.
+    pub fn extension_handshake_done(&self) -> bool {
+        self.extension_handshake_done
+    }
+
+    /// Get peer's client identification.
+    pub fn peer_client(&self) -> Option<&str> {
+        self.peer_client.as_deref()
+    }
+
+    /// Get peer's listen port (from extension handshake).
+    pub fn peer_listen_port(&self) -> Option<u16> {
+        self.peer_listen_port
+    }
+
+    /// Get all peer extensions.
+    pub fn peer_extensions(&self) -> &HashMap<String, u8> {
+        &self.peer_extensions
     }
 
     /// Disconnect from the peer

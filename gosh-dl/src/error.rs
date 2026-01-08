@@ -137,6 +137,12 @@ pub enum ProtocolErrorKind {
     PeerProtocol,
     /// Bencode parsing error
     BencodeParse,
+    /// Peer Exchange (PEX) error
+    PexError,
+    /// DHT error
+    DhtError,
+    /// Local Peer Discovery error
+    LpdError,
 }
 
 impl EngineError {

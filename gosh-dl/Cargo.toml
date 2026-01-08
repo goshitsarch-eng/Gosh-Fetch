@@ -45,6 +45,9 @@ governor = "0.8"
 # DHT (for BitTorrent)
 mainline = "2"
 
+# Multicast sockets (for LPD)
+socket2 = { version = "0.5", features = ["all"] }
+
 # Error handling
 thiserror = "2"
 

@@ -129,7 +129,7 @@ cargo install cargo-doc
 | Phase 1 | ✅ COMPLETE | Core Infrastructure & Basic HTTP |
 | Phase 2 | ✅ COMPLETE | Segmented HTTP & Reliability |
 | Phase 3 | ✅ COMPLETE | BitTorrent Core |
-| Phase 4 | 🔲 NOT STARTED | BitTorrent P2P Features |
+| Phase 4 | ✅ COMPLETE | BitTorrent P2P Features |
 | Phase 5 | 🔲 NOT STARTED | Optimization & Distribution |
 
 ### Directory Layout
@@ -162,9 +162,10 @@ gosh-dl/
 │   │   ├── tracker.rs         # HTTP/UDP tracker clients ✅
 │   │   ├── peer.rs            # Peer wire protocol ✅
 │   │   ├── piece.rs           # Piece management ✅
-│   │   ├── dht.rs             # DHT client [Phase 4]
-│   │   ├── pex.rs             # Peer Exchange [Phase 4]
-│   │   └── lpd.rs             # Local Peer Discovery [Phase 4]
+│   │   ├── dht.rs             # DHT client ✅
+│   │   ├── pex.rs             # Peer Exchange ✅
+│   │   ├── lpd.rs             # Local Peer Discovery ✅
+│   │   └── choking.rs         # Choking algorithm ✅
 │   │
 │   └── storage/               # Persistence layer
 │       ├── mod.rs             # Storage trait + MemoryStorage ✅
@@ -1090,7 +1091,7 @@ cargo test peer
 
 ## Phase 4: BitTorrent P2P Features
 
-**Status: 🔲 NOT STARTED**
+**Status: ✅ COMPLETE**
 
 ### Goals
 - DHT (Distributed Hash Table) - BEP 5
@@ -1100,14 +1101,14 @@ cargo test peer
 - Endgame mode
 - Seeding with ratio enforcement
 
-### Files to Create
+### Files Created
 
 | File | Purpose |
 |------|---------|
-| `src/torrent/dht.rs` | DHT client using mainline crate |
-| `src/torrent/pex.rs` | Peer Exchange implementation |
-| `src/torrent/lpd.rs` | Local Peer Discovery (multicast) |
-| `src/torrent/choking.rs` | Choking algorithm |
+| `src/torrent/dht.rs` | DHT client using mainline crate ✅ |
+| `src/torrent/pex.rs` | Peer Exchange implementation ✅ |
+| `src/torrent/lpd.rs` | Local Peer Discovery (multicast) ✅ |
+| `src/torrent/choking.rs` | Choking algorithm ✅ |
 
 ### DHT Integration
 
