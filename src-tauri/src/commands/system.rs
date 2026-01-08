@@ -11,12 +11,6 @@ pub async fn get_engine_version(state: State<'_, AppState>) -> Result<serde_json
     }))
 }
 
-// Keep old name for backwards compatibility
-#[tauri::command]
-pub async fn get_aria2_version(state: State<'_, AppState>) -> Result<serde_json::Value> {
-    get_engine_version(state).await
-}
-
 #[tauri::command]
 pub async fn restart_engine(state: State<'_, AppState>, app: AppHandle) -> Result<()> {
     // Shutdown and reinitialize engine
@@ -24,12 +18,6 @@ pub async fn restart_engine(state: State<'_, AppState>, app: AppHandle) -> Resul
     state.initialize(&app).await?;
     log::info!("Download engine restarted");
     Ok(())
-}
-
-// Keep old name for backwards compatibility
-#[tauri::command]
-pub async fn restart_aria2(state: State<'_, AppState>, app: AppHandle) -> Result<()> {
-    restart_engine(state, app).await
 }
 
 #[tauri::command]

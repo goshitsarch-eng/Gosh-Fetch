@@ -9,16 +9,6 @@ pub enum Error {
     #[error("engine not initialized")]
     EngineNotInitialized,
 
-    // Legacy error types for backwards compatibility
-    #[error("aria2 error: {0}")]
-    Aria2(String),
-
-    #[error("aria2 not running")]
-    Aria2NotRunning,
-
-    #[error("aria2 connection failed: {0}")]
-    Aria2Connection(String),
-
     #[error("database error: {0}")]
     Database(String),
 

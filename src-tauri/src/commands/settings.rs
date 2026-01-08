@@ -90,15 +90,6 @@ pub async fn apply_settings_to_engine(
     Ok(())
 }
 
-// Keep the old name for backwards compatibility
-#[tauri::command]
-pub async fn apply_settings_to_aria2(
-    state: State<'_, AppState>,
-    settings: Settings,
-) -> Result<()> {
-    apply_settings_to_engine(state, settings).await
-}
-
 // User-Agent presets
 #[tauri::command]
 pub fn get_user_agent_presets() -> Vec<(String, String)> {

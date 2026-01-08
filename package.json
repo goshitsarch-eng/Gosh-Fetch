@@ -1,7 +1,7 @@
 {
   "name": "gosh-fetch",
   "version": "1.0.0",
-  "description": "Gosh Fetch the modern download manager powered by aria2",
+  "description": "Gosh Fetch - a modern download manager with native Rust engine",
   "type": "module",
   "license": "AGPL-3.0",
   "scripts": {

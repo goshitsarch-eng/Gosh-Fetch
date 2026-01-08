@@ -90,13 +90,10 @@ fn main() {
             commands::set_user_agent,
             commands::get_tracker_list,
             commands::update_tracker_list,
-            commands::apply_settings_to_aria2,
             commands::apply_settings_to_engine,
             commands::get_user_agent_presets,
             // System commands
-            commands::get_aria2_version,
             commands::get_engine_version,
-            commands::restart_aria2,
             commands::restart_engine,
             commands::show_window,
             commands::hide_window,

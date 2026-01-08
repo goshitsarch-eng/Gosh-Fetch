@@ -48,7 +48,6 @@ jobs:
             libunwind-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
-            aria2 \
             imagemagick
 
       - name: Generate icons from logo
@@ -57,11 +56,6 @@ jobs:
           convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
           convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
           convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
-
-      - name: Copy aria2c to binaries
-        run: |
-          cp $(which aria2c) src-tauri/binaries/aria2c-${{ matrix.target-triple }}
-          chmod +x src-tauri/binaries/aria2c-${{ matrix.target-triple }}
 
       - name: Setup Node
         uses: actions/setup-node@v4

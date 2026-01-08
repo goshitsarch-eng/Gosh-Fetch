@@ -26,12 +26,6 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Install aria2c
-        run: |
-          brew install aria2
-          cp $(which aria2c) src-tauri/binaries/aria2c-aarch64-apple-darwin
-          chmod +x src-tauri/binaries/aria2c-aarch64-apple-darwin
-
       - name: Generate icons from logo
         run: |
           # Generate PNG icons

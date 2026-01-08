@@ -22,27 +22,6 @@
     "sql:allow-select",
     "sql:allow-close",
     "shell:default",
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "binaries/aria2c",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "binaries/aria2c",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    },
-    "shell:allow-kill",
     "notification:default",
     "notification:allow-request-permission",
     "notification:allow-is-permission-granted",

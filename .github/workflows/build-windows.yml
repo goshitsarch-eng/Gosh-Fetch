@@ -24,12 +24,6 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Download aria2c
-        run: |
-          Invoke-WebRequest -Uri "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip" -OutFile aria2.zip
-          Expand-Archive -Path aria2.zip -DestinationPath aria2-extract
-          Copy-Item "aria2-extract/aria2-1.37.0-win-64bit-build1/aria2c.exe" "src-tauri/binaries/aria2c-x86_64-pc-windows-msvc.exe"
-
       - name: Generate icons from logo
         run: |
           magick src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
