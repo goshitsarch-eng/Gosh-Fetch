@@ -257,6 +257,7 @@ fn convert_options(opts: FrontendOptions) -> DownloadOptions {
                 .filter_map(|n| n.parse().ok())
                 .collect()
         }),
+        ..Default::default()
     }
 }
 
