@@ -1,0 +1,82 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: false
+        default: 'main'
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Generate icons from logo
+        run: |
+          magick src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
+          magick src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
+          magick src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
+          magick src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
+          magick src-tauri/icons/logo.png -define icon:auto-resize=256,128,64,48,32,16 src-tauri/icons/icon.ico
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: x86_64-pc-windows-msvc
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            npx tauri build --target x86_64-pc-windows-msvc --bundles none
+          } else {
+            npx tauri build --target x86_64-pc-windows-msvc --bundles nsis
+          }
+
+      - name: Upload portable exe
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/*.exe
+
+      - name: Upload NSIS installer
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-nsis-installer-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          fail_on_unmatched_files: true

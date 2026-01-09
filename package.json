@@ -1,0 +1,31 @@
+{
+  "name": "gosh-fetch",
+  "version": "1.0.0",
+  "description": "Gosh Fetch - a modern download manager with native Rust engine",
+  "type": "module",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/plugin-sql": "^2.3.1",
+    "@tauri-apps/plugin-shell": "^2.3.3",
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-dialog": "^2.4.2",
+    "@tauri-apps/plugin-fs": "^2.4.4"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^6.2.1",
+    "@tauri-apps/cli": "^2.9.6",
+    "@tsconfig/svelte": "^5.0.4",
+    "svelte": "^5.46.0",
+    "svelte-check": "^4.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.0"
+  }
+}
