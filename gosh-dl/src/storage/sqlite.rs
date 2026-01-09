@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS downloads (
     seeders INTEGER NOT NULL DEFAULT 0,
     peers INTEGER NOT NULL DEFAULT 0,
 
+    -- Priority
+    priority TEXT NOT NULL DEFAULT 'normal',
+
     -- Metadata
     name TEXT NOT NULL,
     url TEXT,
@@ -102,6 +105,13 @@ CREATE TABLE IF NOT EXISTS downloads (
     user_agent TEXT,
     referer TEXT,
     headers_json TEXT,
+    cookies_json TEXT,
+    checksum_json TEXT,
+    mirrors_json TEXT,
+
+    -- Resume validation (HTTP)
+    etag TEXT,
+    last_modified TEXT,
 
     -- Timestamps
     created_at TEXT NOT NULL,
@@ -161,8 +171,26 @@ impl Storage for SqliteStorage {
                 DownloadKind::Magnet => "magnet",
             };
 
+            // Serialize priority
+            let priority_str = status.priority.to_string();
+
             // Serialize headers to JSON
             let headers_json = serde_json::to_string(&status.metadata.headers)
+                .unwrap_or_else(|_| "[]".to_string());
+
+            // Serialize cookies to JSON
+            let cookies_json = serde_json::to_string(&status.metadata.cookies)
+                .unwrap_or_else(|_| "[]".to_string());
+
+            // Serialize checksum to JSON (if present)
+            let checksum_json = status
+                .metadata
+                .checksum
+                .as_ref()
+                .and_then(|c| serde_json::to_string(c).ok());
+
+            // Serialize mirrors to JSON
+            let mirrors_json = serde_json::to_string(&status.metadata.mirrors)
                 .unwrap_or_else(|_| "[]".to_string());
 
             conn.execute(
@@ -170,13 +198,17 @@ impl Storage for SqliteStorage {
                 INSERT INTO downloads (
                     id, kind, state, state_error_kind, state_error_message, state_error_retryable,
                     total_size, completed_size, download_speed, upload_speed, connections, seeders, peers,
-                    name, url, magnet_uri, info_hash, save_dir, filename, user_agent, referer, headers_json,
-                    created_at, completed_at
+                    priority,
+                    name, url, magnet_uri, info_hash, save_dir, filename, user_agent, referer,
+                    headers_json, cookies_json, checksum_json, mirrors_json,
+                    etag, last_modified, created_at, completed_at
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6,
                     ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                    ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
-                    ?23, ?24
+                    ?14,
+                    ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
+                    ?23, ?24, ?25, ?26,
+                    ?27, ?28, ?29, ?30
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     state = excluded.state,
@@ -190,7 +222,13 @@ impl Storage for SqliteStorage {
                     connections = excluded.connections,
                     seeders = excluded.seeders,
                     peers = excluded.peers,
+                    priority = excluded.priority,
                     filename = excluded.filename,
+                    cookies_json = excluded.cookies_json,
+                    checksum_json = excluded.checksum_json,
+                    mirrors_json = excluded.mirrors_json,
+                    etag = excluded.etag,
+                    last_modified = excluded.last_modified,
                     completed_at = excluded.completed_at
                 "#,
                 params![
@@ -207,6 +245,7 @@ impl Storage for SqliteStorage {
                     status.progress.connections as i64,
                     status.progress.seeders as i64,
                     status.progress.peers as i64,
+                    priority_str,
                     status.metadata.name,
                     status.metadata.url,
                     status.metadata.magnet_uri,
@@ -216,6 +255,11 @@ impl Storage for SqliteStorage {
                     status.metadata.user_agent,
                     status.metadata.referer,
                     headers_json,
+                    cookies_json,
+                    checksum_json,
+                    mirrors_json,
+                    status.metadata.etag,
+                    status.metadata.last_modified,
                     status.created_at.to_rfc3339(),
                     status.completed_at.map(|t| t.to_rfc3339()),
                 ],
@@ -240,8 +284,10 @@ impl Storage for SqliteStorage {
                     SELECT
                         id, kind, state, state_error_kind, state_error_message, state_error_retryable,
                         total_size, completed_size, download_speed, upload_speed, connections, seeders, peers,
-                        name, url, magnet_uri, info_hash, save_dir, filename, user_agent, referer, headers_json,
-                        created_at, completed_at
+                        priority,
+                        name, url, magnet_uri, info_hash, save_dir, filename, user_agent, referer,
+                        headers_json, cookies_json, checksum_json, mirrors_json,
+                        etag, last_modified, created_at, completed_at
                     FROM downloads
                     WHERE id = ?1
                     "#,
@@ -269,8 +315,10 @@ impl Storage for SqliteStorage {
                 SELECT
                     id, kind, state, state_error_kind, state_error_message, state_error_retryable,
                     total_size, completed_size, download_speed, upload_speed, connections, seeders, peers,
-                    name, url, magnet_uri, info_hash, save_dir, filename, user_agent, referer, headers_json,
-                    created_at, completed_at
+                    priority,
+                    name, url, magnet_uri, info_hash, save_dir, filename, user_agent, referer,
+                    headers_json, cookies_json, checksum_json, mirrors_json,
+                    etag, last_modified, created_at, completed_at
                 FROM downloads
                 ORDER BY created_at DESC
                 "#,
@@ -377,9 +425,23 @@ impl Storage for SqliteStorage {
                 let error_msg: Option<String> = row.get(5)?;
                 let retries: i64 = row.get(6)?;
 
+                // CRASH RECOVERY SEMANTICS:
+                // When loading segment state from disk, we apply conservative recovery:
+                //
+                // - "downloading" -> Pending: A segment marked as "downloading" means the
+                //   process crashed mid-download. The `downloaded` field preserves how many
+                //   bytes were written, allowing resume from that offset. We reset to Pending
+                //   so the download logic will re-request the remaining bytes.
+                //
+                // - Unknown states -> Pending: Database corruption or schema migration could
+                //   produce unknown state values. Defaulting to Pending ensures the segment
+                //   will be re-downloaded rather than skipped or causing errors.
+                //
+                // The `downloaded` field is preserved in all cases, enabling byte-accurate
+                // resume via HTTP Range requests.
                 let state = match state_str.as_str() {
                     "pending" => SegmentState::Pending,
-                    "downloading" => SegmentState::Pending, // Treat as pending on load
+                    "downloading" => SegmentState::Pending,
                     "completed" => SegmentState::Completed,
                     "failed" => SegmentState::Failed {
                         error: error_msg.unwrap_or_default(),
@@ -467,18 +529,25 @@ fn row_to_status(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadStatus> {
     let seeders: i64 = row.get(11)?;
     let peers: i64 = row.get(12)?;
 
-    let name: String = row.get(13)?;
-    let url: Option<String> = row.get(14)?;
-    let magnet_uri: Option<String> = row.get(15)?;
-    let info_hash: Option<String> = row.get(16)?;
-    let save_dir: String = row.get(17)?;
-    let filename: Option<String> = row.get(18)?;
-    let user_agent: Option<String> = row.get(19)?;
-    let referer: Option<String> = row.get(20)?;
-    let headers_json: Option<String> = row.get(21)?;
+    let priority_str: String = row.get(13)?;
 
-    let created_at_str: String = row.get(22)?;
-    let completed_at_str: Option<String> = row.get(23)?;
+    let name: String = row.get(14)?;
+    let url: Option<String> = row.get(15)?;
+    let magnet_uri: Option<String> = row.get(16)?;
+    let info_hash: Option<String> = row.get(17)?;
+    let save_dir: String = row.get(18)?;
+    let filename: Option<String> = row.get(19)?;
+    let user_agent: Option<String> = row.get(20)?;
+    let referer: Option<String> = row.get(21)?;
+    let headers_json: Option<String> = row.get(22)?;
+    let cookies_json: Option<String> = row.get(23)?;
+    let checksum_json: Option<String> = row.get(24)?;
+    let mirrors_json: Option<String> = row.get(25)?;
+
+    let etag: Option<String> = row.get(26)?;
+    let last_modified: Option<String> = row.get(27)?;
+    let created_at_str: String = row.get(28)?;
+    let completed_at_str: Option<String> = row.get(29)?;
 
     // Parse ID
     let uuid = uuid::Uuid::parse_str(&id_str)
@@ -486,14 +555,26 @@ fn row_to_status(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadStatus> {
     let id = DownloadId::from_uuid(uuid);
 
     // Parse kind
+    // CRASH RECOVERY: Unknown kind values (from database corruption or schema changes)
+    // default to Http as the safest option - HTTP downloads are simpler and won't
+    // attempt to connect to BitTorrent peers with invalid metadata.
     let kind = match kind_str.as_str() {
         "http" => DownloadKind::Http,
         "torrent" => DownloadKind::Torrent,
         "magnet" => DownloadKind::Magnet,
-        _ => DownloadKind::Http,
+        _ => {
+            tracing::warn!(
+                "Unknown download kind '{}' for download {}, defaulting to Http",
+                kind_str, id_str
+            );
+            DownloadKind::Http
+        }
     };
 
     // Parse state
+    // CRASH RECOVERY: Unknown state values default to Queued, which is a safe
+    // initial state that will cause the download to be re-evaluated and started
+    // appropriately based on its metadata.
     let state = match state_str.as_str() {
         "queued" => DownloadState::Queued,
         "connecting" => DownloadState::Connecting,
@@ -506,11 +587,36 @@ fn row_to_status(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadStatus> {
             message: error_msg.unwrap_or_default(),
             retryable: error_retryable.unwrap_or(false),
         },
-        _ => DownloadState::Queued,
+        _ => {
+            tracing::warn!(
+                "Unknown download state '{}' for download {}, defaulting to Queued",
+                state_str, id_str
+            );
+            DownloadState::Queued
+        }
     };
+
+    // Parse priority
+    let priority = priority_str
+        .parse::<crate::priority_queue::DownloadPriority>()
+        .unwrap_or_default();
 
     // Parse headers
     let headers: Vec<(String, String)> = headers_json
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    // Parse cookies
+    let cookies: Vec<String> = cookies_json
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    // Parse checksum
+    let checksum: Option<crate::http::ExpectedChecksum> = checksum_json
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    // Parse mirrors
+    let mirrors: Vec<String> = mirrors_json
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();
 
@@ -529,6 +635,7 @@ fn row_to_status(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadStatus> {
         id,
         kind,
         state,
+        priority,
         progress: DownloadProgress {
             total_size: total_size.map(|n| n as u64),
             completed_size: completed_size as u64,
@@ -549,6 +656,11 @@ fn row_to_status(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadStatus> {
             user_agent,
             referer,
             headers,
+            cookies,
+            checksum,
+            mirrors,
+            etag,
+            last_modified,
         },
         torrent_info: None,
         peers: None,
@@ -566,6 +678,7 @@ mod tests {
             id: DownloadId::new(),
             kind: DownloadKind::Http,
             state: DownloadState::Downloading,
+            priority: crate::priority_queue::DownloadPriority::Normal,
             progress: DownloadProgress {
                 total_size: Some(1000),
                 completed_size: 500,
@@ -586,6 +699,11 @@ mod tests {
                 user_agent: Some("gosh-dl/0.1.0".to_string()),
                 referer: None,
                 headers: vec![("X-Custom".to_string(), "value".to_string())],
+                cookies: Vec::new(),
+                checksum: None,
+                mirrors: Vec::new(),
+                etag: None,
+                last_modified: None,
             },
             torrent_info: None,
             peers: None,
@@ -703,5 +821,96 @@ mod tests {
     async fn test_sqlite_health_check() {
         let storage = SqliteStorage::in_memory().await.unwrap();
         storage.health_check().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_priority_persistence() {
+        let storage = SqliteStorage::in_memory().await.unwrap();
+        let mut status = create_test_status();
+        status.priority = crate::priority_queue::DownloadPriority::High;
+        let id = status.id;
+
+        storage.save_download(&status).await.unwrap();
+        let loaded = storage.load_download(id).await.unwrap().unwrap();
+
+        assert_eq!(loaded.priority, crate::priority_queue::DownloadPriority::High);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_cookies_persistence() {
+        let storage = SqliteStorage::in_memory().await.unwrap();
+        let mut status = create_test_status();
+        status.metadata.cookies = vec![
+            "session=abc123".to_string(),
+            "user=test".to_string(),
+        ];
+        let id = status.id;
+
+        storage.save_download(&status).await.unwrap();
+        let loaded = storage.load_download(id).await.unwrap().unwrap();
+
+        assert_eq!(loaded.metadata.cookies.len(), 2);
+        assert!(loaded.metadata.cookies.contains(&"session=abc123".to_string()));
+        assert!(loaded.metadata.cookies.contains(&"user=test".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_checksum_persistence() {
+        let storage = SqliteStorage::in_memory().await.unwrap();
+        let mut status = create_test_status();
+        status.metadata.checksum = Some(crate::http::ExpectedChecksum::sha256(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ));
+        let id = status.id;
+
+        storage.save_download(&status).await.unwrap();
+        let loaded = storage.load_download(id).await.unwrap().unwrap();
+
+        assert!(loaded.metadata.checksum.is_some());
+        let checksum = loaded.metadata.checksum.unwrap();
+        assert_eq!(checksum.algorithm, crate::http::ChecksumAlgorithm::Sha256);
+        assert_eq!(
+            checksum.value,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_mirrors_persistence() {
+        let storage = SqliteStorage::in_memory().await.unwrap();
+        let mut status = create_test_status();
+        status.metadata.mirrors = vec![
+            "https://mirror1.example.com/file.zip".to_string(),
+            "https://mirror2.example.com/file.zip".to_string(),
+        ];
+        let id = status.id;
+
+        storage.save_download(&status).await.unwrap();
+        let loaded = storage.load_download(id).await.unwrap().unwrap();
+
+        assert_eq!(loaded.metadata.mirrors.len(), 2);
+        assert!(loaded.metadata.mirrors.contains(&"https://mirror1.example.com/file.zip".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_full_metadata_persistence() {
+        // Test all new fields together
+        let storage = SqliteStorage::in_memory().await.unwrap();
+        let mut status = create_test_status();
+
+        status.priority = crate::priority_queue::DownloadPriority::Critical;
+        status.metadata.cookies = vec!["auth=token".to_string()];
+        status.metadata.checksum = Some(crate::http::ExpectedChecksum::md5("d41d8cd98f00b204e9800998ecf8427e"));
+        status.metadata.mirrors = vec!["https://backup.example.com/file.zip".to_string()];
+
+        let id = status.id;
+        storage.save_download(&status).await.unwrap();
+
+        let loaded = storage.load_download(id).await.unwrap().unwrap();
+
+        assert_eq!(loaded.priority, crate::priority_queue::DownloadPriority::Critical);
+        assert_eq!(loaded.metadata.cookies, vec!["auth=token".to_string()]);
+        assert!(loaded.metadata.checksum.is_some());
+        assert_eq!(loaded.metadata.mirrors.len(), 1);
     }
 }

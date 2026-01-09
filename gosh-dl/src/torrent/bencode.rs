@@ -5,10 +5,10 @@
 //! byte access to calculate SHA-1 hashes of the info dictionary.
 //!
 //! Bencode format:
-//! - Integers:   i<number>e        Example: i42e
-//! - Strings:    <length>:<data>   Example: 4:spam
-//! - Lists:      l<items>e         Example: l4:spami42ee
-//! - Dicts:      d<pairs>e         Example: d3:cow3:moo4:spam4:eggse
+//! - Integers:   `i<number>e`        Example: `i42e`
+//! - Strings:    `<length>:<data>`   Example: `4:spam`
+//! - Lists:      `l<items>e`         Example: `l4:spami42ee`
+//! - Dicts:      `d<pairs>e`         Example: `d3:cow3:moo4:spam4:eggse`
 
 use std::collections::BTreeMap;
 

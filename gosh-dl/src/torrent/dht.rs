@@ -65,11 +65,27 @@ impl DhtClient {
     ///
     /// # Arguments
     /// * `listen_port` - Port we're listening on for BitTorrent connections.
-    /// * `bootstrap_nodes` - List of bootstrap node addresses.
-    pub fn with_bootstrap(listen_port: u16, _bootstrap_nodes: &[String]) -> Result<Self> {
-        // Note: The mainline crate uses default bootstrap nodes internally.
-        // Custom bootstrap is handled by the crate.
-        Self::new(listen_port)
+    /// * `bootstrap_nodes` - List of bootstrap node addresses (e.g., "router.bittorrent.com:6881").
+    pub fn with_bootstrap(listen_port: u16, bootstrap_nodes: &[String]) -> Result<Self> {
+        // Create DHT client with custom bootstrap nodes if provided
+        let dht = if bootstrap_nodes.is_empty() {
+            // Fall back to default if no valid nodes provided
+            Dht::client()
+                .map_err(|e| EngineError::protocol(ProtocolErrorKind::DhtError, e.to_string()))?
+        } else {
+            // Use custom bootstrap nodes
+            Dht::builder()
+                .bootstrap(bootstrap_nodes)
+                .build()
+                .map_err(|e| EngineError::protocol(ProtocolErrorKind::DhtError, e.to_string()))?
+        };
+
+        Ok(Self {
+            dht: Arc::new(dht),
+            listen_port,
+            running: Arc::new(AtomicBool::new(true)),
+            peer_cache: Arc::new(RwLock::new(std::collections::HashMap::new())),
+        })
     }
 
     /// Check if the DHT client is running.

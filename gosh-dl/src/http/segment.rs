@@ -30,6 +30,9 @@ pub const DEFAULT_CONNECTIONS: usize = 16;
 /// Progress update interval
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
+/// Persistence interval for segment state
+const PERSISTENCE_INTERVAL: Duration = Duration::from_secs(5);
+
 /// Shared state for a segmented download
 struct SharedState {
     /// Total bytes downloaded across all segments
@@ -40,6 +43,10 @@ struct SharedState {
     active_connections: AtomicU64,
     /// Whether download is paused
     paused: AtomicBool,
+    /// Per-segment downloaded bytes (for tracking progress)
+    segment_progress: RwLock<Vec<u64>>,
+    /// Last persistence time
+    last_persistence: RwLock<Instant>,
 }
 
 /// Segmented download manager
@@ -102,6 +109,8 @@ impl SegmentedDownload {
                 speed: AtomicU64::new(0),
                 active_connections: AtomicU64::new(0),
                 paused: AtomicBool::new(false),
+                segment_progress: RwLock::new(Vec::new()),
+                last_persistence: RwLock::new(Instant::now()),
             }),
         }
     }
@@ -122,6 +131,9 @@ impl SegmentedDownload {
             segments.push(Segment::new(i, start, end));
         }
 
+        // Initialize segment progress tracking
+        *self.state.segment_progress.write() = vec![0u64; num_segments];
+
         self.segments = segments;
     }
 
@@ -130,12 +142,40 @@ impl SegmentedDownload {
         // Calculate total already downloaded
         let downloaded: u64 = saved_segments.iter().map(|s| s.downloaded).sum();
         self.state.downloaded.store(downloaded, Ordering::Relaxed);
+
+        // Initialize segment progress tracking with saved values
+        let progress: Vec<u64> = saved_segments.iter().map(|s| s.downloaded).collect();
+        *self.state.segment_progress.write() = progress;
+
         self.segments = saved_segments;
     }
 
     /// Get current segments
     pub fn segments(&self) -> &[Segment] {
         &self.segments
+    }
+
+    /// Get segments with current progress updated
+    ///
+    /// This creates a snapshot of the current segment state for persistence.
+    pub fn segments_with_progress(&self) -> Vec<Segment> {
+        let progress = self.state.segment_progress.read();
+        self.segments
+            .iter()
+            .enumerate()
+            .map(|(idx, s)| {
+                let mut segment = s.clone();
+                if let Some(&downloaded) = progress.get(idx) {
+                    segment.downloaded = downloaded;
+                    if segment.downloaded >= segment.size() {
+                        segment.state = crate::storage::SegmentState::Completed;
+                    } else if segment.downloaded > 0 {
+                        segment.state = crate::storage::SegmentState::Downloading;
+                    }
+                }
+                segment
+            })
+            .collect()
     }
 
     /// Start the segmented download
@@ -339,6 +379,14 @@ impl SegmentedDownload {
 
                     segment_bytes += chunk_len;
 
+                    // Update segment progress for persistence
+                    {
+                        let mut progress = state.segment_progress.write();
+                        if let Some(p) = progress.get_mut(segment_idx) {
+                            *p = segment_bytes;
+                        }
+                    }
+
                     // Update global counters
                     state.downloaded.fetch_add(chunk_len, Ordering::Relaxed);
                     bytes_since_progress.fetch_add(chunk_len, Ordering::Relaxed);
@@ -470,6 +518,26 @@ impl SegmentedDownload {
         }
 
         Ok(())
+    }
+
+    /// Check if persistence is due based on the time interval.
+    ///
+    /// Returns true if enough time has passed since the last persistence,
+    /// and resets the timer if so.
+    pub fn should_persist(&self) -> bool {
+        let mut last = self.state.last_persistence.write();
+        let now = Instant::now();
+        if now.duration_since(*last) >= PERSISTENCE_INTERVAL {
+            *last = now;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Force mark persistence as done (call after successful save).
+    pub fn mark_persisted(&self) {
+        *self.state.last_persistence.write() = Instant::now();
     }
 
     /// Prepare the output file

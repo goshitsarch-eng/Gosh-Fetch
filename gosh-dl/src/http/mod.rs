@@ -7,20 +7,27 @@
 //! - Custom headers, user-agent, referer
 //! - Connection pooling with rate limiting
 //! - Retry logic with exponential backoff
+//! - Checksum verification (MD5/SHA256)
 
+pub mod checksum;
 pub mod connection;
+pub mod mirror;
 pub mod resume;
 pub mod segment;
 
+pub use checksum::{compute_checksum, verify_checksum, ChecksumAlgorithm, ExpectedChecksum};
 pub use connection::{ConnectionPool, RetryPolicy, SpeedCalculator};
+pub use mirror::MirrorManager;
 pub use resume::{check_resume, ResumeInfo};
 pub use segment::{calculate_segment_count, probe_server, SegmentedDownload, ServerCapabilities};
 
 use crate::config::EngineConfig;
 use crate::error::{EngineError, NetworkErrorKind, Result, StorageErrorKind};
+use crate::storage::Segment;
 use crate::types::DownloadProgress;
 
 use futures::StreamExt;
+use parking_lot::RwLock;
 use reqwest::{Client, Response};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,8 +39,9 @@ use tokio_util::sync::CancellationToken;
 
 /// HTTP Downloader
 pub struct HttpDownloader {
-    client: Client,
+    pool: Arc<ConnectionPool>,
     config: HttpDownloaderConfig,
+    retry_policy: RetryPolicy,
 }
 
 /// Configuration for HTTP downloader
@@ -48,25 +56,40 @@ pub struct HttpDownloaderConfig {
 impl HttpDownloader {
     /// Create a new HTTP downloader
     pub fn new(config: &EngineConfig) -> Result<Self> {
-        let client = Client::builder()
-            .connect_timeout(Duration::from_secs(config.http.connect_timeout))
-            .timeout(Duration::from_secs(config.http.read_timeout))
-            .redirect(reqwest::redirect::Policy::limited(config.http.max_redirects))
-            .danger_accept_invalid_certs(config.http.accept_invalid_certs)
-            .gzip(true)
-            .brotli(true)
-            .build()
-            .map_err(|e| EngineError::Internal(format!("Failed to create HTTP client: {}", e)))?;
+        // Create connection pool with rate limiting if configured
+        let pool = ConnectionPool::with_limits(
+            &config.http,
+            config.global_download_limit,
+            config.global_upload_limit,
+        )?;
+
+        // Create retry policy from config
+        let retry_policy = RetryPolicy::new(
+            config.http.max_retries as u32,
+            config.http.retry_delay_ms,
+            config.http.max_retry_delay_ms,
+        );
 
         Ok(Self {
-            client,
+            pool: Arc::new(pool),
             config: HttpDownloaderConfig {
                 connect_timeout: Duration::from_secs(config.http.connect_timeout),
                 read_timeout: Duration::from_secs(config.http.read_timeout),
                 max_redirects: config.http.max_redirects,
                 default_user_agent: config.user_agent.clone(),
             },
+            retry_policy,
         })
+    }
+
+    /// Get the underlying client
+    fn client(&self) -> &Client {
+        self.pool.client()
+    }
+
+    /// Get the retry policy
+    pub fn retry_policy(&self) -> &RetryPolicy {
+        &self.retry_policy
     }
 
     /// Download a file from a URL
@@ -81,6 +104,8 @@ impl HttpDownloader {
         user_agent: Option<&str>,
         referer: Option<&str>,
         headers: &[(String, String)],
+        cookies: Option<&[String]>,
+        checksum: Option<&ExpectedChecksum>,
         cancel_token: CancellationToken,
         progress_callback: F,
     ) -> Result<PathBuf>
@@ -88,7 +113,7 @@ impl HttpDownloader {
         F: Fn(DownloadProgress) + Send + 'static,
     {
         // Build the request
-        let mut request = self.client.get(url);
+        let mut request = self.client().get(url);
 
         // Set user agent
         let ua = user_agent.unwrap_or(&self.config.default_user_agent);
@@ -104,13 +129,22 @@ impl HttpDownloader {
             request = request.header(name.as_str(), value.as_str());
         }
 
+        // Add cookies if provided
+        if let Some(cookie_list) = cookies {
+            if !cookie_list.is_empty() {
+                let cookie_value = cookie_list.join("; ");
+                request = request.header("Cookie", cookie_value);
+            }
+        }
+
         // Send HEAD request first to get metadata
-        let head_response = self
-            .client
-            .head(url)
-            .header("User-Agent", ua)
-            .send()
-            .await;
+        let mut head_request = self.client().head(url).header("User-Agent", ua);
+        if let Some(cookie_list) = cookies {
+            if !cookie_list.is_empty() {
+                head_request = head_request.header("Cookie", cookie_list.join("; "));
+            }
+        }
+        let head_response = head_request.send().await;
 
         let (content_length, supports_range, suggested_filename) = match head_response {
             Ok(resp) => {
@@ -295,6 +329,16 @@ impl HttpDownloader {
 
         match result {
             Ok(_) => {
+                // Verify checksum before renaming (if checksum was provided)
+                if let Some(expected) = checksum {
+                    let verified = verify_checksum(&part_path, expected).await?;
+                    if !verified {
+                        let actual = compute_checksum(&part_path, expected.algorithm).await?;
+                        return Err(checksum::checksum_mismatch_error(&expected.value, &actual));
+                    }
+                    tracing::debug!("Checksum verified: {} matches expected", expected.algorithm);
+                }
+
                 // Rename .part file to final name
                 tokio::fs::rename(&part_path, &save_path).await.map_err(|e| {
                     EngineError::storage(
@@ -342,6 +386,11 @@ impl HttpDownloader {
                 EngineError::network(NetworkErrorKind::Other, format!("Stream error: {}", e))
             })?;
 
+            let chunk_len = chunk.len() as u64;
+
+            // Apply rate limiting if configured
+            self.pool.acquire_download(chunk_len).await;
+
             // Write chunk to file
             file.write_all(&chunk).await.map_err(|e| {
                 EngineError::storage(
@@ -351,8 +400,10 @@ impl HttpDownloader {
                 )
             })?;
 
+            // Record downloaded bytes for stats
+            self.pool.record_download(chunk_len);
+
             // Update counters
-            let chunk_len = chunk.len() as u64;
             let new_total = downloaded.fetch_add(chunk_len, Ordering::Relaxed) + chunk_len;
             bytes_since_update += chunk_len;
 
@@ -415,6 +466,10 @@ impl HttpDownloader {
     /// This method probes the server first and uses segmented downloads
     /// if the server supports Range requests and the file is large enough.
     #[allow(clippy::too_many_arguments)]
+    /// Download with segmented multi-connection support.
+    ///
+    /// Returns the final path and optionally an Arc reference to the SegmentedDownload
+    /// (only when using segmented download mode).
     pub async fn download_segmented<F>(
         &self,
         url: &str,
@@ -423,18 +478,22 @@ impl HttpDownloader {
         user_agent: Option<&str>,
         referer: Option<&str>,
         headers: &[(String, String)],
+        cookies: Option<&[String]>,
+        checksum: Option<&ExpectedChecksum>,
         max_connections: usize,
         min_segment_size: u64,
         cancel_token: CancellationToken,
+        saved_segments: Option<Vec<Segment>>,
         progress_callback: F,
-    ) -> Result<PathBuf>
+        segmented_ref: Option<Arc<RwLock<Option<Arc<SegmentedDownload>>>>>,
+    ) -> Result<(PathBuf, Option<Arc<SegmentedDownload>>)>
     where
         F: Fn(DownloadProgress) + Send + Sync + 'static,
     {
         let ua = user_agent.unwrap_or(&self.config.default_user_agent);
 
         // Probe server capabilities
-        let capabilities = probe_server(&self.client, url, ua).await?;
+        let capabilities = probe_server(self.client(), url, ua).await?;
 
         // Determine filename
         let final_filename = filename
@@ -473,19 +532,39 @@ impl HttpDownloader {
                 capabilities.last_modified,
             );
 
-            // Initialize segments
-            download.init_segments(max_connections, min_segment_size);
+            // Restore or initialize segments
+            if let Some(segments) = saved_segments {
+                tracing::debug!("Restoring {} saved segments", segments.len());
+                download.restore_segments(segments);
+            } else {
+                download.init_segments(max_connections, min_segment_size);
+            }
+
+            // Wrap in Arc for sharing
+            let download = Arc::new(download);
+            let download_ref = Arc::clone(&download);
+
+            // Populate shared reference for external access during download (for persistence)
+            if let Some(ref slot) = segmented_ref {
+                *slot.write() = Some(Arc::clone(&download));
+            }
 
             // Build headers vec
             let mut all_headers = headers.to_vec();
             if let Some(r) = referer {
                 all_headers.push(("Referer".to_string(), r.to_string()));
             }
+            // Add cookies to headers
+            if let Some(cookie_list) = cookies {
+                if !cookie_list.is_empty() {
+                    all_headers.push(("Cookie".to_string(), cookie_list.join("; ")));
+                }
+            }
 
             // Start download
             download
                 .start(
-                    &self.client,
+                    self.client(),
                     ua,
                     &all_headers,
                     max_connections,
@@ -494,26 +573,34 @@ impl HttpDownloader {
                 )
                 .await?;
 
-            Ok(save_path)
+            // Verify checksum if provided
+            if let Some(expected) = checksum {
+                let verified = verify_checksum(&save_path, expected).await?;
+                if !verified {
+                    let actual = compute_checksum(&save_path, expected.algorithm).await?;
+                    return Err(checksum::checksum_mismatch_error(&expected.value, &actual));
+                }
+                tracing::debug!("Checksum verified: {} matches expected", expected.algorithm);
+            }
+
+            Ok((save_path, Some(download_ref)))
         } else {
             // Fall back to single-connection download
-            self.download(
+            let path = self.download(
                 url,
                 save_dir,
                 Some(&final_filename),
                 user_agent,
                 referer,
                 headers,
+                cookies,
+                checksum,
                 cancel_token,
                 progress_callback,
             )
-            .await
+            .await?;
+            Ok((path, None))
         }
-    }
-
-    /// Get the underlying HTTP client
-    pub fn client(&self) -> &Client {
-        &self.client
     }
 }
 

@@ -9,11 +9,11 @@ use std::time::{Duration, Instant};
 
 use bitvec::prelude::*;
 use bytes::BytesMut;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
 use super::metainfo::Sha1Hash;
+use super::mse::{connect_with_mse, MseConfig, PeerStream};
 use super::pex::{self, PexMessage, PEX_EXTENSION_NAME};
 use crate::error::{EngineError, NetworkErrorKind, ProtocolErrorKind, Result};
 
@@ -42,6 +42,8 @@ impl ReservedBytes {
         let mut reserved = [0u8; 8];
         // Bit 20 (from the right, byte 5 bit 4) = Extension Protocol (BEP 10)
         reserved[5] |= 0x10;
+        // Bit 2 (from the right, byte 7 bit 2) = Fast Extension (BEP 6)
+        reserved[7] |= 0x04;
         Self(reserved)
     }
 
@@ -122,6 +124,27 @@ pub enum PeerMessage {
     /// DHT port (BEP 5)
     Port { port: u16 },
 
+    // BEP 6: Fast Extension messages
+
+    /// Suggest a piece to download (BEP 6)
+    SuggestPiece { piece_index: u32 },
+
+    /// Peer has all pieces (BEP 6) - replaces Bitfield
+    HaveAll,
+
+    /// Peer has no pieces (BEP 6) - replaces Bitfield
+    HaveNone,
+
+    /// Reject a request (BEP 6) - peer won't send this block
+    RejectRequest {
+        index: u32,
+        begin: u32,
+        length: u32,
+    },
+
+    /// Piece is allowed to be requested while choked (BEP 6)
+    AllowedFast { piece_index: u32 },
+
     /// Extension message (BEP 10)
     Extended { id: u8, payload: Vec<u8> },
 
@@ -144,6 +167,12 @@ impl PeerMessage {
             Self::Piece { .. } => Some(7),
             Self::Cancel { .. } => Some(8),
             Self::Port { .. } => Some(9),
+            // BEP 6: Fast Extension
+            Self::SuggestPiece { .. } => Some(0x0D),
+            Self::HaveAll => Some(0x0E),
+            Self::HaveNone => Some(0x0F),
+            Self::RejectRequest { .. } => Some(0x10),
+            Self::AllowedFast { .. } => Some(0x11),
             Self::Extended { .. } => Some(20),
             Self::Unknown { id, .. } => Some(*id),
         }
@@ -229,6 +258,39 @@ impl PeerMessage {
             Self::Port { port } => {
                 let mut buf = vec![0, 0, 0, 3, 9];
                 buf.extend_from_slice(&port.to_be_bytes());
+                buf
+            }
+
+            // BEP 6: Fast Extension messages
+            Self::SuggestPiece { piece_index } => {
+                let mut buf = vec![0, 0, 0, 5, 0x0D];
+                buf.extend_from_slice(&piece_index.to_be_bytes());
+                buf
+            }
+
+            Self::HaveAll => {
+                vec![0, 0, 0, 1, 0x0E]
+            }
+
+            Self::HaveNone => {
+                vec![0, 0, 0, 1, 0x0F]
+            }
+
+            Self::RejectRequest {
+                index,
+                begin,
+                length,
+            } => {
+                let mut buf = vec![0, 0, 0, 13, 0x10];
+                buf.extend_from_slice(&index.to_be_bytes());
+                buf.extend_from_slice(&begin.to_be_bytes());
+                buf.extend_from_slice(&length.to_be_bytes());
+                buf
+            }
+
+            Self::AllowedFast { piece_index } => {
+                let mut buf = vec![0, 0, 0, 5, 0x11];
+                buf.extend_from_slice(&piece_index.to_be_bytes());
                 buf
             }
 
@@ -345,6 +407,55 @@ impl PeerMessage {
                 Ok(Self::Port { port })
             }
 
+            // BEP 6: Fast Extension messages
+            0x0D => {
+                // SuggestPiece
+                if payload.len() < 4 {
+                    return Err(EngineError::protocol(
+                        ProtocolErrorKind::PeerProtocol,
+                        "SuggestPiece message too short",
+                    ));
+                }
+                let piece_index = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                Ok(Self::SuggestPiece { piece_index })
+            }
+
+            0x0E => {
+                // HaveAll
+                Ok(Self::HaveAll)
+            }
+
+            0x0F => {
+                // HaveNone
+                Ok(Self::HaveNone)
+            }
+
+            0x10 => {
+                // RejectRequest
+                if payload.len() < 12 {
+                    return Err(EngineError::protocol(
+                        ProtocolErrorKind::PeerProtocol,
+                        "RejectRequest message too short",
+                    ));
+                }
+                let index = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                let begin = u32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
+                let length = u32::from_be_bytes([payload[8], payload[9], payload[10], payload[11]]);
+                Ok(Self::RejectRequest { index, begin, length })
+            }
+
+            0x11 => {
+                // AllowedFast
+                if payload.len() < 4 {
+                    return Err(EngineError::protocol(
+                        ProtocolErrorKind::PeerProtocol,
+                        "AllowedFast message too short",
+                    ));
+                }
+                let piece_index = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                Ok(Self::AllowedFast { piece_index })
+            }
+
             20 => {
                 if payload.is_empty() {
                     return Err(EngineError::protocol(
@@ -371,7 +482,7 @@ pub const OUR_PEX_EXTENSION_ID: u8 = 1;
 
 /// Peer connection
 pub struct PeerConnection {
-    stream: TcpStream,
+    stream: PeerStream,
     addr: SocketAddr,
     info_hash: Sha1Hash,
     our_peer_id: [u8; 20],
@@ -407,17 +518,31 @@ pub struct PeerConnection {
     peer_client: Option<String>,
     /// Peer's listen port (from extension handshake).
     peer_listen_port: Option<u16>,
+
+    /// Whether the connection is encrypted (MSE/PE).
+    encrypted: bool,
 }
 
 impl PeerConnection {
-    /// Connect to a peer and perform handshake
+    /// Connect to a peer and perform handshake (plaintext)
     pub async fn connect(
         addr: SocketAddr,
         info_hash: Sha1Hash,
         peer_id: [u8; 20],
         num_pieces: usize,
     ) -> Result<Self> {
-        let stream = timeout(DEFAULT_TIMEOUT, TcpStream::connect(addr))
+        Self::connect_with_encryption(addr, info_hash, peer_id, num_pieces, None).await
+    }
+
+    /// Connect to a peer with optional MSE encryption
+    pub async fn connect_with_encryption(
+        addr: SocketAddr,
+        info_hash: Sha1Hash,
+        peer_id: [u8; 20],
+        num_pieces: usize,
+        mse_config: Option<&MseConfig>,
+    ) -> Result<Self> {
+        let tcp_stream = timeout(DEFAULT_TIMEOUT, TcpStream::connect(addr))
             .await
             .map_err(|_| EngineError::network(NetworkErrorKind::Timeout, "Connection timeout"))?
             .map_err(|e| {
@@ -427,6 +552,15 @@ impl PeerConnection {
                 )
             })?;
 
+        // Optionally perform MSE handshake
+        let (stream, encrypted) = if let Some(config) = mse_config {
+            let peer_stream = connect_with_mse(tcp_stream, info_hash, config).await?;
+            let is_encrypted = peer_stream.is_encrypted();
+            (peer_stream, is_encrypted)
+        } else {
+            (PeerStream::Plain(tcp_stream), false)
+        };
+
         let mut conn = Self {
             stream,
             addr,
@@ -455,6 +589,7 @@ impl PeerConnection {
             peer_extensions: HashMap::new(),
             peer_client: None,
             peer_listen_port: None,
+            encrypted,
         };
 
         conn.handshake().await?;
@@ -462,7 +597,7 @@ impl PeerConnection {
         Ok(conn)
     }
 
-    /// Accept an incoming connection and perform handshake
+    /// Accept an incoming connection and perform handshake (plaintext)
     pub async fn accept(
         stream: TcpStream,
         addr: SocketAddr,
@@ -470,6 +605,28 @@ impl PeerConnection {
         peer_id: [u8; 20],
         num_pieces: usize,
     ) -> Result<Self> {
+        Self::accept_with_encryption(stream, addr, info_hash, peer_id, num_pieces, None).await
+    }
+
+    /// Accept an incoming connection with optional MSE encryption
+    pub async fn accept_with_encryption(
+        stream: TcpStream,
+        addr: SocketAddr,
+        info_hash: Sha1Hash,
+        peer_id: [u8; 20],
+        num_pieces: usize,
+        mse_config: Option<&MseConfig>,
+    ) -> Result<Self> {
+        // For incoming connections, MSE handshake would be initiated by the peer
+        // For now, we accept plaintext and can add MSE responder later
+        let (stream, encrypted) = if let Some(config) = mse_config {
+            let peer_stream = connect_with_mse(stream, info_hash, config).await?;
+            let is_encrypted = peer_stream.is_encrypted();
+            (peer_stream, is_encrypted)
+        } else {
+            (PeerStream::Plain(stream), false)
+        };
+
         let mut conn = Self {
             stream,
             addr,
@@ -498,6 +655,7 @@ impl PeerConnection {
             peer_extensions: HashMap::new(),
             peer_client: None,
             peer_listen_port: None,
+            encrypted,
         };
 
         conn.handshake().await?;
@@ -517,7 +675,7 @@ impl PeerConnection {
         handshake.extend_from_slice(&self.info_hash);
         handshake.extend_from_slice(&self.our_peer_id);
 
-        // Send handshake
+        // Send handshake (PeerStream handles encryption transparently)
         timeout(DEFAULT_TIMEOUT, self.stream.write_all(&handshake))
             .await
             .map_err(|_| EngineError::network(NetworkErrorKind::Timeout, "Handshake send timeout"))?
@@ -528,7 +686,7 @@ impl PeerConnection {
                 )
             })?;
 
-        // Receive handshake
+        // Receive handshake (PeerStream handles decryption transparently)
         let mut response = [0u8; HANDSHAKE_SIZE];
         timeout(DEFAULT_TIMEOUT, self.stream.read_exact(&mut response))
             .await
@@ -919,6 +1077,15 @@ impl PeerConnection {
         self.send(PeerMessage::Extended { id: pex_id, payload }).await
     }
 
+    /// Send a generic extension message to the peer.
+    ///
+    /// # Arguments
+    /// * `extension_id` - The peer's extension ID for the message type
+    /// * `payload` - The bencoded message payload
+    pub async fn send_extension_message(&mut self, extension_id: u8, payload: Vec<u8>) -> Result<()> {
+        self.send(PeerMessage::Extended { id: extension_id, payload }).await
+    }
+
     /// Check if extension handshake has been completed.
     pub fn extension_handshake_done(&self) -> bool {
         self.extension_handshake_done
@@ -937,6 +1104,11 @@ impl PeerConnection {
     /// Get all peer extensions.
     pub fn peer_extensions(&self) -> &HashMap<String, u8> {
         &self.peer_extensions
+    }
+
+    /// Check if the connection is encrypted (MSE/PE).
+    pub fn is_encrypted(&self) -> bool {
+        self.encrypted
     }
 
     /// Disconnect from the peer

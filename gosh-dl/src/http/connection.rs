@@ -50,7 +50,7 @@ pub struct ConnectionStats {
 impl ConnectionPool {
     /// Create a new connection pool
     pub fn new(config: &HttpConfig) -> Result<Self> {
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .connect_timeout(Duration::from_secs(config.connect_timeout))
             .timeout(Duration::from_secs(config.read_timeout))
             .redirect(reqwest::redirect::Policy::limited(config.max_redirects))
@@ -58,7 +58,16 @@ impl ConnectionPool {
             .pool_max_idle_per_host(32)
             .pool_idle_timeout(Duration::from_secs(90))
             .gzip(true)
-            .brotli(true)
+            .brotli(true);
+
+        // Add proxy if configured
+        if let Some(ref proxy_url) = config.proxy_url {
+            let proxy = reqwest::Proxy::all(proxy_url)
+                .map_err(|e| EngineError::Internal(format!("Invalid proxy URL: {}", e)))?;
+            builder = builder.proxy(proxy);
+        }
+
+        let client = builder
             .build()
             .map_err(|e| EngineError::Internal(format!("Failed to create HTTP client: {}", e)))?;
 

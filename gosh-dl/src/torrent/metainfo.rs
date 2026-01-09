@@ -32,6 +32,10 @@ pub struct Metainfo {
     pub created_by: Option<String>,
     /// Encoding (e.g., "UTF-8")
     pub encoding: Option<String>,
+    /// Web seed URLs (BEP 19 GetRight-style) - direct file URLs
+    pub url_list: Vec<String>,
+    /// HTTP seeds (BEP 17 Hoffman-style) - seed server URLs
+    pub httpseeds: Vec<String>,
 }
 
 /// The info dictionary
@@ -117,6 +121,12 @@ impl Metainfo {
             .and_then(|v| v.as_string())
             .map(String::from);
 
+        // Parse web seeds (BEP 19 - GetRight style)
+        let url_list = Self::parse_url_list(dict.get(b"url-list".as_slice()));
+
+        // Parse HTTP seeds (BEP 17 - Hoffman style)
+        let httpseeds = Self::parse_url_list(dict.get(b"httpseeds".as_slice()));
+
         Ok(Metainfo {
             info_hash,
             info,
@@ -126,6 +136,8 @@ impl Metainfo {
             comment,
             created_by,
             encoding,
+            url_list,
+            httpseeds,
         })
     }
 
@@ -371,6 +383,35 @@ impl Metainfo {
             .collect()
     }
 
+    /// Parse url-list or httpseeds field (BEP 19/BEP 17)
+    ///
+    /// Handles both single string and list-of-strings formats.
+    fn parse_url_list(value: Option<&BencodeValue>) -> Vec<String> {
+        let Some(value) = value else {
+            return Vec::new();
+        };
+
+        match value {
+            // Single URL string
+            BencodeValue::Bytes(bytes) => {
+                if let Ok(s) = std::str::from_utf8(bytes) {
+                    if s.starts_with("http://") || s.starts_with("https://") {
+                        return vec![s.to_string()];
+                    }
+                }
+                Vec::new()
+            }
+            // List of URL strings
+            BencodeValue::List(list) => list
+                .iter()
+                .filter_map(|item| item.as_string())
+                .filter(|s| s.starts_with("http://") || s.starts_with("https://"))
+                .map(String::from)
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// Get the info_hash as a hex string
     pub fn info_hash_hex(&self) -> String {
         self.info_hash
@@ -431,6 +472,27 @@ impl Metainfo {
         }
 
         trackers
+    }
+
+    /// Get all web seed URLs (combining url-list and httpseeds)
+    ///
+    /// Returns deduplicated list of HTTP URLs that can serve torrent data.
+    pub fn all_webseeds(&self) -> Vec<String> {
+        let mut seeds = self.url_list.clone();
+
+        // Add httpseeds, avoiding duplicates
+        for seed in &self.httpseeds {
+            if !seeds.contains(seed) {
+                seeds.push(seed.clone());
+            }
+        }
+
+        seeds
+    }
+
+    /// Check if this torrent has any web seeds
+    pub fn has_webseeds(&self) -> bool {
+        !self.url_list.is_empty() || !self.httpseeds.is_empty()
     }
 
     /// Get files that overlap with a given piece

@@ -6,7 +6,10 @@
 
 use crate::config::EngineConfig;
 use crate::error::{EngineError, Result};
-use crate::http::HttpDownloader;
+use crate::http::{HttpDownloader, SegmentedDownload};
+use crate::priority_queue::{DownloadPriority, PriorityQueue};
+use crate::scheduler::{BandwidthLimits, BandwidthScheduler};
+use crate::storage::{SqliteStorage, Storage};
 use crate::torrent::{MagnetUri, Metainfo, TorrentConfig, TorrentDownloader};
 use crate::types::{
     DownloadEvent, DownloadId, DownloadKind, DownloadMetadata, DownloadOptions,
@@ -18,7 +21,7 @@ use chrono::Utc;
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Semaphore};
+use tokio::sync::broadcast;
 use url::Url;
 
 /// Maximum number of events to buffer
@@ -40,6 +43,9 @@ enum DownloadHandle {
 struct HttpDownloadHandle {
     cancel_token: tokio_util::sync::CancellationToken,
     task: tokio::task::JoinHandle<Result<()>>,
+    /// Reference to segmented download for persistence (if using segmented download).
+    /// Wrapped in RwLock so it can be populated from inside the spawned task.
+    segmented_download: Arc<RwLock<Option<Arc<SegmentedDownload>>>>,
 }
 
 /// Handle for a torrent download
@@ -62,11 +68,17 @@ pub struct DownloadEngine {
     /// Event broadcaster
     event_tx: broadcast::Sender<DownloadEvent>,
 
-    /// Semaphore for limiting concurrent downloads
-    concurrent_limit: Arc<Semaphore>,
+    /// Priority queue for limiting and ordering concurrent downloads
+    priority_queue: Arc<PriorityQueue>,
+
+    /// Bandwidth scheduler for time-based limits
+    scheduler: Arc<RwLock<BandwidthScheduler>>,
 
     /// Shutdown flag
     shutdown: tokio_util::sync::CancellationToken,
+
+    /// Persistent storage for download state
+    storage: Option<Arc<dyn Storage>>,
 }
 
 impl DownloadEngine {
@@ -81,21 +93,199 @@ impl DownloadEngine {
         // Create HTTP downloader
         let http = Arc::new(HttpDownloader::new(&config)?);
 
-        // Create concurrent download limiter
-        let concurrent_limit = Arc::new(Semaphore::new(config.max_concurrent_downloads));
+        // Create priority queue for concurrent download limiting
+        let priority_queue = PriorityQueue::new(config.max_concurrent_downloads);
+
+        // Create bandwidth scheduler with configured rules
+        let scheduler = Arc::new(RwLock::new(BandwidthScheduler::new(
+            config.schedule_rules.clone(),
+            BandwidthLimits {
+                download: config.global_download_limit,
+                upload: config.global_upload_limit,
+            },
+        )));
+
+        // Initialize persistent storage
+        let storage: Option<Arc<dyn Storage>> = if let Some(ref db_path) = config.database_path {
+            match SqliteStorage::new(db_path).await {
+                Ok(s) => Some(Arc::new(s)),
+                Err(e) => {
+                    tracing::warn!("Failed to initialize database storage: {}. Downloads will not be persisted.", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let engine = Arc::new(Self {
             config: RwLock::new(config),
             downloads: RwLock::new(HashMap::new()),
             http,
             event_tx,
-            concurrent_limit,
+            priority_queue,
+            scheduler,
             shutdown: tokio_util::sync::CancellationToken::new(),
+            storage,
         });
 
-        // TODO: Load persisted downloads from database
+        // Load persisted downloads from database
+        engine.load_persisted_downloads().await?;
+
+        // Start background persistence task
+        Self::start_persistence_task(Arc::clone(&engine));
+
+        // Start bandwidth scheduler update task
+        Self::start_scheduler_task(Arc::clone(&engine));
 
         Ok(engine)
+    }
+
+    /// Start background task that periodically persists active download states.
+    ///
+    /// This ensures that if the process crashes, downloads can be resumed
+    /// from approximately where they left off.
+    fn start_persistence_task(engine: Arc<Self>) {
+        if engine.storage.is_none() {
+            return; // No storage configured
+        }
+
+        let shutdown = engine.shutdown.clone();
+        tokio::spawn(async move {
+            const PERSISTENCE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+            let mut interval = tokio::time::interval(PERSISTENCE_INTERVAL);
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(e) = engine.persist_active_downloads().await {
+                            tracing::warn!("Failed to persist active downloads: {}", e);
+                        }
+                    }
+                    _ = shutdown.cancelled() => {
+                        // Final persistence on shutdown
+                        if let Err(e) = engine.persist_active_downloads().await {
+                            tracing::warn!("Failed to persist downloads on shutdown: {}", e);
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    /// Start background task that updates bandwidth limits based on schedule.
+    ///
+    /// This checks the schedule rules every minute and updates the current
+    /// bandwidth limits if they have changed.
+    fn start_scheduler_task(engine: Arc<Self>) {
+        let shutdown = engine.shutdown.clone();
+        tokio::spawn(async move {
+            const SCHEDULER_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+            let mut interval = tokio::time::interval(SCHEDULER_INTERVAL);
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        engine.scheduler.read().update();
+                    }
+                    _ = shutdown.cancelled() => {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    /// Persist all active (non-completed, non-error) downloads to storage.
+    async fn persist_active_downloads(&self) -> Result<()> {
+        let storage = match &self.storage {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+
+        // Collect active downloads and their segment info
+        let active_downloads: Vec<(DownloadStatus, Option<Vec<crate::storage::Segment>>)> = {
+            let downloads = self.downloads.read();
+            downloads
+                .values()
+                .filter(|d| d.status.state.is_active())
+                .map(|d| {
+                    let segments = match &d.handle {
+                        Some(DownloadHandle::Http(h)) => {
+                            h.segmented_download.read().as_ref().map(|sd| sd.segments_with_progress())
+                        }
+                        _ => None,
+                    };
+                    (d.status.clone(), segments)
+                })
+                .collect()
+        };
+
+        // Save each active download and its segments
+        for (status, segments_opt) in active_downloads {
+            if let Err(e) = storage.save_download(&status).await {
+                tracing::debug!("Failed to persist download {}: {}", status.id, e);
+            }
+
+            // Save segments if this is a segmented HTTP download
+            if let Some(segments) = segments_opt {
+                if let Err(e) = storage.save_segments(status.id, &segments).await {
+                    tracing::debug!("Failed to persist segments for {}: {}", status.id, e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Load persisted downloads from database on startup
+    async fn load_persisted_downloads(self: &Arc<Self>) -> Result<()> {
+        let storage = match &self.storage {
+            Some(s) => s,
+            None => return Ok(()), // No storage configured
+        };
+
+        let persisted = storage.load_all().await?;
+
+        for status in persisted {
+            // Skip completed downloads - they don't need resumption
+            if matches!(status.state, DownloadState::Completed) {
+                continue;
+            }
+
+            // For active/downloading states, mark as paused (crashed mid-download)
+            let restored_state = match &status.state {
+                DownloadState::Downloading | DownloadState::Connecting => DownloadState::Paused,
+                DownloadState::Seeding => DownloadState::Paused, // Torrents that were seeding
+                other => other.clone(),
+            };
+
+            let mut restored_status = status.clone();
+            restored_status.state = restored_state;
+            // Reset speeds (they're stale)
+            restored_status.progress.download_speed = 0;
+            restored_status.progress.upload_speed = 0;
+            restored_status.progress.connections = 0;
+
+            // Insert into downloads map
+            self.downloads.write().insert(
+                status.id,
+                ManagedDownload {
+                    status: restored_status,
+                    handle: None,
+                },
+            );
+
+            tracing::info!(
+                "Restored download {} ({}) in state {:?}",
+                status.id,
+                status.metadata.name,
+                status.state
+            );
+        }
+
+        Ok(())
     }
 
     /// Add an HTTP/HTTPS download
@@ -145,6 +335,7 @@ impl DownloadEngine {
             id,
             kind: DownloadKind::Http,
             state: DownloadState::Queued,
+            priority: options.priority,
             progress: DownloadProgress::default(),
             metadata: DownloadMetadata {
                 name,
@@ -156,6 +347,11 @@ impl DownloadEngine {
                 user_agent: options.user_agent.clone(),
                 referer: options.referer.clone(),
                 headers: options.headers.clone(),
+                cookies: options.cookies.clone().unwrap_or_default(),
+                checksum: options.checksum.clone(),
+                mirrors: options.mirrors.clone(),
+                etag: None,
+                last_modified: None,
             },
             torrent_info: None,
             peers: None,
@@ -169,17 +365,24 @@ impl DownloadEngine {
             downloads.insert(
                 id,
                 ManagedDownload {
-                    status,
+                    status: status.clone(),
                     handle: None,
                 },
             );
         }
 
+        // Persist to database
+        if let Some(ref storage) = self.storage {
+            if let Err(e) = storage.save_download(&status).await {
+                tracing::warn!("Failed to persist new download {}: {}", id, e);
+            }
+        }
+
         // Emit event
         let _ = self.event_tx.send(DownloadEvent::Added { id });
 
-        // Start the download
-        self.start_download(id, url.to_string(), options).await?;
+        // Start the download (no saved segments for new downloads)
+        self.start_download(id, url.to_string(), options, None).await?;
 
         Ok(id)
     }
@@ -207,6 +410,7 @@ impl DownloadEngine {
             id,
             kind: DownloadKind::Torrent,
             state: DownloadState::Queued,
+            priority: options.priority,
             progress: DownloadProgress::default(),
             metadata: DownloadMetadata {
                 name: metainfo.info.name.clone(),
@@ -218,6 +422,11 @@ impl DownloadEngine {
                 user_agent: options.user_agent.clone(),
                 referer: None,
                 headers: Vec::new(),
+                cookies: Vec::new(),
+                checksum: None,
+                mirrors: Vec::new(),
+                etag: None,
+                last_modified: None,
             },
             torrent_info: Some(TorrentStatusInfo {
                 files: metainfo
@@ -248,10 +457,17 @@ impl DownloadEngine {
             downloads.insert(
                 id,
                 ManagedDownload {
-                    status,
+                    status: status.clone(),
                     handle: None,
                 },
             );
+        }
+
+        // Persist to database
+        if let Some(ref storage) = self.storage {
+            if let Err(e) = storage.save_download(&status).await {
+                tracing::warn!("Failed to persist new torrent download {}: {}", id, e);
+            }
         }
 
         // Emit event
@@ -286,6 +502,7 @@ impl DownloadEngine {
             id,
             kind: DownloadKind::Magnet,
             state: DownloadState::Queued,
+            priority: options.priority,
             progress: DownloadProgress::default(),
             metadata: DownloadMetadata {
                 name: magnet.name(),
@@ -297,6 +514,11 @@ impl DownloadEngine {
                 user_agent: options.user_agent.clone(),
                 referer: None,
                 headers: Vec::new(),
+                cookies: Vec::new(),
+                checksum: None,
+                mirrors: Vec::new(),
+                etag: None,
+                last_modified: None,
             },
             torrent_info: None, // Will be populated when metadata is received
             peers: Some(Vec::new()),
@@ -310,10 +532,17 @@ impl DownloadEngine {
             downloads.insert(
                 id,
                 ManagedDownload {
-                    status,
+                    status: status.clone(),
                     handle: None,
                 },
             );
+        }
+
+        // Persist to database
+        if let Some(ref storage) = self.storage {
+            if let Err(e) = storage.save_download(&status).await {
+                tracing::warn!("Failed to persist new magnet download {}: {}", id, e);
+            }
         }
 
         // Emit event
@@ -331,7 +560,7 @@ impl DownloadEngine {
         id: DownloadId,
         metainfo: Metainfo,
         save_dir: std::path::PathBuf,
-        _options: DownloadOptions,
+        options: DownloadOptions,
     ) -> Result<()> {
         let config = self.config.read();
         let torrent_config = TorrentConfig {
@@ -354,6 +583,16 @@ impl DownloadEngine {
             self.event_tx.clone(),
         )?);
 
+        // Apply selected files for partial download
+        if let Some(ref selected) = options.selected_files {
+            downloader.set_selected_files(Some(selected));
+        }
+
+        // Apply sequential download mode if requested
+        if let Some(sequential) = options.sequential {
+            downloader.set_sequential(sequential);
+        }
+
         let downloader_clone = Arc::clone(&downloader);
         let engine = Arc::clone(self);
 
@@ -361,8 +600,31 @@ impl DownloadEngine {
         self.update_state(id, DownloadState::Connecting)?;
 
         let task = tokio::spawn(async move {
-            // Start the download
-            if let Err(e) = downloader_clone.start().await {
+            // Start the download (announces to trackers, verifies existing pieces)
+            if let Err(e) = Arc::clone(&downloader_clone).start().await {
+                let error_msg = e.to_string();
+                engine.update_state(
+                    id,
+                    DownloadState::Error {
+                        kind: format!("{:?}", e),
+                        message: error_msg.clone(),
+                        retryable: e.is_retryable(),
+                    },
+                )?;
+                let _ = engine.event_tx.send(DownloadEvent::Failed {
+                    id,
+                    error: error_msg,
+                    retryable: e.is_retryable(),
+                });
+                return Ok(());
+            }
+
+            // Update state to downloading
+            engine.update_state(id, DownloadState::Downloading)?;
+            let _ = engine.event_tx.send(DownloadEvent::Started { id });
+
+            // Run the peer connection loop
+            if let Err(e) = downloader_clone.run_peer_loop().await {
                 let error_msg = e.to_string();
                 engine.update_state(
                     id,
@@ -378,6 +640,7 @@ impl DownloadEngine {
                     retryable: e.is_retryable(),
                 });
             }
+
             Ok(())
         });
 
@@ -401,7 +664,7 @@ impl DownloadEngine {
         id: DownloadId,
         magnet: MagnetUri,
         save_dir: std::path::PathBuf,
-        _options: DownloadOptions,
+        options: DownloadOptions,
     ) -> Result<()> {
         let config = self.config.read();
         let torrent_config = TorrentConfig {
@@ -424,6 +687,11 @@ impl DownloadEngine {
             self.event_tx.clone(),
         )?);
 
+        // Apply sequential download mode if requested
+        if let Some(sequential) = options.sequential {
+            downloader.set_sequential(sequential);
+        }
+
         let downloader_clone = Arc::clone(&downloader);
         let engine = Arc::clone(self);
 
@@ -431,8 +699,31 @@ impl DownloadEngine {
         self.update_state(id, DownloadState::Connecting)?;
 
         let task = tokio::spawn(async move {
-            // Start the download
-            if let Err(e) = downloader_clone.start().await {
+            // Start the download (announces to trackers)
+            if let Err(e) = Arc::clone(&downloader_clone).start().await {
+                let error_msg = e.to_string();
+                engine.update_state(
+                    id,
+                    DownloadState::Error {
+                        kind: format!("{:?}", e),
+                        message: error_msg.clone(),
+                        retryable: e.is_retryable(),
+                    },
+                )?;
+                let _ = engine.event_tx.send(DownloadEvent::Failed {
+                    id,
+                    error: error_msg,
+                    retryable: e.is_retryable(),
+                });
+                return Ok(());
+            }
+
+            // Update state - for magnets, we're initially fetching metadata
+            engine.update_state(id, DownloadState::Downloading)?;
+            let _ = engine.event_tx.send(DownloadEvent::Started { id });
+
+            // Run the peer connection loop (handles both downloading and metadata fetching for magnets)
+            if let Err(e) = downloader_clone.run_peer_loop().await {
                 let error_msg = e.to_string();
                 engine.update_state(
                     id,
@@ -448,6 +739,7 @@ impl DownloadEngine {
                     retryable: e.is_retryable(),
                 });
             }
+
             Ok(())
         });
 
@@ -470,32 +762,39 @@ impl DownloadEngine {
         self: &Arc<Self>,
         id: DownloadId,
         url: String,
-        _options: DownloadOptions,
+        options: DownloadOptions,
+        saved_segments: Option<Vec<crate::storage::Segment>>,
     ) -> Result<()> {
         let engine = Arc::clone(self);
         let http = Arc::clone(&self.http);
-        let concurrent_limit = Arc::clone(&self.concurrent_limit);
+        let priority_queue = Arc::clone(&self.priority_queue);
+        let priority = options.priority;
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let cancel_token_clone = cancel_token.clone();
 
+        // Create shared reference for segmented download (populated by download_segmented)
+        let segmented_ref: Arc<RwLock<Option<Arc<SegmentedDownload>>>> = Arc::new(RwLock::new(None));
+        let segmented_ref_for_task = Arc::clone(&segmented_ref);
+
         // Update state to connecting
-        self.update_state(id, DownloadState::Connecting)?;
+        self.update_state(id, DownloadState::Queued)?;
 
         let task = tokio::spawn(async move {
-            // Acquire semaphore permit for concurrent limit
-            let _permit = concurrent_limit.acquire().await.map_err(|_| EngineError::Shutdown)?;
+            // Acquire priority queue permit for concurrent limit
+            let _permit = priority_queue.acquire(id, priority).await;
 
             // Check if cancelled before starting
             if cancel_token_clone.is_cancelled() {
                 return Ok(());
             }
 
-            // Update state to downloading
+            // Update state to connecting then downloading
+            engine.update_state(id, DownloadState::Connecting)?;
             engine.update_state(id, DownloadState::Downloading)?;
             let _ = engine.event_tx.send(DownloadEvent::Started { id });
 
-            // Get save path
-            let (save_dir, filename, user_agent, referer, headers) = {
+            // Get save path and options
+            let (save_dir, filename, user_agent, referer, headers, cookies, checksum) = {
                 let downloads = engine.downloads.read();
                 let download = downloads.get(&id).ok_or_else(|| {
                     EngineError::NotFound(id.to_string())
@@ -506,6 +805,8 @@ impl DownloadEngine {
                     download.status.metadata.user_agent.clone(),
                     download.status.metadata.referer.clone(),
                     download.status.metadata.headers.clone(),
+                    download.status.metadata.cookies.clone(),
+                    download.status.metadata.checksum.clone(),
                 )
             };
 
@@ -533,6 +834,7 @@ impl DownloadEngine {
             };
 
             // Perform the download (uses segmented if server supports it)
+            let cookies_opt = if cookies.is_empty() { None } else { Some(cookies.as_slice()) };
             let result = http
                 .download_segmented(
                     &url,
@@ -541,15 +843,19 @@ impl DownloadEngine {
                     user_agent.as_deref(),
                     referer.as_deref(),
                     &headers,
+                    cookies_opt,
+                    checksum.as_ref(),
                     max_connections,
                     min_segment_size,
                     cancel_token_clone.clone(),
+                    saved_segments,
                     progress_callback,
+                    Some(segmented_ref_for_task),
                 )
                 .await;
 
             match result {
-                Ok(final_path) => {
+                Ok((final_path, _segmented_download)) => {
                     // Update status to completed
                     {
                         let mut downloads = engine.downloads.write();
@@ -560,6 +866,14 @@ impl DownloadEngine {
                                 final_path.file_name().map(|s| s.to_string_lossy().to_string());
                         }
                     }
+
+                    // Clean up saved segments from storage
+                    if let Some(ref storage) = engine.storage {
+                        if let Err(e) = storage.delete_segments(id).await {
+                            tracing::debug!("Failed to clean up segments for {}: {}", id, e);
+                        }
+                    }
+
                     let _ = engine.event_tx.send(DownloadEvent::Completed { id });
                 }
                 Err(e) if cancel_token_clone.is_cancelled() => {
@@ -597,6 +911,7 @@ impl DownloadEngine {
                 download.handle = Some(DownloadHandle::Http(HttpDownloadHandle {
                     cancel_token,
                     task,
+                    segmented_download: segmented_ref,
                 }));
             }
         }
@@ -606,44 +921,55 @@ impl DownloadEngine {
 
     /// Pause a download
     pub async fn pause(&self, id: DownloadId) -> Result<()> {
-        let mut downloads = self.downloads.write();
-        let download = downloads.get_mut(&id).ok_or_else(|| {
-            EngineError::NotFound(id.to_string())
-        })?;
+        let status_to_save = {
+            let mut downloads = self.downloads.write();
+            let download = downloads.get_mut(&id).ok_or_else(|| {
+                EngineError::NotFound(id.to_string())
+            })?;
 
-        // Check if can be paused
-        if !download.status.state.is_active() {
-            return Err(EngineError::InvalidState {
-                action: "pause",
-                current_state: format!("{:?}", download.status.state),
-            });
-        }
+            // Check if can be paused
+            if !download.status.state.is_active() {
+                return Err(EngineError::InvalidState {
+                    action: "pause",
+                    current_state: format!("{:?}", download.status.state),
+                });
+            }
 
-        // Cancel the task
-        if let Some(handle) = download.handle.take() {
-            match handle {
-                DownloadHandle::Http(h) => {
-                    h.cancel_token.cancel();
-                    // Don't await the task here to avoid blocking
-                }
-                DownloadHandle::Torrent(h) => {
-                    h.downloader.pause();
-                    // Don't await the task
+            // Cancel the task
+            if let Some(handle) = download.handle.take() {
+                match handle {
+                    DownloadHandle::Http(h) => {
+                        h.cancel_token.cancel();
+                        // Don't await the task here to avoid blocking
+                    }
+                    DownloadHandle::Torrent(h) => {
+                        h.downloader.pause();
+                        // Don't await the task
+                    }
                 }
             }
+
+            // Update state
+            let old_state = download.status.state.clone();
+            download.status.state = DownloadState::Paused;
+
+            // Emit events
+            let _ = self.event_tx.send(DownloadEvent::StateChanged {
+                id,
+                old_state,
+                new_state: DownloadState::Paused,
+            });
+            let _ = self.event_tx.send(DownloadEvent::Paused { id });
+
+            download.status.clone()
+        };
+
+        // Persist to database
+        if let Some(ref storage) = self.storage {
+            if let Err(e) = storage.save_download(&status_to_save).await {
+                tracing::warn!("Failed to persist paused download {}: {}", id, e);
+            }
         }
-
-        // Update state
-        let old_state = download.status.state.clone();
-        download.status.state = DownloadState::Paused;
-
-        // Emit events
-        let _ = self.event_tx.send(DownloadEvent::StateChanged {
-            id,
-            old_state,
-            new_state: DownloadState::Paused,
-        });
-        let _ = self.event_tx.send(DownloadEvent::Paused { id });
 
         Ok(())
     }
@@ -674,14 +1000,36 @@ impl DownloadEngine {
                 user_agent: download.status.metadata.user_agent.clone(),
                 referer: download.status.metadata.referer.clone(),
                 headers: download.status.metadata.headers.clone(),
+                cookies: if download.status.metadata.cookies.is_empty() {
+                    None
+                } else {
+                    Some(download.status.metadata.cookies.clone())
+                },
                 ..Default::default()
             };
 
             (url, options)
         };
 
-        // Start the download again
-        self.start_download(id, url, options).await?;
+        // Load saved segments from storage if available
+        let saved_segments = if let Some(ref storage) = self.storage {
+            match storage.load_segments(id).await {
+                Ok(segments) if !segments.is_empty() => {
+                    tracing::debug!("Loaded {} saved segments for download {}", segments.len(), id);
+                    Some(segments)
+                }
+                Ok(_) => None,
+                Err(e) => {
+                    tracing::debug!("Failed to load segments for {}: {}", id, e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Start the download again with saved segments
+        self.start_download(id, url, options, saved_segments).await?;
 
         let _ = self.event_tx.send(DownloadEvent::Resumed { id });
 
@@ -720,7 +1068,7 @@ impl DownloadEngine {
             }
         }
 
-        // Delete files if requested
+        // Delete files and segments if requested
         if let Some(path) = save_path {
             if path.exists() {
                 tokio::fs::remove_file(&path).await.ok();
@@ -729,6 +1077,13 @@ impl DownloadEngine {
             let partial_path = path.with_extension("part");
             if partial_path.exists() {
                 tokio::fs::remove_file(&partial_path).await.ok();
+            }
+        }
+
+        // Clean up saved segments from storage
+        if let Some(ref storage) = self.storage {
+            if let Err(e) = storage.delete_segments(id).await {
+                tracing::debug!("Failed to clean up segments for cancelled download {}: {}", id, e);
             }
         }
 
@@ -831,6 +1186,49 @@ impl DownloadEngine {
         self.config.read().clone()
     }
 
+    /// Set the priority of a download
+    ///
+    /// This affects the order in which downloads acquire slots when queued.
+    /// If the download is already active, the priority is updated but
+    /// won't affect scheduling until the download is paused and resumed.
+    pub fn set_priority(&self, id: DownloadId, priority: DownloadPriority) -> Result<()> {
+        // Update in downloads map
+        {
+            let mut downloads = self.downloads.write();
+            let download = downloads.get_mut(&id).ok_or_else(|| {
+                EngineError::NotFound(id.to_string())
+            })?;
+            download.status.priority = priority;
+        }
+
+        // Update in priority queue (affects scheduling if waiting)
+        self.priority_queue.set_priority(id, priority);
+
+        Ok(())
+    }
+
+    /// Get the current priority of a download
+    pub fn get_priority(&self, id: DownloadId) -> Option<DownloadPriority> {
+        self.downloads.read().get(&id).map(|d| d.status.priority)
+    }
+
+    /// Get current bandwidth limits (accounting for schedule rules)
+    pub fn get_bandwidth_limits(&self) -> BandwidthLimits {
+        self.scheduler.read().get_limits()
+    }
+
+    /// Update the bandwidth schedule rules
+    ///
+    /// The new rules take effect immediately after evaluation.
+    pub fn set_schedule_rules(&self, rules: Vec<crate::scheduler::ScheduleRule>) {
+        self.scheduler.write().set_rules(rules);
+    }
+
+    /// Get the current schedule rules
+    pub fn get_schedule_rules(&self) -> Vec<crate::scheduler::ScheduleRule> {
+        self.scheduler.read().rules().to_vec()
+    }
+
     /// Graceful shutdown
     pub async fn shutdown(&self) -> Result<()> {
         // Signal shutdown
@@ -865,8 +1263,6 @@ impl DownloadEngine {
                 }
             }
         }
-
-        // TODO: Save state to database
 
         Ok(())
     }

@@ -3,6 +3,7 @@
 //! This module contains all configuration options for the download engine.
 
 use crate::error::{EngineError, Result};
+use crate::scheduler::ScheduleRule;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -26,6 +27,11 @@ pub struct EngineConfig {
 
     /// Global upload speed limit (bytes/sec, None = unlimited)
     pub global_upload_limit: Option<u64>,
+
+    /// Bandwidth schedule rules for time-based limits
+    /// Rules are evaluated in order, first match wins
+    #[serde(default)]
+    pub schedule_rules: Vec<ScheduleRule>,
 
     /// Default user agent
     pub user_agent: String,
@@ -78,6 +84,46 @@ pub struct HttpConfig {
 
     /// Whether to accept invalid TLS certificates (dangerous!)
     pub accept_invalid_certs: bool,
+
+    /// Proxy URL (e.g., "http://proxy:8080" or "socks5://proxy:1080")
+    /// Supports HTTP, HTTPS, and SOCKS5 proxies
+    pub proxy_url: Option<String>,
+}
+
+/// File allocation mode for torrent downloads
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AllocationMode {
+    /// No preallocation (default) - files grow as data is written
+    #[default]
+    None,
+    /// Sparse allocation - set file size but don't write zeros (fast, most filesystems)
+    Sparse,
+    /// Full allocation - preallocate entire file with zeros (slow but prevents fragmentation)
+    Full,
+}
+
+impl std::fmt::Display for AllocationMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "none"),
+            Self::Sparse => write!(f, "sparse"),
+            Self::Full => write!(f, "full"),
+        }
+    }
+}
+
+impl std::str::FromStr for AllocationMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "none" => Ok(Self::None),
+            "sparse" => Ok(Self::Sparse),
+            "full" | "preallocate" => Ok(Self::Full),
+            _ => Err(format!("Invalid allocation mode: {}", s)),
+        }
+    }
 }
 
 /// BitTorrent-specific configuration
@@ -88,6 +134,10 @@ pub struct TorrentConfig {
 
     /// DHT bootstrap nodes
     pub dht_bootstrap_nodes: Vec<String>,
+
+    /// File allocation mode (none, sparse, or full)
+    #[serde(default)]
+    pub allocation_mode: AllocationMode,
 
     /// Tracker update interval in seconds
     pub tracker_update_interval: u64,
@@ -100,6 +150,247 @@ pub struct TorrentConfig {
 
     /// Enable endgame mode
     pub enable_endgame: bool,
+
+    /// Peer loop tick interval in milliseconds.
+    /// Controls how frequently the peer loop checks for state changes and cleanup.
+    /// Default: 100ms. Lower values increase responsiveness but use more CPU.
+    #[serde(default = "default_tick_interval_ms")]
+    pub tick_interval_ms: u64,
+
+    /// Peer connection attempt interval in seconds.
+    /// Controls how frequently we attempt to connect to new peers.
+    /// Default: 5 seconds.
+    #[serde(default = "default_connect_interval_secs")]
+    pub connect_interval_secs: u64,
+
+    /// Choking algorithm update interval in seconds.
+    /// Controls how frequently we recalculate which peers to unchoke.
+    /// Per BEP 3, this should be around 10 seconds for regular unchoke
+    /// and 30 seconds for optimistic unchoke.
+    /// Default: 10 seconds.
+    #[serde(default = "default_choking_interval_secs")]
+    pub choking_interval_secs: u64,
+
+    /// WebSeed configuration
+    #[serde(default)]
+    pub webseed: WebSeedConfig,
+
+    /// Encryption configuration (MSE/PE)
+    #[serde(default)]
+    pub encryption: EncryptionConfig,
+
+    /// uTP transport configuration
+    #[serde(default)]
+    pub utp: UtpConfigSettings,
+}
+
+/// WebSeed-specific configuration (BEP 19/BEP 17)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebSeedConfig {
+    /// Enable web seed downloads
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Maximum concurrent web seed connections per torrent
+    #[serde(default = "default_webseed_connections")]
+    pub max_connections: usize,
+
+    /// Request timeout in seconds
+    #[serde(default = "default_webseed_timeout")]
+    pub timeout_seconds: u64,
+
+    /// Maximum consecutive failures before disabling a web seed
+    #[serde(default = "default_webseed_max_failures")]
+    pub max_failures: u32,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_webseed_connections() -> usize {
+    4
+}
+
+fn default_webseed_timeout() -> u64 {
+    30
+}
+
+fn default_webseed_max_failures() -> u32 {
+    5
+}
+
+fn default_tick_interval_ms() -> u64 {
+    100
+}
+
+fn default_connect_interval_secs() -> u64 {
+    5
+}
+
+fn default_choking_interval_secs() -> u64 {
+    10
+}
+
+impl Default for WebSeedConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_connections: 4,
+            timeout_seconds: 30,
+            max_failures: 5,
+        }
+    }
+}
+
+/// Encryption policy for peer connections (MSE/PE)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum EncryptionPolicy {
+    /// Disable encryption entirely (plaintext only)
+    Disabled,
+    /// Allow encryption but don't require it (accept both)
+    Allowed,
+    /// Prefer encryption, fall back to plaintext if peer doesn't support
+    #[default]
+    Preferred,
+    /// Require encryption (reject non-MSE peers)
+    Required,
+}
+
+impl std::fmt::Display for EncryptionPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Disabled => write!(f, "disabled"),
+            Self::Allowed => write!(f, "allowed"),
+            Self::Preferred => write!(f, "preferred"),
+            Self::Required => write!(f, "required"),
+        }
+    }
+}
+
+/// Encryption configuration for peer connections (MSE/PE)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncryptionConfig {
+    /// Encryption policy
+    #[serde(default)]
+    pub policy: EncryptionPolicy,
+
+    /// Allow plaintext as fallback (when policy is Preferred)
+    #[serde(default = "default_true")]
+    pub allow_plaintext: bool,
+
+    /// Allow RC4 encryption
+    #[serde(default = "default_true")]
+    pub allow_rc4: bool,
+
+    /// Minimum random padding bytes for obfuscation
+    #[serde(default)]
+    pub min_padding: usize,
+
+    /// Maximum random padding bytes for obfuscation
+    #[serde(default = "default_max_padding")]
+    pub max_padding: usize,
+}
+
+fn default_max_padding() -> usize {
+    512
+}
+
+impl Default for EncryptionConfig {
+    fn default() -> Self {
+        Self {
+            policy: EncryptionPolicy::Preferred,
+            allow_plaintext: true,
+            allow_rc4: true,
+            min_padding: 0,
+            max_padding: 512,
+        }
+    }
+}
+
+/// Transport policy for peer connections
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TransportPolicy {
+    /// Use TCP only
+    TcpOnly,
+    /// Use uTP only
+    UtpOnly,
+    /// Prefer uTP, fall back to TCP (default)
+    #[default]
+    PreferUtp,
+    /// Prefer TCP, fall back to uTP
+    PreferTcp,
+}
+
+impl std::fmt::Display for TransportPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TcpOnly => write!(f, "tcp-only"),
+            Self::UtpOnly => write!(f, "utp-only"),
+            Self::PreferUtp => write!(f, "prefer-utp"),
+            Self::PreferTcp => write!(f, "prefer-tcp"),
+        }
+    }
+}
+
+/// uTP (Micro Transport Protocol) configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UtpConfigSettings {
+    /// Enable uTP transport
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Transport policy (prefer-utp, prefer-tcp, utp-only, tcp-only)
+    #[serde(default)]
+    pub policy: TransportPolicy,
+
+    /// Enable TCP fallback when uTP fails
+    #[serde(default = "default_true")]
+    pub tcp_fallback: bool,
+
+    /// Target delay in microseconds for LEDBAT (default: 100,000 = 100ms)
+    #[serde(default = "default_target_delay")]
+    pub target_delay_us: u32,
+
+    /// Maximum congestion window size in bytes (default: 1MB)
+    #[serde(default = "default_max_window")]
+    pub max_window_size: u32,
+
+    /// Initial receive window size in bytes (default: 1MB)
+    #[serde(default = "default_recv_window")]
+    pub recv_window: u32,
+
+    /// Enable selective ACK extension
+    #[serde(default = "default_true")]
+    pub enable_sack: bool,
+}
+
+fn default_target_delay() -> u32 {
+    100_000 // 100ms
+}
+
+fn default_max_window() -> u32 {
+    1024 * 1024 // 1MB
+}
+
+fn default_recv_window() -> u32 {
+    1024 * 1024 // 1MB
+}
+
+impl Default for UtpConfigSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            policy: TransportPolicy::PreferUtp,
+            tcp_fallback: true,
+            target_delay_us: 100_000,
+            max_window_size: 1024 * 1024,
+            recv_window: 1024 * 1024,
+            enable_sack: true,
+        }
+    }
 }
 
 impl Default for EngineConfig {
@@ -111,6 +402,7 @@ impl Default for EngineConfig {
             min_segment_size: 1024 * 1024, // 1 MiB
             global_download_limit: None,
             global_upload_limit: None,
+            schedule_rules: Vec::new(),
             user_agent: format!("gosh-dl/{}", env!("CARGO_PKG_VERSION")),
             enable_dht: true,
             enable_pex: true,
@@ -134,6 +426,7 @@ impl Default for HttpConfig {
             retry_delay_ms: 1000,
             max_retry_delay_ms: 30000,
             accept_invalid_certs: false,
+            proxy_url: None,
         }
     }
 }
@@ -147,10 +440,17 @@ impl Default for TorrentConfig {
                 "router.utorrent.com:6881".to_string(),
                 "dht.transmissionbt.com:6881".to_string(),
             ],
+            allocation_mode: AllocationMode::None,
             tracker_update_interval: 1800, // 30 minutes
             peer_timeout: 120,
             max_pending_requests: 16,
             enable_endgame: true,
+            tick_interval_ms: 100,
+            connect_interval_secs: 5,
+            choking_interval_secs: 10,
+            webseed: WebSeedConfig::default(),
+            encryption: EncryptionConfig::default(),
+            utp: UtpConfigSettings::default(),
         }
     }
 }
@@ -194,6 +494,18 @@ impl EngineConfig {
     /// Set the user agent
     pub fn user_agent(mut self, ua: impl Into<String>) -> Self {
         self.user_agent = ua.into();
+        self
+    }
+
+    /// Set bandwidth schedule rules
+    pub fn schedule_rules(mut self, rules: Vec<ScheduleRule>) -> Self {
+        self.schedule_rules = rules;
+        self
+    }
+
+    /// Add a bandwidth schedule rule
+    pub fn add_schedule_rule(mut self, rule: ScheduleRule) -> Self {
+        self.schedule_rules.push(rule);
         self
     }
 

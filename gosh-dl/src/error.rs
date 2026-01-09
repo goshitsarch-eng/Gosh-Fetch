@@ -143,6 +143,8 @@ pub enum ProtocolErrorKind {
     DhtError,
     /// Local Peer Discovery error
     LpdError,
+    /// Metadata fetch error (BEP 9)
+    MetadataError,
 }
 
 impl EngineError {

@@ -175,6 +175,21 @@ pub struct DownloadMetadata {
     pub referer: Option<String>,
     /// Custom headers
     pub headers: Vec<(String, String)>,
+    /// Cookies for authenticated downloads
+    #[serde(default)]
+    pub cookies: Vec<String>,
+    /// Expected checksum for verification (HTTP only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<ExpectedChecksum>,
+    /// Mirror/fallback URLs (HTTP only)
+    #[serde(default)]
+    pub mirrors: Vec<String>,
+    /// ETag for resume validation (HTTP only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub etag: Option<String>,
+    /// Last-Modified for resume validation (HTTP only)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_modified: Option<String>,
 }
 
 /// Full status of a download
@@ -186,6 +201,9 @@ pub struct DownloadStatus {
     pub kind: DownloadKind,
     /// Current state
     pub state: DownloadState,
+    /// Download priority
+    #[serde(default)]
+    pub priority: crate::priority_queue::DownloadPriority,
     /// Progress information
     pub progress: DownloadProgress,
     /// Metadata
@@ -222,9 +240,15 @@ impl DownloadStatus {
     }
 }
 
+use crate::http::ExpectedChecksum;
+use crate::priority_queue::DownloadPriority;
+
 /// Options for adding a new download
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DownloadOptions {
+    /// Download priority (affects queue ordering)
+    #[serde(default)]
+    pub priority: DownloadPriority,
     /// Directory to save files
     pub save_dir: Option<PathBuf>,
     /// Output filename
@@ -235,6 +259,12 @@ pub struct DownloadOptions {
     pub referer: Option<String>,
     /// Additional headers
     pub headers: Vec<(String, String)>,
+    /// Cookies for authenticated downloads (e.g., ["session=abc123", "token=xyz"])
+    pub cookies: Option<Vec<String>>,
+    /// Expected checksum for verification after download (e.g., MD5 or SHA256)
+    pub checksum: Option<ExpectedChecksum>,
+    /// Mirror/fallback URLs for redundancy (tried in order on failure)
+    pub mirrors: Vec<String>,
     /// Max connections for this download
     pub max_connections: Option<usize>,
     /// Max download speed (bytes/sec)
@@ -245,6 +275,8 @@ pub struct DownloadOptions {
     pub seed_ratio: Option<f64>,
     /// Selected file indices (torrent only)
     pub selected_files: Option<Vec<usize>>,
+    /// Sequential download mode (torrent only) - downloads pieces in order for streaming
+    pub sequential: Option<bool>,
 }
 
 /// Events emitted by the download engine

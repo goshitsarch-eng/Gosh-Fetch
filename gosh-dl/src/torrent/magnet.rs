@@ -4,7 +4,7 @@
 //! Magnet URIs allow downloading torrents without having the .torrent file,
 //! using only the info_hash and optionally tracker URLs.
 //!
-//! Format: magnet:?xt=urn:btih:<hash>&dn=<name>&tr=<tracker>
+//! Format: `magnet:?xt=urn:btih:<hash>&dn=<name>&tr=<tracker>`
 
 use crate::error::{EngineError, ProtocolErrorKind, Result};
 

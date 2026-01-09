@@ -42,12 +42,14 @@ pub mod config;
 pub mod engine;
 pub mod error;
 pub mod http;
+pub mod priority_queue;
+pub mod scheduler;
 pub mod storage;
 pub mod torrent;
 pub mod types;
 
 // Re-exports for convenience
-pub use config::{EngineConfig, HttpConfig, TorrentConfig};
+pub use config::{AllocationMode, EngineConfig, HttpConfig, TorrentConfig};
 pub use engine::DownloadEngine;
 pub use error::{EngineError, NetworkErrorKind, ProtocolErrorKind, Result, StorageErrorKind};
 pub use types::{
@@ -58,6 +60,12 @@ pub use types::{
 
 // Storage exports
 pub use storage::{MemoryStorage, Segment, SegmentState, SqliteStorage, Storage};
+
+// Priority queue exports
+pub use priority_queue::{DownloadPriority, PriorityQueue, PriorityQueueStats};
+
+// Scheduler exports
+pub use scheduler::{BandwidthLimits, BandwidthScheduler, ScheduleRule};
 
 // HTTP module exports
 pub use http::{

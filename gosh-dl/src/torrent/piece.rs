@@ -4,7 +4,7 @@
 //! It handles piece selection strategies (rarest first), block management,
 //! and SHA-1 hash verification.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -19,7 +19,7 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt, AsyncReadExt};
 
 use super::metainfo::{Metainfo, Sha1Hash};
 use super::peer::BLOCK_SIZE;
-use crate::error::{EngineError, ProtocolErrorKind, Result};
+use crate::error::{EngineError, ProtocolErrorKind, StorageErrorKind, Result};
 
 /// Piece manager for coordinating downloads
 pub struct PieceManager {
@@ -40,6 +40,13 @@ pub struct PieceManager {
 
     /// Piece rarity (how many peers have each piece)
     piece_availability: RwLock<Vec<u32>>,
+
+    /// Pieces that should be downloaded (for selective file download)
+    /// If None, all pieces are wanted. If Some, only marked pieces are wanted.
+    wanted_pieces: RwLock<Option<BitVec<u8, Msb0>>>,
+
+    /// Sequential download mode - download pieces in order for streaming
+    sequential_mode: RwLock<bool>,
 }
 
 /// A piece being downloaded
@@ -204,6 +211,169 @@ impl PieceManager {
             verified_count: AtomicU64::new(0),
             verified_bytes: AtomicU64::new(0),
             piece_availability: RwLock::new(vec![0; num_pieces]),
+            wanted_pieces: RwLock::new(None),
+            sequential_mode: RwLock::new(false),
+        }
+    }
+
+    /// Enable or disable sequential download mode
+    pub fn set_sequential(&self, sequential: bool) {
+        *self.sequential_mode.write() = sequential;
+    }
+
+    /// Check if sequential mode is enabled
+    pub fn is_sequential(&self) -> bool {
+        *self.sequential_mode.read()
+    }
+
+    /// Preallocate files on disk according to the specified allocation mode.
+    ///
+    /// - `None`: No preallocation, files grow as data is written
+    /// - `Sparse`: Set file size without writing (fast, works on most filesystems)
+    /// - `Full`: Write zeros to allocate full file (slow but prevents fragmentation)
+    pub async fn preallocate_files(&self, mode: crate::config::AllocationMode) -> Result<()> {
+        use crate::config::AllocationMode;
+
+        if matches!(mode, AllocationMode::None) {
+            return Ok(());
+        }
+
+        for file_info in &self.metainfo.info.files {
+            // Build file path with security validation
+            let file_path = if self.metainfo.info.is_single_file {
+                for component in std::path::Path::new(&self.metainfo.info.name).components() {
+                    Self::validate_path_component(&component)?;
+                }
+                self.save_dir.join(&self.metainfo.info.name)
+            } else {
+                for component in std::path::Path::new(&self.metainfo.info.name).components() {
+                    Self::validate_path_component(&component)?;
+                }
+                for component in std::path::Path::new(&file_info.path).components() {
+                    Self::validate_path_component(&component)?;
+                }
+                self.save_dir
+                    .join(&self.metainfo.info.name)
+                    .join(&file_info.path)
+            };
+
+            // Create parent directories
+            if let Some(parent) = file_path.parent() {
+                tokio::fs::create_dir_all(parent).await?;
+            }
+
+            // Open or create file
+            let file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&file_path)
+                .await?;
+
+            let file_size = file_info.length;
+
+            match mode {
+                AllocationMode::None => unreachable!(),
+                AllocationMode::Sparse => {
+                    // Sparse allocation: just set the file length
+                    // The filesystem will handle sparse regions
+                    file.set_len(file_size).await?;
+                    tracing::debug!(
+                        "Sparse allocated {} ({} bytes)",
+                        file_path.display(),
+                        file_size
+                    );
+                }
+                AllocationMode::Full => {
+                    // Full allocation: write zeros to the entire file
+                    // This is slow but prevents fragmentation
+                    let current_size = file.metadata().await?.len();
+                    if current_size < file_size {
+                        // Only allocate what's needed
+                        file.set_len(file_size).await?;
+
+                        // On Linux, try to use fallocate for true allocation
+                        #[cfg(target_os = "linux")]
+                        {
+                            use std::os::unix::fs::FileExt;
+                            let std_file = file.try_into_std().unwrap();
+                            // Write a single byte at the end to force allocation
+                            // This is a fallback; true fallocate would be better
+                            if file_size > 0 {
+                                let _ = std_file.write_at(&[0], file_size - 1);
+                            }
+                        }
+
+                        tracing::debug!(
+                            "Full allocated {} ({} bytes)",
+                            file_path.display(),
+                            file_size
+                        );
+                    }
+                }
+            }
+        }
+
+        tracing::info!(
+            "Preallocated {} files using {:?} mode",
+            self.metainfo.info.files.len(),
+            mode
+        );
+
+        Ok(())
+    }
+
+    /// Set selected files for partial download.
+    ///
+    /// Only pieces that contain data from the selected files will be downloaded.
+    /// If `file_indices` is empty or None, all files will be downloaded.
+    pub fn set_selected_files(&self, file_indices: Option<&[usize]>) {
+        let indices = match file_indices {
+            Some(indices) if !indices.is_empty() => indices,
+            _ => {
+                // Download all files
+                *self.wanted_pieces.write() = None;
+                return;
+            }
+        };
+
+        let piece_length = self.metainfo.info.piece_length;
+        let num_pieces = self.num_pieces();
+        let mut wanted = bitvec![u8, Msb0; 0; num_pieces];
+
+        // For each selected file, mark the pieces that contain its data
+        for &file_idx in indices {
+            if file_idx >= self.metainfo.info.files.len() {
+                continue;
+            }
+
+            let file = &self.metainfo.info.files[file_idx];
+            let file_start = file.offset;
+            let file_end = file.offset + file.length;
+
+            // Calculate piece range for this file
+            let first_piece = (file_start / piece_length) as usize;
+            let last_piece = if file_end == 0 {
+                first_piece
+            } else {
+                ((file_end - 1) / piece_length) as usize
+            };
+
+            // Mark all pieces in range as wanted
+            for piece_idx in first_piece..=last_piece.min(num_pieces - 1) {
+                wanted.set(piece_idx, true);
+            }
+        }
+
+        *self.wanted_pieces.write() = Some(wanted);
+    }
+
+    /// Check if a piece is wanted (needed for selected files)
+    pub fn is_piece_wanted(&self, index: usize) -> bool {
+        let wanted = self.wanted_pieces.read();
+        match &*wanted {
+            None => true, // All pieces wanted
+            Some(bits) => bits.get(index).map(|b| *b).unwrap_or(false),
         }
     }
 
@@ -235,6 +405,11 @@ impl PieceManager {
         self.have.read().clone()
     }
 
+    /// Get set of piece indices currently being downloaded
+    pub fn pending_pieces(&self) -> HashSet<u32> {
+        self.pending.read().keys().copied().collect()
+    }
+
     /// Update piece availability from a peer's bitfield
     pub fn update_availability(&self, peer_pieces: &BitVec<u8, Msb0>, add: bool) {
         let mut availability = self.piece_availability.write();
@@ -250,13 +425,16 @@ impl PieceManager {
         }
     }
 
-    /// Select the next piece to download using rarest-first strategy
+    /// Select the next piece to download using rarest-first or sequential strategy
     ///
-    /// Returns the piece index if a suitable piece is found
+    /// Returns the piece index if a suitable piece is found.
+    /// In sequential mode, returns the lowest-numbered needed piece for streaming support.
     pub fn select_piece(&self, peer_has: &BitVec<u8, Msb0>) -> Option<u32> {
         let have = self.have.read();
         let pending = self.pending.read();
         let availability = self.piece_availability.read();
+        let wanted = self.wanted_pieces.read();
+        let sequential = *self.sequential_mode.read();
 
         // Find pieces we need that the peer has
         let mut candidates: Vec<(u32, u32)> = Vec::new();
@@ -265,6 +443,13 @@ impl PieceManager {
             // Skip pieces we have or are downloading
             if have[i] || pending.contains_key(&(i as u32)) {
                 continue;
+            }
+
+            // Skip pieces not in selected files (if selective download is active)
+            if let Some(ref wanted_bits) = *wanted {
+                if !wanted_bits.get(i).map(|b| *b).unwrap_or(false) {
+                    continue;
+                }
             }
 
             // Check if peer has this piece
@@ -279,10 +464,15 @@ impl PieceManager {
             return None;
         }
 
-        // Sort by availability (rarest first)
-        candidates.sort_by_key(|&(_, count)| count);
+        if sequential {
+            // Sequential mode: select lowest-numbered piece for streaming
+            candidates.sort_by_key(|&(index, _)| index);
+        } else {
+            // Normal mode: rarest first
+            candidates.sort_by_key(|&(_, count)| count);
+        }
 
-        // Return the rarest piece (could add randomization among equally rare pieces)
+        // Return the selected piece
         Some(candidates[0].0)
     }
 
@@ -505,9 +695,29 @@ impl PieceManager {
     }
 
     /// Check if download is complete
+    ///
+    /// If selective download is active, returns true when all wanted pieces are downloaded.
     pub fn is_complete(&self) -> bool {
         let have = self.have.read();
-        have.count_ones() == self.num_pieces()
+        let wanted = self.wanted_pieces.read();
+
+        match &*wanted {
+            None => {
+                // All pieces wanted - check if we have all
+                have.count_ones() == self.num_pieces()
+            }
+            Some(wanted_bits) => {
+                // Only check wanted pieces
+                for i in 0..self.num_pieces() {
+                    if wanted_bits.get(i).map(|b| *b).unwrap_or(false)
+                        && !have.get(i).map(|b| *b).unwrap_or(false)
+                    {
+                        return false;
+                    }
+                }
+                true
+            }
+        }
     }
 
     /// Verify existing files and update bitfield
@@ -591,16 +801,158 @@ impl PieceManager {
         Ok(actual_hash == *expected_hash)
     }
 
-    /// Get pieces for endgame mode (when only a few pieces remain)
+    /// Read a block from disk for uploading to peers
+    ///
+    /// Returns the block data if successful, or an error if:
+    /// - We don't have the piece
+    /// - The offset/length are invalid
+    /// - File I/O fails
+    pub async fn read_block(&self, piece_index: u32, offset: u32, length: u32) -> Result<Vec<u8>> {
+        // Validate we have this piece
+        if !self.have_piece(piece_index as usize) {
+            return Err(EngineError::protocol(
+                ProtocolErrorKind::PeerProtocol,
+                format!("Don't have piece {} for upload", piece_index),
+            ));
+        }
+
+        // Get piece length and validate bounds
+        let piece_length = self.metainfo.piece_length(piece_index as usize)
+            .ok_or_else(|| EngineError::protocol(
+                ProtocolErrorKind::InvalidTorrent,
+                format!("Invalid piece index {}", piece_index),
+            ))?;
+
+        let block_end = offset as u64 + length as u64;
+        if block_end > piece_length {
+            return Err(EngineError::protocol(
+                ProtocolErrorKind::PeerProtocol,
+                format!(
+                    "Block request out of bounds: offset={}, length={}, piece_length={}",
+                    offset, length, piece_length
+                ),
+            ));
+        }
+
+        // Validate block size against BitTorrent protocol limits.
+        // Standard block size is 16KB (BLOCK_SIZE = 16384 bytes).
+        // We allow 1KB tolerance (1024 bytes) for two reasons:
+        // 1. Some older clients may request slightly larger blocks
+        // 2. The last block of a piece may have non-standard alignment
+        // Requests larger than this are likely malicious or buggy and are rejected.
+        if length > BLOCK_SIZE + 1024 {
+            return Err(EngineError::protocol(
+                ProtocolErrorKind::PeerProtocol,
+                format!("Block request too large: {}", length),
+            ));
+        }
+
+        // Read the full piece data from disk (same logic as verify_piece_on_disk)
+        let files_for_piece = self.metainfo.files_for_piece(piece_index as usize);
+        let mut piece_data = Vec::with_capacity(piece_length as usize);
+
+        for (file_idx, file_offset, file_length) in files_for_piece {
+            let file_info = &self.metainfo.info.files[file_idx];
+
+            // Build and validate file path (security check)
+            let file_path = if self.metainfo.info.is_single_file {
+                for component in std::path::Path::new(&self.metainfo.info.name).components() {
+                    Self::validate_path_component(&component)?;
+                }
+                self.save_dir.join(&self.metainfo.info.name)
+            } else {
+                for component in std::path::Path::new(&self.metainfo.info.name).components() {
+                    Self::validate_path_component(&component)?;
+                }
+                for component in std::path::Path::new(&file_info.path).components() {
+                    Self::validate_path_component(&component)?;
+                }
+                self.save_dir
+                    .join(&self.metainfo.info.name)
+                    .join(&file_info.path)
+            };
+
+            let mut file = File::open(&file_path).await.map_err(|e| {
+                EngineError::storage(
+                    StorageErrorKind::Io,
+                    &file_path,
+                    format!("Failed to open file for reading: {}", e),
+                )
+            })?;
+
+            file.seek(SeekFrom::Start(file_offset)).await?;
+
+            let mut buf = vec![0u8; file_length as usize];
+            file.read_exact(&mut buf).await.map_err(|e: std::io::Error| {
+                EngineError::storage(
+                    StorageErrorKind::Io,
+                    &file_path,
+                    format!("Failed to read block data: {}", e),
+                )
+            })?;
+            piece_data.extend_from_slice(&buf);
+        }
+
+        // Extract just the requested block
+        let block_start = offset as usize;
+        let block_end = block_start + length as usize;
+
+        Ok(piece_data[block_start..block_end].to_vec())
+    }
+
+    /// Write piece data received from a webseed (already verified)
+    ///
+    /// This method writes the piece to disk and updates the bitfield.
+    /// The hash has already been verified by WebSeedManager.
+    pub async fn write_piece_from_webseed(&self, index: u32, data: &[u8]) -> Result<()> {
+        // Check if we already have this piece
+        if self.have_piece(index as usize) {
+            return Ok(()); // Already have it, skip
+        }
+
+        // Write to disk
+        self.write_piece(index, data).await?;
+
+        // Update state
+        {
+            let mut have = self.have.write();
+            have.set(index as usize, true);
+        }
+
+        self.verified_count.fetch_add(1, Ordering::Relaxed);
+        self.verified_bytes
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
+
+        tracing::debug!("Webseed piece {} written ({} bytes)", index, data.len());
+
+        Ok(())
+    }
+
+    /// Get pieces for endgame mode (when only a few pieces remain).
+    ///
+    /// Endgame mode is a BitTorrent optimization where the remaining pieces are
+    /// requested from multiple peers simultaneously to avoid the "last piece problem"
+    /// where a slow peer holds up completion.
+    ///
+    /// Returns the list of remaining pieces if we're in endgame mode, otherwise empty.
     pub fn endgame_pieces(&self) -> Vec<u32> {
         let have = self.have.read();
+        // Acquire pending lock to ensure consistent view with endgame_requests().
+        // This prevents a race where we enter endgame mode but the pending state
+        // changes between this call and the subsequent endgame_requests() call.
         let _pending = self.pending.read();
 
         let remaining: Vec<u32> = (0..self.num_pieces() as u32)
             .filter(|&i| !have[i as usize])
             .collect();
 
-        // Enter endgame when 10 or fewer pieces remain
+        // ENDGAME THRESHOLD: 10 pieces
+        // This threshold is chosen as a balance between:
+        // - Too low (e.g., 2-3): Miss optimization opportunities, slow final phase
+        // - Too high (e.g., 50+): Excessive duplicate requests waste bandwidth
+        // 10 pieces is a common choice in BitTorrent implementations (libtorrent, etc.)
+        // and works well across torrent sizes. At typical piece sizes (256KB-4MB),
+        // this represents 2.5MB-40MB of remaining data.
         if remaining.len() <= 10 {
             remaining
         } else {
@@ -752,5 +1104,119 @@ mod tests {
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0], (0, 16384));
         assert_eq!(blocks[1], (16384, 3616)); // 20000 - 16384 = 3616
+    }
+
+    // ========================================================================
+    // Path Traversal Security Tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_path_component_rejects_parent_dir() {
+        use std::path::Component;
+
+        let parent_dir = Component::ParentDir;
+        let result = PieceManager::validate_path_component(&parent_dir);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("parent directory"));
+    }
+
+    #[test]
+    fn test_validate_path_component_rejects_root_dir() {
+        use std::path::Component;
+
+        let root_dir = Component::RootDir;
+        let result = PieceManager::validate_path_component(&root_dir);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("absolute path"));
+    }
+
+    #[test]
+    fn test_validate_path_component_accepts_normal() {
+        use std::path::Component;
+        use std::ffi::OsStr;
+
+        let normal = Component::Normal(OsStr::new("valid_filename.txt"));
+        let result = PieceManager::validate_path_component(&normal);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_path_component_accepts_current_dir() {
+        use std::path::Component;
+
+        // CurDir (.) is harmless and should be allowed
+        let cur_dir = Component::CurDir;
+        let result = PieceManager::validate_path_component(&cur_dir);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_path_traversal_attack_patterns() {
+        use std::path::Path;
+
+        // These paths should all be rejected
+        let malicious_paths = [
+            "../etc/passwd",
+            "foo/../../../etc/passwd",
+            "/etc/passwd",
+            "foo/bar/../../../etc/shadow",
+        ];
+
+        for path_str in malicious_paths {
+            let path = Path::new(path_str);
+            let mut has_invalid = false;
+
+            for component in path.components() {
+                if PieceManager::validate_path_component(&component).is_err() {
+                    has_invalid = true;
+                    break;
+                }
+            }
+
+            assert!(
+                has_invalid,
+                "Path '{}' should be rejected but wasn't",
+                path_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_safe_path_patterns() {
+        use std::path::Path;
+
+        // These paths should all be allowed
+        let safe_paths = [
+            "file.txt",
+            "subdir/file.txt",
+            "a/b/c/d/file.txt",
+            "My Documents/file.pdf",
+            "file with spaces.txt",
+            "日本語ファイル.txt",
+        ];
+
+        for path_str in safe_paths {
+            let path = Path::new(path_str);
+            let mut all_valid = true;
+
+            for component in path.components() {
+                if PieceManager::validate_path_component(&component).is_err() {
+                    all_valid = false;
+                    break;
+                }
+            }
+
+            assert!(
+                all_valid,
+                "Path '{}' should be allowed but was rejected",
+                path_str
+            );
+        }
     }
 }

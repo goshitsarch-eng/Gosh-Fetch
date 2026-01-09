@@ -31,7 +31,12 @@ serde_bencode = "0.2"
 
 # Crypto
 sha1 = "0.10"
+sha2 = "0.10"
+md-5 = "0.10"
 rand = "0.8"
+num-bigint = "0.4"
+num-traits = "0.2"
+num-integer = "0.1"
 
 # Data structures
 bytes = "1"
