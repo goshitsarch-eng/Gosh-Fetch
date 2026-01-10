@@ -27,6 +27,7 @@ jobs:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
       - name: Generate icons from logo
+        if: ${{ hashFiles('src-tauri/icons/icon.icns') == '' }}
         run: |
           sips -z 32 32 src-tauri/icons/logo.png --out src-tauri/icons/32x32.png
           sips -z 128 128 src-tauri/icons/logo.png --out src-tauri/icons/128x128.png

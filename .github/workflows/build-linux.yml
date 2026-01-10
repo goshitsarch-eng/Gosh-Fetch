@@ -52,6 +52,7 @@ jobs:
             imagemagick
 
       - name: Generate icons from logo
+        if: ${{ hashFiles('src-tauri/icons/icon.png') == '' }}
         run: |
           convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
           convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
@@ -135,11 +136,11 @@ jobs:
       - name: Generate icons from logo
         run: |
           sudo apt-get install -y imagemagick
-          convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
-          convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
-          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
-          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
-          convert src-tauri/icons/logo.png -resize 512x512 src-tauri/icons/512x512.png
+          [ -f src-tauri/icons/32x32.png ] || convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
+          [ -f src-tauri/icons/128x128.png ] || convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
+          [ -f src-tauri/icons/128x128@2x.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
+          [ -f src-tauri/icons/icon.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
+          [ -f src-tauri/icons/512x512.png ] || convert src-tauri/icons/logo.png -resize 512x512 src-tauri/icons/512x512.png
 
       - name: Create Flatpak manifest
         run: |
@@ -236,10 +237,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
-          convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
-          convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
-          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
-          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
+          [ -f src-tauri/icons/32x32.png ] || convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
+          [ -f src-tauri/icons/128x128.png ] || convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
+          [ -f src-tauri/icons/128x128@2x.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
+          [ -f src-tauri/icons/icon.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
 
       - name: Create snapcraft.yaml
         run: |
