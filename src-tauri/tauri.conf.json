@@ -24,6 +24,12 @@
     "linux": {
       "appimage": {
         "bundleMediaFramework": false
+      },
+      "deb": {
+        "desktopTemplate": "linux/gosh-fetch.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "linux/gosh-fetch.desktop"
       }
     },
     "macOS": {

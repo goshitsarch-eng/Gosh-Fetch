@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   build-linux:
+    timeout-minutes: 30
     strategy:
       matrix:
         include:
@@ -111,4 +112,218 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
             src-tauri/target/release/bundle/appimage/*.AppImage
+          fail_on_unmatched_files: true
+
+  build-flatpak:
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Install Flatpak dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+          sudo flatpak install -y flathub org.freedesktop.Sdk.Extension.rust-stable//24.08
+          sudo flatpak install -y flathub org.freedesktop.Sdk.Extension.node20//24.08
+
+      - name: Generate icons from logo
+        run: |
+          sudo apt-get install -y imagemagick
+          convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
+          convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
+          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
+          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
+          convert src-tauri/icons/logo.png -resize 512x512 src-tauri/icons/512x512.png
+
+      - name: Create Flatpak manifest
+        run: |
+          cat > com.gosh.fetch.yml << 'EOF'
+          id: com.gosh.fetch
+          runtime: org.freedesktop.Platform
+          runtime-version: '24.08'
+          sdk: org.freedesktop.Sdk
+          sdk-extensions:
+            - org.freedesktop.Sdk.Extension.rust-stable
+            - org.freedesktop.Sdk.Extension.node20
+          command: gosh-fetch
+          finish-args:
+            - --share=ipc
+            - --share=network
+            - --socket=fallback-x11
+            - --socket=wayland
+            - --device=dri
+            - --filesystem=xdg-download
+            - --filesystem=home
+            - --talk-name=org.freedesktop.Notifications
+          build-options:
+            append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+            env:
+              CARGO_HOME: /run/build/gosh-fetch/cargo
+              npm_config_nodedir: /usr/lib/sdk/node20
+          modules:
+            - name: gosh-fetch
+              buildsystem: simple
+              build-commands:
+                - npm ci
+                - npm run build
+                - cargo build --release --manifest-path src-tauri/Cargo.toml
+                - install -Dm755 src-tauri/target/release/gosh-fetch /app/bin/gosh-fetch
+                - install -Dm644 src-tauri/icons/512x512.png /app/share/icons/hicolor/512x512/apps/com.gosh.fetch.png
+                - install -Dm644 src-tauri/icons/256x256.png /app/share/icons/hicolor/256x256/apps/com.gosh.fetch.png
+                - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.gosh.fetch.png
+                - install -Dm644 com.gosh.fetch.desktop /app/share/applications/com.gosh.fetch.desktop
+              sources:
+                - type: dir
+                  path: .
+            - name: desktop-file
+              buildsystem: simple
+              build-commands:
+                - install -Dm644 com.gosh.fetch.desktop /app/share/applications/com.gosh.fetch.desktop
+              sources:
+                - type: file
+                  path: com.gosh.fetch.desktop
+          EOF
+
+      - name: Create Flatpak desktop file
+        run: |
+          cat > com.gosh.fetch.desktop << 'EOF'
+          [Desktop Entry]
+          Name=Gosh Fetch
+          Comment=Cross-platform download manager
+          Exec=gosh-fetch %u
+          Icon=com.gosh.fetch
+          Terminal=false
+          Type=Application
+          Categories=Network;FileTransfer;
+          StartupWMClass=gosh-fetch
+          MimeType=application/x-bittorrent;x-scheme-handler/magnet;
+          EOF
+
+      - name: Build Flatpak
+        run: |
+          flatpak-builder --force-clean --repo=repo build-dir com.gosh.fetch.yml
+          flatpak build-bundle repo gosh-fetch.flatpak com.gosh.fetch
+
+      - name: Upload Flatpak
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-flatpak-x64
+          path: gosh-fetch.flatpak
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: gosh-fetch.flatpak
+          fail_on_unmatched_files: true
+
+  build-snap:
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
+
+      - name: Generate icons from logo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
+          convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
+          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
+          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
+
+      - name: Create snapcraft.yaml
+        run: |
+          mkdir -p snap
+          cat > snap/snapcraft.yaml << 'EOF'
+          name: gosh-fetch
+          version: '1.0.0'
+          summary: Cross-platform download manager
+          description: |
+            Gosh Fetch is a modern download manager built with Tauri,
+            supporting HTTP/HTTPS and BitTorrent downloads.
+          grade: stable
+          confinement: strict
+          base: core24
+
+          apps:
+            gosh-fetch:
+              command: bin/gosh-fetch
+              extensions: [gnome]
+              plugs:
+                - network
+                - network-bind
+                - home
+                - removable-media
+              desktop: share/applications/gosh-fetch.desktop
+
+          parts:
+            gosh-fetch:
+              plugin: nil
+              source: .
+              build-snaps:
+                - node/20/stable
+                - rustup/latest/stable
+              build-packages:
+                - libwebkit2gtk-4.1-dev
+                - libappindicator3-dev
+                - librsvg2-dev
+                - patchelf
+                - libssl-dev
+                - libunwind-dev
+                - libgstreamer1.0-dev
+                - libgstreamer-plugins-base1.0-dev
+              stage-packages:
+                - libwebkit2gtk-4.1-0
+                - libappindicator3-1
+                - librsvg2-2
+                - libssl3
+              override-build: |
+                rustup default stable
+                npm ci
+                npm run build
+                cargo build --release --manifest-path src-tauri/Cargo.toml
+                mkdir -p $SNAPCRAFT_PART_INSTALL/bin
+                mkdir -p $SNAPCRAFT_PART_INSTALL/share/applications
+                mkdir -p $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/256x256/apps
+                cp src-tauri/target/release/gosh-fetch $SNAPCRAFT_PART_INSTALL/bin/
+                cp src-tauri/icons/icon.png $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/256x256/apps/gosh-fetch.png
+                cat > $SNAPCRAFT_PART_INSTALL/share/applications/gosh-fetch.desktop << DESKTOP
+          [Desktop Entry]
+          Name=Gosh Fetch
+          Comment=Cross-platform download manager
+          Exec=gosh-fetch %u
+          Icon=\${SNAP}/share/icons/hicolor/256x256/apps/gosh-fetch.png
+          Terminal=false
+          Type=Application
+          Categories=Network;FileTransfer;
+          StartupWMClass=gosh-fetch
+          MimeType=application/x-bittorrent;x-scheme-handler/magnet;
+          DESKTOP
+          EOF
+
+      - name: Build Snap
+        uses: snapcore/action-build@v1
+        id: snap-build
+
+      - name: Upload Snap
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-snap-x64
+          path: ${{ steps.snap-build.outputs.snap }}
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.snap-build.outputs.snap }}
           fail_on_unmatched_files: true
