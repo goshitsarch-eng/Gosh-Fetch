@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Gosh Fetch
+Comment=Cross-platform download manager
+Exec=gosh-fetch %u
+Icon=${SNAP}/share/icons/hicolor/256x256/apps/gosh-fetch.png
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;
+StartupWMClass=gosh-fetch
+MimeType=application/x-bittorrent;x-scheme-handler/magnet;
