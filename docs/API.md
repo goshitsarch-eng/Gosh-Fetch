@@ -423,7 +423,7 @@ invoke('get_app_info'): AppInfo
 ```json
 {
   "name": "Gosh-Fetch",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "...",
   "license": "AGPL-3.0",
   "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",

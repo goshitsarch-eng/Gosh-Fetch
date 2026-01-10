@@ -246,7 +246,7 @@ jobs:
           mkdir -p snap
           cat > snap/snapcraft.yaml << 'EOF'
           name: gosh-fetch
-          version: '1.0.0'
+          version: '1.1.1'
           summary: Cross-platform download manager
           description: |
             Gosh Fetch is a modern download manager built with Tauri,

@@ -1,6 +1,6 @@
 {
   "name": "gosh-fetch",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "description": "Gosh Fetch - a modern download manager with native Rust engine",
   "type": "module",
   "license": "AGPL-3.0",
