@@ -160,11 +160,12 @@ finish-args:
   - --socket=wayland
   - --socket=pulseaudio
   - --device=dri
-  - --filesystem=xdg-download
-  - --filesystem=xdg-documents
-  - --filesystem=home
-  - --filesystem=/media
-  - --filesystem=/run/media
+  - --filesystem=xdg-download:rw
+  - --filesystem=xdg-documents:rw
+  - --filesystem=home:rw
+  - --filesystem=/media:rw
+  - --filesystem=/run/media:rw
+  - --filesystem=/tmp:rw
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher
   - --talk-name=org.freedesktop.portal.Desktop
