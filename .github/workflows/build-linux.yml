@@ -277,6 +277,8 @@ apps:
       - desktop-legacy
       - audio-playback
       - mount-observe
+      - unity7
+      - gsettings
     desktop: share/applications/gosh-fetch.desktop
 
 parts:
