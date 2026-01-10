@@ -1,0 +1,70 @@
+name: gosh-fetch
+version: '1.1.1'
+summary: Cross-platform download manager
+description: |
+  Gosh Fetch is a modern download manager built with Tauri,
+  supporting HTTP/HTTPS and BitTorrent downloads.
+grade: stable
+confinement: strict
+base: core24
+
+apps:
+  gosh-fetch:
+    command: bin/gosh-fetch
+    extensions: [gnome]
+    plugs:
+      - network
+      - network-bind
+      - home
+      - removable-media
+      - desktop
+      - desktop-legacy
+      - audio-playback
+      - mount-observe
+      - unity7
+      - gsettings
+    desktop: share/applications/gosh-fetch.desktop
+
+parts:
+  gosh-fetch:
+    plugin: nil
+    source: .
+    build-snaps:
+      - node/20/stable
+      - rustup/latest/stable
+    build-packages:
+      - libwebkit2gtk-4.1-dev
+      - libappindicator3-dev
+      - librsvg2-dev
+      - patchelf
+      - libssl-dev
+      - libunwind-dev
+      - libgstreamer1.0-dev
+      - libgstreamer-plugins-base1.0-dev
+    stage-packages:
+      - libwebkit2gtk-4.1-0
+      - libappindicator3-1
+      - librsvg2-2
+      - libssl3
+    override-build: |
+      rustup default stable
+      npm ci
+      npm run build
+      cargo build --release --manifest-path src-tauri/Cargo.toml
+      mkdir -p $SNAPCRAFT_PART_INSTALL/bin
+      mkdir -p $SNAPCRAFT_PART_INSTALL/share/applications
+      mkdir -p $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/256x256/apps
+      cp src-tauri/target/release/gosh-fetch $SNAPCRAFT_PART_INSTALL/bin/
+      cp src-tauri/icons/icon.png $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/256x256/apps/gosh-fetch.png
+      cat > $SNAPCRAFT_PART_INSTALL/share/applications/gosh-fetch.desktop << DESKTOP
+[Desktop Entry]
+Name=Gosh Fetch
+Comment=Cross-platform download manager
+Exec=gosh-fetch %u
+Icon=\${SNAP}/share/icons/hicolor/256x256/apps/gosh-fetch.png
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;
+StartupWMClass=gosh-fetch
+MimeType=application/x-bittorrent;x-scheme-handler/magnet;
+DESKTOP
