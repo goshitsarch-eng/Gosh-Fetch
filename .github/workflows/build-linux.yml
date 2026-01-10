@@ -158,10 +158,16 @@ finish-args:
   - --share=network
   - --socket=fallback-x11
   - --socket=wayland
+  - --socket=pulseaudio
   - --device=dri
   - --filesystem=xdg-download
+  - --filesystem=xdg-documents
   - --filesystem=home
+  - --filesystem=/media
+  - --filesystem=/run/media
   - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.portal.Desktop
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
   env:
@@ -265,6 +271,10 @@ apps:
       - network-bind
       - home
       - removable-media
+      - desktop
+      - desktop-legacy
+      - audio-playback
+      - mount-observe
     desktop: share/applications/gosh-fetch.desktop
 
 parts:
