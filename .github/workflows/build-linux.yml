@@ -162,6 +162,7 @@ finish-args:
   - --device=dri
   - --filesystem=xdg-download:rw
   - --filesystem=xdg-documents:rw
+  - --filesystem=xdg-desktop:rw
   - --filesystem=home:rw
   - --filesystem=/media:rw
   - --filesystem=/run/media:rw
