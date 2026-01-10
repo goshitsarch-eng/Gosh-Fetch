@@ -116,7 +116,7 @@ jobs:
           fail_on_unmatched_files: true
 
   build-flatpak:
-    timeout-minutes: 30
+    timeout-minutes: 45
     runs-on: ubuntu-24.04
 
     steps:
@@ -124,23 +124,54 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Install Flatpak dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libunwind-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            imagemagick \
+            flatpak \
+            flatpak-builder
+
+      - name: Setup Flatpak
+        run: |
           sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           sudo flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-          sudo flatpak install -y flathub org.freedesktop.Sdk.Extension.rust-stable//24.08
-          sudo flatpak install -y flathub org.freedesktop.Sdk.Extension.node20//24.08
 
       - name: Generate icons from logo
         run: |
-          sudo apt-get install -y imagemagick
           [ -f src-tauri/icons/32x32.png ] || convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
           [ -f src-tauri/icons/128x128.png ] || convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
           [ -f src-tauri/icons/128x128@2x.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
           [ -f src-tauri/icons/icon.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
           [ -f src-tauri/icons/512x512.png ] || convert src-tauri/icons/logo.png -resize 512x512 src-tauri/icons/512x512.png
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: flatpak
+
+      - name: Build app
+        run: |
+          npm ci
+          npm run build
+          cargo build --release --manifest-path src-tauri/Cargo.toml
 
       - name: Build Flatpak
         run: |
