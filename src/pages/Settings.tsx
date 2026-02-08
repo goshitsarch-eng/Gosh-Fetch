@@ -1,9 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { Save } from 'lucide-react';
+import { selectTheme, setTheme } from '../store/themeSlice';
 import { api } from '../lib/api';
 import type { Settings as SettingsType } from '../lib/api';
+import type { AppDispatch } from '../store/store';
 import './Settings.css';
 
 export default function Settings() {
+  const dispatch = useDispatch<AppDispatch>();
+  const theme = useSelector(selectTheme);
   const [downloadPath, setDownloadPath] = useState('');
   const [maxConcurrent, setMaxConcurrent] = useState(5);
   const [maxConnections, setMaxConnections] = useState(16);
@@ -23,6 +29,31 @@ export default function Settings() {
   const [userAgentPresets, setUserAgentPresets] = useState<[string, string][]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+  const savedSnapshot = useRef<string>('');
+
+  function getSnapshot() {
+    return JSON.stringify({
+      downloadPath, maxConcurrent, maxConnections, splitCount,
+      downloadSpeedLimit, uploadSpeedLimit, userAgent,
+      enableNotifications, closeToTray, autoUpdateTrackers,
+      deleteFilesOnRemove, proxyUrl, connectTimeout, readTimeout,
+      maxRetries, allocationMode, theme,
+    });
+  }
+
+  useEffect(() => {
+    const snap = getSnapshot();
+    if (savedSnapshot.current && snap !== savedSnapshot.current) {
+      setIsDirty(true);
+    }
+  }, [
+    downloadPath, maxConcurrent, maxConnections, splitCount,
+    downloadSpeedLimit, uploadSpeedLimit, userAgent,
+    enableNotifications, closeToTray, autoUpdateTrackers,
+    deleteFilesOnRemove, proxyUrl, connectTimeout, readTimeout,
+    maxRetries, allocationMode, theme,
+  ]);
 
   useEffect(() => {
     (async () => {
@@ -53,6 +84,29 @@ export default function Settings() {
         setAllocationMode(settings.allocation_mode);
 
         await api.setCloseToTray(settings.close_to_tray);
+
+        // Set snapshot after loading
+        setTimeout(() => {
+          savedSnapshot.current = JSON.stringify({
+            downloadPath: settings.download_path === '~/Downloads' ? '' : settings.download_path,
+            maxConcurrent: settings.max_concurrent_downloads,
+            maxConnections: settings.max_connections_per_server,
+            splitCount: settings.split_count,
+            downloadSpeedLimit: settings.download_speed_limit,
+            uploadSpeedLimit: settings.upload_speed_limit,
+            userAgent: settings.user_agent,
+            enableNotifications: settings.enable_notifications,
+            closeToTray: settings.close_to_tray,
+            autoUpdateTrackers: settings.auto_update_trackers,
+            deleteFilesOnRemove: settings.delete_files_on_remove,
+            proxyUrl: settings.proxy_url,
+            connectTimeout: settings.connect_timeout,
+            readTimeout: settings.read_timeout,
+            maxRetries: settings.max_retries,
+            allocationMode: settings.allocation_mode,
+            theme,
+          });
+        }, 100);
       } catch (e) {
         console.error('Failed to load settings:', e);
         try { setDownloadPath(await api.getDefaultDownloadPath()); } catch {}
@@ -80,7 +134,7 @@ export default function Settings() {
         user_agent: userAgent,
         enable_notifications: enableNotifications,
         close_to_tray: closeToTray,
-        theme: 'dark',
+        theme,
         bt_enable_dht: true,
         bt_enable_pex: true,
         bt_enable_lpd: true,
@@ -99,6 +153,8 @@ export default function Settings() {
       await api.setCloseToTray(closeToTray);
       await api.applySettingsToEngine(settings);
       setSaveMessage('Settings saved successfully');
+      savedSnapshot.current = getSnapshot();
+      setIsDirty(false);
     } catch (e) {
       setSaveMessage(`Failed to save: ${e}`);
     } finally {
@@ -121,10 +177,27 @@ export default function Settings() {
     return `${mb.toFixed(1)} MB/s`;
   }
 
+  function handleThemeChange(newTheme: 'dark' | 'light') {
+    dispatch(setTheme(newTheme));
+  }
+
   return (
     <div className="page">
       <header className="page-header"><h1>Settings</h1></header>
       <div className="settings-content">
+        <section className="settings-section">
+          <h2>Appearance</h2>
+          <div className="setting-item">
+            <div className="setting-info"><label>Theme</label><p>Choose between dark and light mode</p></div>
+            <div className="setting-control">
+              <select value={theme} onChange={(e) => handleThemeChange(e.target.value as 'dark' | 'light')}>
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
         <section className="settings-section">
           <h2>General</h2>
           <div className="setting-item">
@@ -152,23 +225,23 @@ export default function Settings() {
           <h2>Connection</h2>
           <div className="setting-item">
             <div className="setting-info"><label>Concurrent Downloads</label><p>{maxConcurrent} simultaneous downloads</p></div>
-            <div className="setting-control"><input type="range" min={1} max={20} value={maxConcurrent} onChange={(e) => setMaxConcurrent(Number(e.target.value))} /></div>
+            <div className="setting-control"><input type="range" min={1} max={20} value={maxConcurrent} onChange={(e) => setMaxConcurrent(Number(e.target.value))} aria-label="Concurrent downloads" aria-valuemin={1} aria-valuemax={20} aria-valuenow={maxConcurrent} aria-valuetext={`${maxConcurrent} downloads`} /></div>
           </div>
           <div className="setting-item">
             <div className="setting-info"><label>Connections per Server</label><p>{maxConnections} connections per download</p></div>
-            <div className="setting-control"><input type="range" min={1} max={16} value={maxConnections} onChange={(e) => setMaxConnections(Number(e.target.value))} /></div>
+            <div className="setting-control"><input type="range" min={1} max={16} value={maxConnections} onChange={(e) => setMaxConnections(Number(e.target.value))} aria-label="Connections per server" aria-valuemin={1} aria-valuemax={16} aria-valuenow={maxConnections} aria-valuetext={`${maxConnections} connections`} /></div>
           </div>
           <div className="setting-item">
             <div className="setting-info"><label>Split Count</label><p>{splitCount} segments per file</p></div>
-            <div className="setting-control"><input type="range" min={1} max={64} value={splitCount} onChange={(e) => setSplitCount(Number(e.target.value))} /></div>
+            <div className="setting-control"><input type="range" min={1} max={64} value={splitCount} onChange={(e) => setSplitCount(Number(e.target.value))} aria-label="Split count" aria-valuemin={1} aria-valuemax={64} aria-valuenow={splitCount} aria-valuetext={`${splitCount} segments`} /></div>
           </div>
           <div className="setting-item">
             <div className="setting-info"><label>Download Speed Limit</label><p>{formatSpeedLimit(downloadSpeedLimit)} (0 = unlimited)</p></div>
-            <div className="setting-control"><input type="range" min={0} max={104857600} step={1048576} value={downloadSpeedLimit} onChange={(e) => setDownloadSpeedLimit(Number(e.target.value))} /></div>
+            <div className="setting-control"><input type="range" min={0} max={104857600} step={1048576} value={downloadSpeedLimit} onChange={(e) => setDownloadSpeedLimit(Number(e.target.value))} aria-label="Download speed limit" aria-valuemin={0} aria-valuemax={104857600} aria-valuenow={downloadSpeedLimit} aria-valuetext={formatSpeedLimit(downloadSpeedLimit)} /></div>
           </div>
           <div className="setting-item">
             <div className="setting-info"><label>Upload Speed Limit</label><p>{formatSpeedLimit(uploadSpeedLimit)} (0 = unlimited)</p></div>
-            <div className="setting-control"><input type="range" min={0} max={104857600} step={1048576} value={uploadSpeedLimit} onChange={(e) => setUploadSpeedLimit(Number(e.target.value))} /></div>
+            <div className="setting-control"><input type="range" min={0} max={104857600} step={1048576} value={uploadSpeedLimit} onChange={(e) => setUploadSpeedLimit(Number(e.target.value))} aria-label="Upload speed limit" aria-valuemin={0} aria-valuemax={104857600} aria-valuenow={uploadSpeedLimit} aria-valuetext={formatSpeedLimit(uploadSpeedLimit)} /></div>
           </div>
         </section>
 
@@ -180,15 +253,15 @@ export default function Settings() {
           </div>
           <div className="setting-item">
             <div className="setting-info"><label>Connect Timeout</label><p>{connectTimeout} seconds</p></div>
-            <div className="setting-control"><input type="range" min={5} max={120} value={connectTimeout} onChange={(e) => setConnectTimeout(Number(e.target.value))} /></div>
+            <div className="setting-control"><input type="range" min={5} max={120} value={connectTimeout} onChange={(e) => setConnectTimeout(Number(e.target.value))} aria-label="Connect timeout" aria-valuemin={5} aria-valuemax={120} aria-valuenow={connectTimeout} aria-valuetext={`${connectTimeout} seconds`} /></div>
           </div>
           <div className="setting-item">
             <div className="setting-info"><label>Read Timeout</label><p>{readTimeout} seconds</p></div>
-            <div className="setting-control"><input type="range" min={10} max={300} value={readTimeout} onChange={(e) => setReadTimeout(Number(e.target.value))} /></div>
+            <div className="setting-control"><input type="range" min={10} max={300} value={readTimeout} onChange={(e) => setReadTimeout(Number(e.target.value))} aria-label="Read timeout" aria-valuemin={10} aria-valuemax={300} aria-valuenow={readTimeout} aria-valuetext={`${readTimeout} seconds`} /></div>
           </div>
           <div className="setting-item">
             <div className="setting-info"><label>Max Retries</label><p>{maxRetries} retry attempts on failure</p></div>
-            <div className="setting-control"><input type="range" min={0} max={10} value={maxRetries} onChange={(e) => setMaxRetries(Number(e.target.value))} /></div>
+            <div className="setting-control"><input type="range" min={0} max={10} value={maxRetries} onChange={(e) => setMaxRetries(Number(e.target.value))} aria-label="Max retries" aria-valuemin={0} aria-valuemax={10} aria-valuenow={maxRetries} aria-valuetext={`${maxRetries} retries`} /></div>
           </div>
           <div className="setting-item">
             <div className="setting-info"><label>File Allocation</label><p>How disk space is allocated for downloads</p></div>
@@ -227,8 +300,12 @@ export default function Settings() {
         </section>
 
         <div className="settings-footer">
+          {isDirty && <span className="unsaved-indicator">Unsaved changes</span>}
           {saveMessage && <span className={`save-message${saveMessage.startsWith('Failed') ? ' error' : ''}`}>{saveMessage}</span>}
-          <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving...' : 'Save Settings'}</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
+            <Save size={14} />
+            {isSaving ? 'Saving...' : 'Save Settings'}
+          </button>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
+import { Download, CheckCircle, Settings, Info, ArrowDown, ArrowUp, Sun, Moon } from 'lucide-react';
 import { selectStats } from '../../store/statsSlice';
 import { selectActiveDownloads, selectCompletedDownloads } from '../../store/downloadSlice';
 import { selectTheme, toggleTheme } from '../../store/themeSlice';
@@ -9,10 +10,10 @@ import type { AppDispatch } from '../../store/store';
 import './Sidebar.css';
 
 const navItems = [
-  { path: '/', label: 'Downloads', icon: '\u2193' },
-  { path: '/completed', label: 'Completed', icon: '\u2713' },
-  { path: '/settings', label: 'Settings', icon: '\u2699' },
-  { path: '/about', label: 'About', icon: '\u2139' },
+  { path: '/', label: 'Downloads', icon: <Download size={16} /> },
+  { path: '/completed', label: 'Completed', icon: <CheckCircle size={16} /> },
+  { path: '/settings', label: 'Settings', icon: <Settings size={16} /> },
+  { path: '/about', label: 'About', icon: <Info size={16} /> },
 ];
 
 export default function Sidebar() {
@@ -32,7 +33,7 @@ export default function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="logo">
-          <span className="logo-icon">{'\u2B07'}</span>
+          <img src="/logo.png" alt="Gosh-Fetch" className="logo-icon" width={24} height={24} />
           <span className="logo-text">Gosh-Fetch</span>
         </div>
       </div>
@@ -57,17 +58,17 @@ export default function Sidebar() {
       <div className="sidebar-footer">
         <div className="speed-display">
           <div className="speed-row">
-            <span className="speed-icon">{'\u2193'}</span>
+            <ArrowDown size={12} className="speed-icon" />
             <span className="speed-value">{formatSpeed(stats.downloadSpeed)}</span>
           </div>
           <div className="speed-row">
-            <span className="speed-icon">{'\u2191'}</span>
+            <ArrowUp size={12} className="speed-icon" />
             <span className="speed-value">{formatSpeed(stats.uploadSpeed)}</span>
           </div>
         </div>
 
         <button className="theme-toggle" onClick={() => dispatch(toggleTheme())} title="Toggle theme">
-          {theme === 'dark' ? '\u2600' : '\u263E'}
+          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
         </button>
       </div>
     </aside>

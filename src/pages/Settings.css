@@ -95,3 +95,19 @@
 .save-message.error {
   color: var(--color-destructive);
 }
+
+.unsaved-indicator {
+  font-size: 13px;
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.setting-control select {
+  width: 120px;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+}

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import { CheckCircle } from 'lucide-react';
 import DownloadCard from '../components/downloads/DownloadCard';
 import { selectCompletedDownloads, clearHistory, fetchDownloads, loadCompletedHistory } from '../store/downloadSlice';
 import { formatBytes } from '../lib/utils/format';
@@ -9,6 +10,7 @@ export default function Completed() {
   const dispatch = useDispatch<AppDispatch>();
   const completedDownloads = useSelector(selectCompletedDownloads);
   const [isClearing, setIsClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const totalSize = completedDownloads.reduce((sum, d) => sum + d.totalSize, 0);
 
@@ -20,11 +22,10 @@ export default function Completed() {
   }, [dispatch]);
 
   async function handleClearHistory() {
-    if (confirm('Are you sure you want to clear download history? This will not delete the downloaded files.')) {
-      setIsClearing(true);
-      await dispatch(clearHistory());
-      setIsClearing(false);
-    }
+    setIsClearing(true);
+    await dispatch(clearHistory());
+    setIsClearing(false);
+    setShowClearConfirm(false);
   }
 
   return (
@@ -39,7 +40,7 @@ export default function Completed() {
           </div>
         </div>
         {completedDownloads.length > 0 && (
-          <button className="btn btn-secondary" onClick={handleClearHistory} disabled={isClearing}>
+          <button className="btn btn-secondary" onClick={() => setShowClearConfirm(true)} disabled={isClearing}>
             {isClearing ? 'Clearing...' : 'Clear History'}
           </button>
         )}
@@ -48,7 +49,7 @@ export default function Completed() {
       <div className="downloads-list">
         {completedDownloads.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon" style={{ color: 'var(--color-success)' }}>{'\u2713'}</div>
+            <div className="empty-icon" style={{ color: 'var(--color-success)' }}><CheckCircle size={48} /></div>
             <h3>No completed downloads</h3>
             <p>Downloads will appear here once they finish</p>
           </div>
@@ -56,6 +57,25 @@ export default function Completed() {
           completedDownloads.map(download => <DownloadCard key={download.gid} download={download} />)
         )}
       </div>
+
+      {showClearConfirm && (
+        <div className="modal-backdrop" onClick={() => setShowClearConfirm(false)} role="dialog" aria-modal="true" aria-labelledby="clear-history-title">
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title" id="clear-history-title">Clear History</h3>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to clear download history? This will not delete the downloaded files.</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowClearConfirm(false)}>Cancel</button>
+              <button className="btn btn-destructive" onClick={handleClearHistory} disabled={isClearing}>
+                {isClearing ? 'Clearing...' : 'Clear History'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

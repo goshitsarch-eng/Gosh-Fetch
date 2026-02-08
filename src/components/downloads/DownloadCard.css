@@ -10,7 +10,8 @@
 }
 
 .download-card:hover {
-  border-color: var(--border-primary);
+  border-color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-tertiary) 90%, var(--bg-hover));
 }
 
 .card-main {

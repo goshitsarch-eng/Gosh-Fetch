@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import './About.css';
 
+
 export default function About() {
   const [appInfo, setAppInfo] = useState<any>(null);
   const [engineRunning, setEngineRunning] = useState(false);
@@ -26,7 +27,7 @@ export default function About() {
       <header className="page-header"><h1>About</h1></header>
       <div className="about-content">
         <div className="app-hero">
-          <div className="app-icon">{'\u2B07'}</div>
+          <img src="/logo.png" alt="Gosh-Fetch" width={64} height={64} />
           <h2>{appInfo.name}</h2>
           <p className="app-version">Version {appInfo.version}</p>
           <p className="app-description">{appInfo.description}</p>

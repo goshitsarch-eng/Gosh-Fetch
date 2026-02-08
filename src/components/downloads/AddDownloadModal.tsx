@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch } from 'react-redux';
+import { X, ChevronDown, ChevronRight } from 'lucide-react';
 import { addDownload, addMagnet, addTorrentFile, addUrls, fetchDownloads } from '../../store/downloadSlice';
 import type { AppDispatch } from '../../store/store';
 import type { DownloadOptions } from '../../lib/types/download';
@@ -117,24 +118,46 @@ export default function AddDownloadModal({ onClose }: Props) {
     }
   }
 
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const modal = modalRef.current;
+    if (!modal) return;
+    const focusable = modal.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first?.focus();
+
+    function trapFocus(e: KeyboardEvent) {
+      if (e.key !== 'Tab') return;
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
+    }
+    modal.addEventListener('keydown', trapFocus);
+    return () => modal.removeEventListener('keydown', trapFocus);
+  }, []);
+
   function handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === 'Escape') onClose();
     else if (event.key === 'Enter' && !event.shiftKey && !multiUrlMode) handleSubmit();
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose} onKeyDown={handleKeyDown}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-backdrop" onClick={onClose} onKeyDown={handleKeyDown} role="dialog" aria-modal="true" aria-labelledby="add-download-title">
+      <div className="modal" onClick={(e) => e.stopPropagation()} ref={modalRef}>
         <div className="modal-header">
-          <h3 className="modal-title">Add Download</h3>
-          <button className="btn btn-ghost btn-icon" onClick={onClose}>{'\u2715'}</button>
+          <h3 className="modal-title" id="add-download-title">Add Download</h3>
+          <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
 
         <div className="modal-body">
-          <div className="mode-tabs">
-            <button className={`mode-tab${mode === 'url' ? ' active' : ''}`} onClick={() => setMode('url')}>URL</button>
-            <button className={`mode-tab${mode === 'magnet' ? ' active' : ''}`} onClick={() => setMode('magnet')}>Magnet</button>
-            <button className={`mode-tab${mode === 'torrent' ? ' active' : ''}`} onClick={() => setMode('torrent')}>Torrent File</button>
+          <div className="mode-tabs" role="tablist" aria-label="Download type">
+            <button className={`mode-tab${mode === 'url' ? ' active' : ''}`} role="tab" aria-selected={mode === 'url'} onClick={() => setMode('url')}>URL</button>
+            <button className={`mode-tab${mode === 'magnet' ? ' active' : ''}`} role="tab" aria-selected={mode === 'magnet'} onClick={() => setMode('magnet')}>Magnet</button>
+            <button className={`mode-tab${mode === 'torrent' ? ' active' : ''}`} role="tab" aria-selected={mode === 'torrent'} onClick={() => setMode('torrent')}>Torrent File</button>
           </div>
 
           {mode === 'url' && (
@@ -184,7 +207,7 @@ export default function AddDownloadModal({ onClose }: Props) {
             className="advanced-toggle"
             onClick={() => setShowAdvanced(!showAdvanced)}
           >
-            {showAdvanced ? '\u25BC' : '\u25B6'} Advanced Options
+            {showAdvanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Advanced Options
           </button>
 
           {showAdvanced && (

@@ -50,6 +50,15 @@
   /* Transitions */
   --transition-fast: 100ms ease;
   --transition-normal: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* Typography Scale */
+  --text-xs: 0.6875rem;  /* 11px */
+  --text-sm: 0.75rem;    /* 12px */
+  --text-base: 0.875rem; /* 14px */
+  --text-lg: 1rem;       /* 16px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.5rem;    /* 24px */
 
   /* Sidebar */
   --sidebar-width: 220px;
@@ -95,12 +104,13 @@ html, body {
 
 body {
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: var(--text-base);
   line-height: 1.5;
   color: var(--text-primary);
   background-color: var(--bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color var(--transition-slow), color var(--transition-slow);
 }
 
 #root {
@@ -133,10 +143,10 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-primary);
 }
 
-h1 { font-size: 24px; }
-h2 { font-size: 20px; }
-h3 { font-size: 16px; }
-h4 { font-size: 14px; }
+h1 { font-size: var(--text-2xl); }
+h2 { font-size: var(--text-xl); }
+h3 { font-size: var(--text-lg); }
+h4 { font-size: var(--text-base); }
 
 p {
   color: var(--text-secondary);
@@ -466,4 +476,176 @@ input[type="checkbox"]:checked::after {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* 4.3 - Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.modal-backdrop {
+  animation: fadeIn 150ms ease;
+}
+
+.modal {
+  animation: slideInUp 200ms ease;
+}
+
+.progress-bar {
+  position: relative;
+}
+
+.download-card {
+  animation: fadeIn 200ms ease;
+}
+
+/* Button micro-interactions */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Active progress shimmer */
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s infinite linear;
+}
+
+/* 4.4 - Focus visible */
+:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 0;
+}
+
+/* 4.10 - Custom range inputs */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: var(--bg-hover);
+  border-radius: 3px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--bg-secondary);
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  border: 2px solid var(--bg-secondary);
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  background: var(--bg-hover);
+  border-radius: 3px;
+  border: none;
+}
+
+/* Connection banner */
+.connection-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  background: color-mix(in srgb, var(--color-warning) 15%, var(--bg-secondary));
+  border-bottom: 1px solid var(--color-warning);
+  color: var(--color-warning);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  animation: fadeIn 200ms ease;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Drop overlay */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 150ms ease;
+}
+
+.drop-overlay-content {
+  text-align: center;
+  color: var(--text-primary);
+  padding: var(--space-2xl);
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-xl);
+  background: var(--bg-secondary);
+}
+
+.drop-icon {
+  font-size: 48px;
+  color: var(--color-primary);
+  margin-bottom: var(--space-md);
+  font-weight: 300;
+}
+
+.drop-overlay-content p {
+  font-size: var(--text-lg);
+  color: var(--text-secondary);
+}
+
+/* Theme transition on themed elements */
+.sidebar,
+.page-header,
+.download-card,
+.card,
+.setting-item,
+.modal {
+  transition: background-color var(--transition-slow), border-color var(--transition-slow), color var(--transition-slow);
 }

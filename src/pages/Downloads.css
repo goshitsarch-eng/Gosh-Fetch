@@ -119,6 +119,18 @@
   gap: var(--space-md);
 }
 
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  background: color-mix(in srgb, var(--color-destructive) 10%, var(--bg-secondary));
+  border-bottom: 1px solid var(--color-destructive);
+  color: var(--color-destructive);
+  font-size: var(--text-sm);
+  animation: fadeIn 200ms ease;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;

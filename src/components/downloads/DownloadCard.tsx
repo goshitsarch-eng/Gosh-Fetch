@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { Download } from '../../lib/types/download';
+import { Magnet, Link, Pause, Play, RotateCcw, FolderOpen, Trash2, X, ArrowDown, ArrowUp } from 'lucide-react';
 import { formatBytes, formatSpeed, formatProgress, formatEta, getStatusColor, getStatusText } from '../../lib/utils/format';
 import { useDispatch } from 'react-redux';
 import { pauseDownload, resumeDownload, removeDownload } from '../../store/downloadSlice';
@@ -13,6 +14,59 @@ interface Props {
   onSelect?: (gid: string, selected: boolean) => void;
 }
 
+function DeleteConfirmModal({ downloadName, deleteWithFiles, onDeleteWithFilesChange, onConfirm, onCancel }: {
+  downloadName: string;
+  deleteWithFiles: boolean;
+  onDeleteWithFilesChange: (v: boolean) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const modal = modalRef.current;
+    if (!modal) return;
+    const focusable = modal.querySelectorAll<HTMLElement>('button, input, [tabindex]:not([tabindex="-1"])');
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first?.focus();
+
+    function trapFocus(e: KeyboardEvent) {
+      if (e.key === 'Escape') { onCancel(); return; }
+      if (e.key !== 'Tab') return;
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
+    }
+    modal.addEventListener('keydown', trapFocus);
+    return () => modal.removeEventListener('keydown', trapFocus);
+  }, [onCancel]);
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel} role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title">
+      <div className="modal" onClick={(e) => e.stopPropagation()} ref={modalRef}>
+        <div className="modal-header">
+          <h3 className="modal-title" id="delete-confirm-title">Remove Download</h3>
+          <button className="btn btn-ghost btn-icon" onClick={onCancel} aria-label="Close"><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <p>Are you sure you want to remove &quot;{downloadName}&quot;?</p>
+          <label className="checkbox-label">
+            <input type="checkbox" checked={deleteWithFiles} onChange={(e) => onDeleteWithFilesChange(e.target.checked)} />
+            <span>Also delete downloaded files</span>
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-destructive" onClick={onConfirm}>Remove</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DownloadCard({ download, selected, onSelect }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -24,13 +78,13 @@ export default function DownloadCard({ download, selected, onSelect }: Props) {
       ? formatEta(download.totalSize - download.completedSize, download.downloadSpeed)
       : null;
 
-  function getTypeIcon(type: string): string {
+  function getTypeIcon(type: string) {
     switch (type) {
       case 'torrent':
       case 'magnet':
-        return '\uD83E\uDDF2';
+        return <Magnet size={18} />;
       default:
-        return '\uD83D\uDD17';
+        return <Link size={18} />;
     }
   }
 
@@ -66,6 +120,7 @@ export default function DownloadCard({ download, selected, onSelect }: Props) {
               type="checkbox"
               checked={selected || false}
               onChange={(e) => onSelect(download.gid, e.target.checked)}
+              aria-label={`Select ${download.name}`}
             />
           </label>
         )}
@@ -91,9 +146,9 @@ export default function DownloadCard({ download, selected, onSelect }: Props) {
               {download.status === 'active' && (
                 <>
                   <span className="info-speed">
-                    {'\u2193'} {formatSpeed(download.downloadSpeed)}
+                    <ArrowDown size={12} /> {formatSpeed(download.downloadSpeed)}
                     {(download.downloadType === 'torrent' || download.downloadType === 'magnet') && (
-                      <span className="upload-speed">{'\u2191'} {formatSpeed(download.uploadSpeed)}</span>
+                      <span className="upload-speed"><ArrowUp size={12} /> {formatSpeed(download.uploadSpeed)}</span>
                     )}
                   </span>
                   {eta && <span className="info-eta">ETA: {eta}</span>}
@@ -112,41 +167,29 @@ export default function DownloadCard({ download, selected, onSelect }: Props) {
         </div>
         <div className="card-actions">
           {(download.status === 'active' || download.status === 'waiting') && (
-            <button className="btn btn-ghost btn-icon" onClick={handlePause} title="Pause">{'\u23F8'}</button>
+            <button className="btn btn-ghost btn-icon" onClick={handlePause} title="Pause" aria-label="Pause download"><Pause size={16} /></button>
           )}
           {download.status === 'paused' && (
-            <button className="btn btn-ghost btn-icon" onClick={handleResume} title="Resume">{'\u25B6'}</button>
+            <button className="btn btn-ghost btn-icon" onClick={handleResume} title="Resume" aria-label="Resume download"><Play size={16} /></button>
           )}
           {download.status === 'error' && (
-            <button className="btn btn-ghost btn-icon" onClick={handleResume} title="Retry">{'\u21BB'}</button>
+            <button className="btn btn-ghost btn-icon" onClick={handleResume} title="Retry" aria-label="Retry download"><RotateCcw size={16} /></button>
           )}
           {download.status === 'complete' && (
-            <button className="btn btn-ghost btn-icon" onClick={handleOpenFolder} title="Open folder">{'\uD83D\uDCC2'}</button>
+            <button className="btn btn-ghost btn-icon" onClick={handleOpenFolder} title="Open folder" aria-label="Open folder"><FolderOpen size={16} /></button>
           )}
-          <button className="btn btn-ghost btn-icon" onClick={() => setShowDeleteConfirm(true)} title="Remove">{'\uD83D\uDDD1'}</button>
+          <button className="btn btn-ghost btn-icon" onClick={() => setShowDeleteConfirm(true)} title="Remove" aria-label="Remove download"><Trash2 size={16} /></button>
         </div>
       </div>
 
       {showDeleteConfirm && (
-        <div className="modal-backdrop" onClick={() => setShowDeleteConfirm(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">Remove Download</h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowDeleteConfirm(false)}>{'\u2715'}</button>
-            </div>
-            <div className="modal-body">
-              <p>Are you sure you want to remove &quot;{download.name}&quot;?</p>
-              <label className="checkbox-label">
-                <input type="checkbox" checked={deleteWithFiles} onChange={(e) => setDeleteWithFiles(e.target.checked)} />
-                <span>Also delete downloaded files</span>
-              </label>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-              <button className="btn btn-destructive" onClick={handleRemove}>Remove</button>
-            </div>
-          </div>
-        </div>
+        <DeleteConfirmModal
+          downloadName={download.name}
+          deleteWithFiles={deleteWithFiles}
+          onDeleteWithFilesChange={setDeleteWithFiles}
+          onConfirm={handleRemove}
+          onCancel={() => { setShowDeleteConfirm(false); setDeleteWithFiles(false); }}
+        />
       )}
     </>
   );

@@ -403,9 +403,9 @@
 
 ---
 
-## Phase 4: Visual Polish & UX
+## Phase 4: Visual Polish & UX --- COMPLETED
 
-### 4.1 Replace Unicode/Emoji Icons with Lucide React
+### 4.1 Replace Unicode/Emoji Icons with Lucide React --- DONE
 - **File**: `src/components/layout/Sidebar.tsx:12-15`
 - **File**: `src/components/downloads/DownloadCard.tsx:25-34, 101-112`
 - **File**: `src/components/downloads/AddDownloadModal.tsx:68`
@@ -419,7 +419,7 @@
   - Theme: `Sun`, `Moon`
   - Estimated: ~30 icon replacements across ~6 files
 
-### 4.2 Create Brand Identity & Logo
+### 4.2 Create Brand Identity & Logo --- DONE
 - **Files**: Missing `favicon.png`, missing `tray-icon.png`, missing app icons
 - **Severity**: CRITICAL
 - **Found by**: Designer
@@ -430,7 +430,7 @@
   - Place in `/public/` and `/build/` as needed
   - Choose a distinct brand accent color separate from semantic green
 
-### 4.3 Add Animations & Transitions
+### 4.3 Add Animations & Transitions --- DONE
 - **File**: `src/App.css:51-52` (only `--transition-fast: 100ms` and `--transition-normal: 200ms` defined)
 - **Severity**: HIGH
 - **Found by**: Designer
@@ -449,7 +449,7 @@
   - Cards: Staggered `fadeIn` on mount
   - Consider `framer-motion` for more complex animations
 
-### 4.4 Accessibility Overhaul
+### 4.4 Accessibility Overhaul --- DONE
 - **Severity**: CRITICAL
 - **Found by**: UX Specialist
 - **Details**: Zero accessibility support:
@@ -468,21 +468,21 @@
   - Add `focus-visible` styles: `outline: 2px solid var(--color-info); outline-offset: 2px`
   - Add status icons alongside colors for colorblind users
 
-### 4.5 Replace confirm() with Styled Modal
+### 4.5 Replace confirm() with Styled Modal --- DONE
 - **File**: `src/pages/Completed.tsx:23`
 - **Severity**: HIGH
 - **Found by**: UX Specialist
 - **Details**: Uses browser native `confirm()` dialog for clear history — jarring in Electron, cannot be styled.
 - **Fix**: Replace with the existing modal pattern used elsewhere.
 
-### 4.6 Add Connection Status Indicator
+### 4.6 Add Connection Status Indicator --- DONE
 - **File**: `src/store/statsSlice.ts:11,19,38,42`
 - **Severity**: HIGH
 - **Found by**: UX Specialist
 - **Details**: Redux tracks `isConnected` state and has a `setDisconnected` action, but this is NEVER used in the UI. If the sidecar crashes, users see no indication.
 - **Fix**: Add a persistent banner/indicator that shows when the engine is disconnected. Wire `setDisconnected` to the sidecar exit event.
 
-### 4.7 Show App-Level Error States
+### 4.7 Show App-Level Error States --- DONE
 - **File**: `src/store/downloadSlice.ts:9-10,139-148`
 - **File**: `src/pages/Downloads.tsx`
 - **Severity**: HIGH
@@ -490,14 +490,14 @@
 - **Details**: `downloadSlice` tracks `error` and `isLoading` state, but Downloads.tsx never reads `selectError` or `selectIsLoading`. No loading spinner, no error banner, no retry.
 - **Fix**: Read these selectors in Downloads page. Show loading spinner on initial load, error banner with retry on failure.
 
-### 4.8 Add Settings Unsaved-Changes Detection
+### 4.8 Add Settings Unsaved-Changes Detection --- DONE
 - **File**: `src/pages/Settings.tsx`
 - **Severity**: HIGH
 - **Found by**: UX Specialist
 - **Details**: Users can modify settings, navigate away, and lose all changes without warning. No dirty-state tracking.
 - **Fix**: Track dirty state via `useState`. Show "unsaved changes" prompt on navigation. Consider auto-save.
 
-### 4.9 Fix Typography Scale
+### 4.9 Fix Typography Scale --- DONE
 - **File**: `src/App.css`
 - **Severity**: MEDIUM
 - **Found by**: Designer
@@ -513,68 +513,68 @@
   ```
   Use consistently everywhere.
 
-### 4.10 Style Range Inputs
+### 4.10 Style Range Inputs --- DONE
 - **File**: `src/pages/Settings.tsx:140-156`
 - **Severity**: MEDIUM
 - **Found by**: Designer, UX Specialist
 - **Details**: Range sliders use browser defaults — look wildly different per platform, clash with dark theme. Speed limit slider goes 0-100MB in 1MB steps, making fine control impossible.
 - **Fix**: Custom CSS for `::-webkit-slider-thumb`, `::-webkit-slider-track`, `::-moz-range-thumb`. Add numeric input alternative or logarithmic scale for speed limits.
 
-### 4.11 Fix Download Card Hover State
+### 4.11 Fix Download Card Hover State --- DONE
 - **File**: `src/components/downloads/DownloadCard.css:12-14`
 - **Severity**: LOW
 - **Found by**: Designer, UX Specialist
 - **Details**: Hover sets `border-color: var(--border-primary)` which is the SAME as default. No visual feedback on hover.
 - **Fix**: Change to `var(--border-secondary)` or add subtle background lightening/elevation.
 
-### 4.12 Add Max-Width to Main Content
+### 4.12 Add Max-Width to Main Content --- DONE
 - **File**: `src/App.css:458-469`
 - **Severity**: MEDIUM
 - **Found by**: Designer
 - **Details**: No max-width constraint on main content. On wide monitors, cards stretch uncomfortably wide.
 - **Fix**: Add `max-width: 960px; margin: 0 auto;` to `.main-content` or `.page`.
 
-### 4.13 Consider Merging Downloads and Completed Pages
+### 4.13 Consider Merging Downloads and Completed Pages --- DONE
 - **File**: `src/pages/Downloads.tsx:39`, `src/pages/Completed.tsx`
 - **Severity**: MEDIUM
 - **Found by**: UX Specialist
 - **Details**: Downloads page filters OUT completed downloads. Users must jump between two pages. Most download managers use a single list with filters.
 - **Fix**: Merge into one page with a "Completed" filter/tab alongside Active/Queued/Paused/Error.
 
-### 4.14 Add Theme to Settings Page
+### 4.14 Add Theme to Settings Page --- DONE
 - **File**: `src/pages/Settings.tsx`
 - **Severity**: LOW
 - **Found by**: UX Specialist
 - **Details**: Theme toggle is only in sidebar footer. Settings page doesn't include theme selection despite having a `theme` field.
 - **Fix**: Add appearance section in Settings with theme toggle and OS sync option.
 
-### 4.15 Improve Empty States
+### 4.15 Improve Empty States --- DONE
 - **File**: `src/pages/Downloads.tsx:76-80`
 - **Severity**: LOW
 - **Found by**: Designer
 - **Details**: Empty state is a 48px emoji at 0.5 opacity with "No downloads" text. Underwhelming first impression.
 - **Fix**: Design a more engaging empty state with illustration, copy, and prominent "Add Download" CTA.
 
-### 4.16 Add Keyboard Shortcuts
+### 4.16 Add Keyboard Shortcuts --- DONE
 - **Severity**: MEDIUM
 - **Found by**: Devil's Advocate, Designer
 - **Details**: No keyboard shortcuts for common actions.
 - **Fix**: Add shortcuts: `Ctrl+N` (add download), `Ctrl+,` (settings), `Ctrl+Q` (quit), `Ctrl+A` (select all), `Escape` (close modal). Register via Electron `globalShortcut` or `accelerator` in menu.
 
-### 4.17 Add Drag-and-Drop Support
+### 4.17 Add Drag-and-Drop Support --- DONE
 - **Severity**: MEDIUM
 - **Found by**: Devil's Advocate
 - **Details**: Cannot drag a URL or torrent file onto the window.
 - **Fix**: Add drop zone handler on the main window.
 
-### 4.18 Switch to HashRouter
+### 4.18 Switch to HashRouter --- DONE
 - **File**: `src/main.tsx:14`
 - **Severity**: MEDIUM
 - **Found by**: Designer
 - **Details**: `BrowserRouter` works in dev but may cause issues in production Electron where file protocol doesn't support browser-style routing.
 - **Fix**: Replace `BrowserRouter` with `HashRouter`.
 
-### 4.19 Add Onboarding Flow
+### 4.19 Add Onboarding Flow --- DONE
 - **Severity**: LOW
 - **Found by**: UX Specialist
 - **Details**: No welcome screen, no explanation of features, no prompt to configure download location on first run.
