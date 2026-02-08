@@ -1,70 +1,154 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Save, Sun, Moon, ChevronDown, ChevronRight } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { selectTheme, setTheme } from '../store/themeSlice';
 import { api } from '../lib/api';
 import type { Settings as SettingsType } from '../lib/api';
 import type { AppDispatch } from '../store/store';
+import GeneralPanel from '../components/settings/GeneralPanel';
+import NetworkPanel from '../components/settings/NetworkPanel';
+import BitTorrentPanel from '../components/settings/BitTorrentPanel';
+import AppearancePanel from '../components/settings/AppearancePanel';
 import './Settings.css';
+
+export interface SettingsFormState {
+  // General
+  downloadPath: string;
+  enableNotifications: boolean;
+  closeToTray: boolean;
+  deleteFilesOnRemove: boolean;
+  userAgent: string;
+  // Network
+  maxConcurrent: number;
+  maxConnections: number;
+  splitCount: number;
+  downloadSpeedLimit: number;
+  uploadSpeedLimit: number;
+  downloadLimitEnabled: boolean;
+  uploadLimitEnabled: boolean;
+  proxyType: string;
+  proxyHost: string;
+  proxyPort: string;
+  proxyAuthEnabled: boolean;
+  proxyUsername: string;
+  proxyPassword: string;
+  connectTimeout: number;
+  readTimeout: number;
+  maxRetries: number;
+  allocationMode: string;
+  // BitTorrent
+  btEnableDht: boolean;
+  btEnablePex: boolean;
+  btEnableLpd: boolean;
+  btMaxPeers: number;
+  btSeedRatio: number;
+  autoUpdateTrackers: boolean;
+}
+
+type SettingsTab = 'general' | 'network' | 'bittorrent' | 'appearance' | 'about';
+
+const defaultForm: SettingsFormState = {
+  downloadPath: '',
+  enableNotifications: true,
+  closeToTray: true,
+  deleteFilesOnRemove: false,
+  userAgent: 'gosh-dl/0.1.0',
+  maxConcurrent: 5,
+  maxConnections: 16,
+  splitCount: 16,
+  downloadSpeedLimit: 10485760,
+  uploadSpeedLimit: 10485760,
+  downloadLimitEnabled: false,
+  uploadLimitEnabled: false,
+  proxyType: 'none',
+  proxyHost: '',
+  proxyPort: '',
+  proxyAuthEnabled: false,
+  proxyUsername: '',
+  proxyPassword: '',
+  connectTimeout: 30,
+  readTimeout: 60,
+  maxRetries: 3,
+  allocationMode: 'sparse',
+  btEnableDht: true,
+  btEnablePex: true,
+  btEnableLpd: true,
+  btMaxPeers: 55,
+  btSeedRatio: 1.0,
+  autoUpdateTrackers: true,
+};
+
+function parseProxyUrl(url: string): Pick<SettingsFormState, 'proxyType' | 'proxyHost' | 'proxyPort' | 'proxyAuthEnabled' | 'proxyUsername' | 'proxyPassword'> {
+  if (!url) return { proxyType: 'none', proxyHost: '', proxyPort: '', proxyAuthEnabled: false, proxyUsername: '', proxyPassword: '' };
+  const match = url.match(/^(https?|socks[45]?):\/\/(?:([^:]*):([^@]*)@)?([^:/?#]+)(?::(\d+))?/);
+  if (!match) return { proxyType: 'none', proxyHost: '', proxyPort: '', proxyAuthEnabled: false, proxyUsername: '', proxyPassword: '' };
+  return {
+    proxyType: match[1] === 'socks5' || match[1] === 'socks4' ? 'socks5' : match[1],
+    proxyHost: match[4] || '',
+    proxyPort: match[5] || '',
+    proxyAuthEnabled: !!match[2],
+    proxyUsername: match[2] ? decodeURIComponent(match[2]) : '',
+    proxyPassword: match[3] ? decodeURIComponent(match[3]) : '',
+  };
+}
+
+function composeProxyUrl(form: SettingsFormState): string {
+  if (form.proxyType === 'none' || !form.proxyHost) return '';
+  const auth = form.proxyAuthEnabled && form.proxyUsername
+    ? `${encodeURIComponent(form.proxyUsername)}:${encodeURIComponent(form.proxyPassword)}@`
+    : '';
+  const port = form.proxyPort ? `:${form.proxyPort}` : '';
+  return `${form.proxyType}://${auth}${form.proxyHost}${port}`;
+}
+
+const NAV_ITEMS: { tab: SettingsTab; icon: string; label: string }[] = [
+  { tab: 'general', icon: 'settings', label: 'General' },
+  { tab: 'network', icon: 'wifi_tethering', label: 'Network' },
+  { tab: 'bittorrent', icon: 'cloud_download', label: 'BitTorrent' },
+  { tab: 'appearance', icon: 'palette', label: 'Appearance' },
+  { tab: 'about', icon: 'info', label: 'About' },
+];
+
+const PANEL_META: Record<Exclude<SettingsTab, 'about'>, { title: string; subtitle: string }> = {
+  general: { title: 'General Settings', subtitle: 'Configure download behavior, notifications, and application preferences.' },
+  network: { title: 'Network & Reliability', subtitle: 'Configure connection limits, bandwidth throttles, proxy servers, and disk allocation strategies.' },
+  bittorrent: { title: 'BitTorrent Settings', subtitle: 'Configure protocol behavior, transfer limits, and tracker preferences.' },
+  appearance: { title: 'Appearance', subtitle: 'Customize the look and feel of Gosh-Fetch.' },
+};
 
 export default function Settings() {
   const dispatch = useDispatch<AppDispatch>();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const theme = useSelector(selectTheme);
-  const [downloadPath, setDownloadPath] = useState('');
-  const [maxConcurrent, setMaxConcurrent] = useState(5);
-  const [maxConnections, setMaxConnections] = useState(16);
-  const [splitCount, setSplitCount] = useState(16);
-  const [downloadSpeedLimit, setDownloadSpeedLimit] = useState(0);
-  const [uploadSpeedLimit, setUploadSpeedLimit] = useState(0);
-  const [userAgent, setUserAgent] = useState('gosh-dl/0.1.0');
-  const [enableNotifications, setEnableNotifications] = useState(true);
-  const [closeToTray, setCloseToTray] = useState(true);
-  const [autoUpdateTrackers, setAutoUpdateTrackers] = useState(true);
-  const [deleteFilesOnRemove, setDeleteFilesOnRemove] = useState(false);
-  const [proxyUrl, setProxyUrl] = useState('');
-  const [connectTimeout, setConnectTimeout] = useState(30);
-  const [readTimeout, setReadTimeout] = useState(60);
-  const [maxRetries, setMaxRetries] = useState(3);
-  const [allocationMode, setAllocationMode] = useState('sparse');
+
+  const initialTab = (searchParams.get('tab') as SettingsTab) || 'general';
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    NAV_ITEMS.some(n => n.tab === initialTab) ? initialTab : 'general'
+  );
+
+  const [form, setForm] = useState<SettingsFormState>(defaultForm);
   const [userAgentPresets, setUserAgentPresets] = useState<[string, string][]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
   const savedSnapshot = useRef<string>('');
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
-  function toggleSection(section: string) {
-    setCollapsedSections(prev => {
-      const next = new Set(prev);
-      if (next.has(section)) next.delete(section);
-      else next.add(section);
-      return next;
-    });
-  }
+  const isDirty = savedSnapshot.current ? JSON.stringify(form) !== savedSnapshot.current : false;
 
-  function getSnapshot() {
-    return JSON.stringify({
-      downloadPath, maxConcurrent, maxConnections, splitCount,
-      downloadSpeedLimit, uploadSpeedLimit, userAgent,
-      enableNotifications, closeToTray, autoUpdateTrackers,
-      deleteFilesOnRemove, proxyUrl, connectTimeout, readTimeout,
-      maxRetries, allocationMode, theme,
-    });
-  }
+  const updateField = useCallback(<K extends keyof SettingsFormState>(key: K, value: SettingsFormState[K]) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+  }, []);
 
-  useEffect(() => {
-    const snap = getSnapshot();
-    if (savedSnapshot.current && snap !== savedSnapshot.current) {
-      setIsDirty(true);
+  function handleTabChange(tab: SettingsTab) {
+    if (tab === 'about') {
+      navigate('/about');
+      return;
     }
-  }, [
-    downloadPath, maxConcurrent, maxConnections, splitCount,
-    downloadSpeedLimit, uploadSpeedLimit, userAgent,
-    enableNotifications, closeToTray, autoUpdateTrackers,
-    deleteFilesOnRemove, proxyUrl, connectTimeout, readTimeout,
-    maxRetries, allocationMode, theme,
-  ]);
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  }
 
+  // Load settings on mount
   useEffect(() => {
     (async () => {
       try {
@@ -72,62 +156,54 @@ export default function Settings() {
         setUserAgentPresets(presets);
 
         const settings = await api.dbGetSettings();
-        if (settings.download_path === '~/Downloads') {
-          setDownloadPath(await api.getDefaultDownloadPath());
-        } else {
-          setDownloadPath(settings.download_path);
+        let downloadPath = settings.download_path;
+        if (downloadPath === '~/Downloads') {
+          downloadPath = await api.getDefaultDownloadPath();
         }
-        setMaxConcurrent(settings.max_concurrent_downloads);
-        setMaxConnections(settings.max_connections_per_server);
-        setSplitCount(settings.split_count);
-        setDownloadSpeedLimit(settings.download_speed_limit);
-        setUploadSpeedLimit(settings.upload_speed_limit);
-        setUserAgent(settings.user_agent);
-        setEnableNotifications(settings.enable_notifications);
-        setCloseToTray(settings.close_to_tray);
-        setAutoUpdateTrackers(settings.auto_update_trackers);
-        setDeleteFilesOnRemove(settings.delete_files_on_remove);
-        setProxyUrl(settings.proxy_url);
-        setConnectTimeout(settings.connect_timeout);
-        setReadTimeout(settings.read_timeout);
-        setMaxRetries(settings.max_retries);
-        setAllocationMode(settings.allocation_mode);
 
+        const proxy = parseProxyUrl(settings.proxy_url);
+
+        const loaded: SettingsFormState = {
+          downloadPath,
+          enableNotifications: settings.enable_notifications,
+          closeToTray: settings.close_to_tray,
+          deleteFilesOnRemove: settings.delete_files_on_remove,
+          userAgent: settings.user_agent,
+          maxConcurrent: settings.max_concurrent_downloads,
+          maxConnections: settings.max_connections_per_server,
+          splitCount: settings.split_count,
+          downloadSpeedLimit: settings.download_speed_limit || 10485760,
+          uploadSpeedLimit: settings.upload_speed_limit || 10485760,
+          downloadLimitEnabled: settings.download_speed_limit > 0,
+          uploadLimitEnabled: settings.upload_speed_limit > 0,
+          ...proxy,
+          connectTimeout: settings.connect_timeout,
+          readTimeout: settings.read_timeout,
+          maxRetries: settings.max_retries,
+          allocationMode: settings.allocation_mode,
+          btEnableDht: settings.bt_enable_dht,
+          btEnablePex: settings.bt_enable_pex,
+          btEnableLpd: settings.bt_enable_lpd,
+          btMaxPeers: settings.bt_max_peers,
+          btSeedRatio: settings.bt_seed_ratio,
+          autoUpdateTrackers: settings.auto_update_trackers,
+        };
+
+        setForm(loaded);
         await api.setCloseToTray(settings.close_to_tray);
 
-        // Set snapshot after loading
         setTimeout(() => {
-          savedSnapshot.current = JSON.stringify({
-            downloadPath: settings.download_path === '~/Downloads' ? '' : settings.download_path,
-            maxConcurrent: settings.max_concurrent_downloads,
-            maxConnections: settings.max_connections_per_server,
-            splitCount: settings.split_count,
-            downloadSpeedLimit: settings.download_speed_limit,
-            uploadSpeedLimit: settings.upload_speed_limit,
-            userAgent: settings.user_agent,
-            enableNotifications: settings.enable_notifications,
-            closeToTray: settings.close_to_tray,
-            autoUpdateTrackers: settings.auto_update_trackers,
-            deleteFilesOnRemove: settings.delete_files_on_remove,
-            proxyUrl: settings.proxy_url,
-            connectTimeout: settings.connect_timeout,
-            readTimeout: settings.read_timeout,
-            maxRetries: settings.max_retries,
-            allocationMode: settings.allocation_mode,
-            theme,
-          });
+          savedSnapshot.current = JSON.stringify(loaded);
         }, 100);
       } catch (e) {
         console.error('Failed to load settings:', e);
-        try { setDownloadPath(await api.getDefaultDownloadPath()); } catch {}
+        try {
+          const path = await api.getDefaultDownloadPath();
+          setForm(prev => ({ ...prev, downloadPath: path }));
+        } catch {}
       }
     })();
   }, []);
-
-  async function handleBrowseDownloadPath() {
-    const selected = await window.electronAPI.selectDirectory();
-    if (selected) setDownloadPath(selected);
-  }
 
   async function handleSave() {
     setIsSaving(true);
@@ -135,41 +211,56 @@ export default function Settings() {
 
     try {
       const settings: SettingsType = {
-        download_path: downloadPath,
-        max_concurrent_downloads: maxConcurrent,
-        max_connections_per_server: maxConnections,
-        split_count: splitCount,
-        download_speed_limit: downloadSpeedLimit,
-        upload_speed_limit: uploadSpeedLimit,
-        user_agent: userAgent,
-        enable_notifications: enableNotifications,
-        close_to_tray: closeToTray,
+        download_path: form.downloadPath,
+        max_concurrent_downloads: form.maxConcurrent,
+        max_connections_per_server: form.maxConnections,
+        split_count: form.splitCount,
+        download_speed_limit: form.downloadLimitEnabled ? form.downloadSpeedLimit : 0,
+        upload_speed_limit: form.uploadLimitEnabled ? form.uploadSpeedLimit : 0,
+        user_agent: form.userAgent,
+        enable_notifications: form.enableNotifications,
+        close_to_tray: form.closeToTray,
         theme,
-        bt_enable_dht: true,
-        bt_enable_pex: true,
-        bt_enable_lpd: true,
-        bt_max_peers: 55,
-        bt_seed_ratio: 1.0,
-        auto_update_trackers: autoUpdateTrackers,
-        delete_files_on_remove: deleteFilesOnRemove,
-        proxy_url: proxyUrl,
-        connect_timeout: connectTimeout,
-        read_timeout: readTimeout,
-        max_retries: maxRetries,
-        allocation_mode: allocationMode,
+        bt_enable_dht: form.btEnableDht,
+        bt_enable_pex: form.btEnablePex,
+        bt_enable_lpd: form.btEnableLpd,
+        bt_max_peers: form.btMaxPeers,
+        bt_seed_ratio: form.btSeedRatio,
+        auto_update_trackers: form.autoUpdateTrackers,
+        delete_files_on_remove: form.deleteFilesOnRemove,
+        proxy_url: composeProxyUrl(form),
+        connect_timeout: form.connectTimeout,
+        read_timeout: form.readTimeout,
+        max_retries: form.maxRetries,
+        allocation_mode: form.allocationMode,
       };
 
       await api.dbSaveSettings(settings);
-      await api.setCloseToTray(closeToTray);
+      await api.setCloseToTray(form.closeToTray);
       await api.applySettingsToEngine(settings);
       setSaveMessage('Settings saved successfully');
-      savedSnapshot.current = getSnapshot();
-      setIsDirty(false);
+      savedSnapshot.current = JSON.stringify(form);
     } catch (e) {
       setSaveMessage(`Failed to save: ${e}`);
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function handleResetDefaults() {
+    setForm(prev => ({
+      ...defaultForm,
+      downloadPath: prev.downloadPath, // keep current download path
+    }));
+  }
+
+  async function handleBrowseDownloadPath() {
+    const selected = await window.electronAPI.selectDirectory();
+    if (selected) updateField('downloadPath', selected);
+  }
+
+  function handleThemeChange(newTheme: 'dark' | 'light') {
+    dispatch(setTheme(newTheme));
   }
 
   async function handleUpdateTrackers() {
@@ -181,236 +272,84 @@ export default function Settings() {
     }
   }
 
-  function formatSpeedLimit(bytes: number): string {
-    if (bytes === 0) return 'Unlimited';
-    const mb = bytes / (1024 * 1024);
-    return `${mb.toFixed(1)} MB/s`;
-  }
-
-  function handleThemeChange(newTheme: 'dark' | 'light') {
-    dispatch(setTheme(newTheme));
-  }
-
-  const isSectionOpen = (s: string) => !collapsedSections.has(s);
+  const meta = activeTab !== 'about' ? PANEL_META[activeTab] : null;
 
   return (
-    <div className="page">
-      <header className="page-header"><h1>Settings</h1></header>
-      <div className="settings-content">
-        {/* Appearance */}
-        <section className="settings-section">
-          <button className="section-header" onClick={() => toggleSection('appearance')}>
-            <h2>Appearance</h2>
-            {isSectionOpen('appearance') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
-          {isSectionOpen('appearance') && (
-            <div className="section-body">
-              <div className="theme-cards">
-                <button className={`theme-card${theme === 'dark' ? ' selected' : ''}`} onClick={() => handleThemeChange('dark')}>
-                  <Moon size={24} />
-                  <span>Dark</span>
-                </button>
-                <button className={`theme-card${theme === 'light' ? ' selected' : ''}`} onClick={() => handleThemeChange('light')}>
-                  <Sun size={24} />
-                  <span>Light</span>
-                </button>
-              </div>
+    <div className="settings-layout">
+      {/* Sidebar */}
+      <nav className="settings-sidebar">
+        <div className="settings-sidebar-header">
+          <div className="settings-sidebar-brand">
+            <div className="brand-icon">
+              <span className="material-symbols-outlined" style={{ fontSize: 20 }}>bolt</span>
             </div>
-          )}
-        </section>
-
-        {/* General */}
-        <section className="settings-section">
-          <button className="section-header" onClick={() => toggleSection('general')}>
-            <h2>General</h2>
-            {isSectionOpen('general') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
-          {isSectionOpen('general') && (
-            <div className="section-body">
-              <div className="setting-item">
-                <div className="setting-info"><label>Download Location</label><p>Where downloaded files will be saved</p></div>
-                <div className="setting-control file-control">
-                  <input type="text" value={downloadPath} readOnly />
-                  <button className="btn btn-secondary" onClick={handleBrowseDownloadPath}>Browse</button>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Notifications</label><p>Show notification when downloads complete</p></div>
-                <div className="setting-control">
-                  <label className="toggle-switch">
-                    <input type="checkbox" checked={enableNotifications} onChange={(e) => setEnableNotifications(e.target.checked)} />
-                    <span className="toggle-slider" />
-                  </label>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Close to Tray</label><p>Minimize to system tray instead of quitting</p></div>
-                <div className="setting-control">
-                  <label className="toggle-switch">
-                    <input type="checkbox" checked={closeToTray} onChange={(e) => setCloseToTray(e.target.checked)} />
-                    <span className="toggle-slider" />
-                  </label>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Delete Files on Remove</label><p>Delete downloaded files when removing a task (default)</p></div>
-                <div className="setting-control">
-                  <label className="toggle-switch">
-                    <input type="checkbox" checked={deleteFilesOnRemove} onChange={(e) => setDeleteFilesOnRemove(e.target.checked)} />
-                    <span className="toggle-slider" />
-                  </label>
-                </div>
-              </div>
+            <div className="brand-info">
+              <span className="brand-name">Gosh-Fetch</span>
+              <span className="brand-version">Settings</span>
             </div>
-          )}
-        </section>
+          </div>
+        </div>
+        <div className="settings-sidebar-nav">
+          {NAV_ITEMS.map(({ tab, icon, label }) => (
+            <button
+              key={tab}
+              className={`settings-nav-item${activeTab === tab ? ' active' : ''}`}
+              onClick={() => handleTabChange(tab)}
+            >
+              <span className="material-symbols-outlined">{icon}</span>
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
 
-        {/* Connection */}
-        <section className="settings-section">
-          <button className="section-header" onClick={() => toggleSection('connection')}>
-            <h2>Connection</h2>
-            {isSectionOpen('connection') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
-          {isSectionOpen('connection') && (
-            <div className="section-body">
-              <div className="setting-item">
-                <div className="setting-info"><label>Concurrent Downloads</label><p>Maximum simultaneous downloads</p></div>
-                <div className="setting-control range-control">
-                  <input type="range" min={1} max={20} value={maxConcurrent} onChange={(e) => setMaxConcurrent(Number(e.target.value))} aria-label="Concurrent downloads" />
-                  <span className="range-value">{maxConcurrent}</span>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Connections per Server</label><p>Per-download connection count</p></div>
-                <div className="setting-control range-control">
-                  <input type="range" min={1} max={16} value={maxConnections} onChange={(e) => setMaxConnections(Number(e.target.value))} aria-label="Connections per server" />
-                  <span className="range-value">{maxConnections}</span>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Split Count</label><p>Segments per file</p></div>
-                <div className="setting-control range-control">
-                  <input type="range" min={1} max={64} value={splitCount} onChange={(e) => setSplitCount(Number(e.target.value))} aria-label="Split count" />
-                  <span className="range-value">{splitCount}</span>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Download Speed Limit</label><p>{formatSpeedLimit(downloadSpeedLimit)}</p></div>
-                <div className="setting-control range-control">
-                  <input type="range" min={0} max={104857600} step={1048576} value={downloadSpeedLimit} onChange={(e) => setDownloadSpeedLimit(Number(e.target.value))} aria-label="Download speed limit" />
-                  <span className="range-value">{downloadSpeedLimit === 0 ? '\u221E' : formatSpeedLimit(downloadSpeedLimit)}</span>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Upload Speed Limit</label><p>{formatSpeedLimit(uploadSpeedLimit)}</p></div>
-                <div className="setting-control range-control">
-                  <input type="range" min={0} max={104857600} step={1048576} value={uploadSpeedLimit} onChange={(e) => setUploadSpeedLimit(Number(e.target.value))} aria-label="Upload speed limit" />
-                  <span className="range-value">{uploadSpeedLimit === 0 ? '\u221E' : formatSpeedLimit(uploadSpeedLimit)}</span>
-                </div>
-              </div>
+      {/* Main content */}
+      <div className="settings-main">
+        {meta && (
+          <header className="settings-panel-header">
+            <div className="settings-panel-title">
+              <h2>{meta.title}</h2>
+              <p>{meta.subtitle}</p>
             </div>
-          )}
-        </section>
-
-        {/* Network */}
-        <section className="settings-section">
-          <button className="section-header" onClick={() => toggleSection('network')}>
-            <h2>Network</h2>
-            {isSectionOpen('network') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
-          {isSectionOpen('network') && (
-            <div className="section-body">
-              <div className="setting-item">
-                <div className="setting-info"><label>Proxy URL</label><p>HTTP/SOCKS proxy (leave empty for direct connection)</p></div>
-                <div className="setting-control"><input type="text" value={proxyUrl} onChange={(e) => setProxyUrl(e.target.value)} placeholder="socks5://127.0.0.1:1080" /></div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Connect Timeout</label><p>Seconds to wait for connection</p></div>
-                <div className="setting-control range-control">
-                  <input type="range" min={5} max={120} value={connectTimeout} onChange={(e) => setConnectTimeout(Number(e.target.value))} aria-label="Connect timeout" />
-                  <span className="range-value">{connectTimeout}s</span>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Read Timeout</label><p>Seconds to wait for data</p></div>
-                <div className="setting-control range-control">
-                  <input type="range" min={10} max={300} value={readTimeout} onChange={(e) => setReadTimeout(Number(e.target.value))} aria-label="Read timeout" />
-                  <span className="range-value">{readTimeout}s</span>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Max Retries</label><p>Retry attempts on failure</p></div>
-                <div className="setting-control range-control">
-                  <input type="range" min={0} max={10} value={maxRetries} onChange={(e) => setMaxRetries(Number(e.target.value))} aria-label="Max retries" />
-                  <span className="range-value">{maxRetries}</span>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>File Allocation</label><p>How disk space is allocated for downloads</p></div>
-                <div className="setting-control">
-                  <select value={allocationMode} onChange={(e) => setAllocationMode(e.target.value)}>
-                    <option value="none">None</option>
-                    <option value="sparse">Sparse</option>
-                    <option value="full">Full (pre-allocate)</option>
-                  </select>
-                </div>
-              </div>
+            <div className="settings-panel-actions">
+              {isDirty && <span className="save-indicator dirty">Unsaved changes</span>}
+              {saveMessage && (
+                <span className={`save-indicator${saveMessage.startsWith('Failed') ? ' error' : ' success'}`}>
+                  {saveMessage}
+                </span>
+              )}
+              <button className="btn btn-ghost" onClick={handleResetDefaults}>Reset Defaults</button>
+              <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>save</span>
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </button>
             </div>
-          )}
-        </section>
+          </header>
+        )}
 
-        {/* User Agent */}
-        <section className="settings-section">
-          <button className="section-header" onClick={() => toggleSection('useragent')}>
-            <h2>User Agent</h2>
-            {isSectionOpen('useragent') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
-          {isSectionOpen('useragent') && (
-            <div className="section-body">
-              <div className="setting-item">
-                <div className="setting-info"><label>User Agent</label><p>Identify as a different client</p></div>
-                <div className="setting-control user-agent-control">
-                  <select value={userAgent} onChange={(e) => setUserAgent(e.target.value)}>
-                    {userAgentPresets.map(([name, value]) => <option key={value} value={value}>{name}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
+        <div className="settings-panel-scroll">
+          {activeTab === 'general' && (
+            <GeneralPanel
+              form={form}
+              updateField={updateField}
+              userAgentPresets={userAgentPresets}
+              onBrowseDownloadPath={handleBrowseDownloadPath}
+            />
           )}
-        </section>
-
-        {/* BitTorrent */}
-        <section className="settings-section">
-          <button className="section-header" onClick={() => toggleSection('bittorrent')}>
-            <h2>BitTorrent</h2>
-            {isSectionOpen('bittorrent') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </button>
-          {isSectionOpen('bittorrent') && (
-            <div className="section-body">
-              <div className="setting-item">
-                <div className="setting-info"><label>Auto-Update Tracker List</label><p>Automatically fetch updated trackers daily</p></div>
-                <div className="setting-control">
-                  <label className="toggle-switch">
-                    <input type="checkbox" checked={autoUpdateTrackers} onChange={(e) => setAutoUpdateTrackers(e.target.checked)} />
-                    <span className="toggle-slider" />
-                  </label>
-                </div>
-              </div>
-              <div className="setting-item">
-                <div className="setting-info"><label>Update Trackers Now</label><p>Fetch the latest tracker list from ngosang/trackerslist</p></div>
-                <div className="setting-control"><button className="btn btn-secondary" onClick={handleUpdateTrackers}>Update Trackers</button></div>
-              </div>
-            </div>
+          {activeTab === 'network' && (
+            <NetworkPanel form={form} updateField={updateField} />
           )}
-        </section>
-
-        <div className="settings-footer">
-          {isDirty && <span className="unsaved-indicator">Unsaved changes</span>}
-          {saveMessage && <span className={`save-message${saveMessage.startsWith('Failed') ? ' error' : ''}`}>{saveMessage}</span>}
-          <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
-            <Save size={14} />
-            {isSaving ? 'Saving...' : 'Save Settings'}
-          </button>
+          {activeTab === 'bittorrent' && (
+            <BitTorrentPanel
+              form={form}
+              updateField={updateField}
+              onUpdateTrackers={handleUpdateTrackers}
+              saveMessage={saveMessage}
+            />
+          )}
+          {activeTab === 'appearance' && (
+            <AppearancePanel theme={theme} onThemeChange={handleThemeChange} />
+          )}
         </div>
       </div>
     </div>

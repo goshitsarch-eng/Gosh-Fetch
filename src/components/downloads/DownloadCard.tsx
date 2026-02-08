@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Download } from '../../lib/types/download';
-import { Magnet, Link, FileDown, Pause, Play, RotateCcw, FolderOpen, Trash2, X, ArrowDown, ArrowUp } from 'lucide-react';
-import { formatBytes, formatSpeed, formatProgress, formatEta, getFileExtension, getStatusColor, getStatusText } from '../../lib/utils/format';
+import { formatBytes, formatSpeed, formatProgress, formatEta, getFileExtension } from '../../lib/utils/format';
 import { useDispatch } from 'react-redux';
 import { pauseDownload, resumeDownload, removeDownload } from '../../store/downloadSlice';
 import { api } from '../../lib/api';
@@ -49,7 +48,9 @@ function DeleteConfirmModal({ downloadName, deleteWithFiles, onDeleteWithFilesCh
       <div className="modal" onClick={(e) => e.stopPropagation()} ref={modalRef} style={{ maxWidth: '440px' }}>
         <div className="modal-header">
           <h3 className="modal-title" id="delete-confirm-title">Remove Download</h3>
-          <button className="btn btn-ghost btn-icon" onClick={onCancel} aria-label="Close"><X size={16} /></button>
+          <button className="btn btn-ghost btn-icon" onClick={onCancel} aria-label="Close">
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>close</span>
+          </button>
         </div>
         <div className="modal-body">
           <p>Are you sure you want to remove &quot;{downloadName}&quot;?</p>
@@ -67,22 +68,59 @@ function DeleteConfirmModal({ downloadName, deleteWithFiles, onDeleteWithFilesCh
   );
 }
 
-function getTypeBadge(download: Download): { label: string; className: string } | null {
-  if (download.status === 'paused') return { label: 'PAUSED', className: 'tag tag-orange' };
-  if (download.status === 'error') return { label: 'ERROR', className: 'tag tag-red' };
-  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return { label: 'TORRENT', className: 'tag tag-purple' };
+function getTypeIcon(download: Download): string {
+  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return 'hub';
   const ext = getFileExtension(download.name);
-  if (ext === 'iso') return { label: 'ISO', className: 'tag tag-blue' };
-  if (ext === 'zip' || ext === 'tar' || ext === 'gz' || ext === '7z' || ext === 'rar') return { label: ext.toUpperCase(), className: 'tag tag-blue' };
-  if (ext === 'deb' || ext === 'rpm' || ext === 'appimage') return { label: ext.toUpperCase(), className: 'tag tag-green' };
+  if (['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v'].includes(ext)) return 'movie';
+  if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'wma', 'm4a', 'opus'].includes(ext)) return 'music_note';
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'rtf', 'odt', 'epub'].includes(ext)) return 'description';
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff', 'psd', 'raw'].includes(ext)) return 'image';
+  if (['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst'].includes(ext)) return 'folder_zip';
+  if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'appimage'].includes(ext)) return 'terminal';
+  if (['iso'].includes(ext)) return 'folder_zip';
+  return 'download';
+}
+
+function getTypeBadge(download: Download): { label: string; className: string } | null {
+  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return { label: 'TORRENT', className: 'card-badge purple' };
+  const ext = getFileExtension(download.name);
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(ext)) return { label: ext.toUpperCase(), className: 'card-badge blue' };
+  if (['mp3', 'flac', 'wav', 'aac', 'ogg'].includes(ext)) return { label: ext.toUpperCase(), className: 'card-badge blue' };
+  if (['iso'].includes(ext)) return { label: 'ISO', className: 'card-badge orange' };
+  if (['zip', 'tar', 'gz', '7z', 'rar', 'xz'].includes(ext)) return { label: ext === 'gz' ? 'ARCHIVE' : ext.toUpperCase(), className: 'card-badge purple' };
+  if (['deb', 'rpm', 'appimage', 'exe', 'msi', 'dmg'].includes(ext)) return { label: ext.toUpperCase(), className: 'card-badge green' };
+  if (['pdf', 'doc', 'docx'].includes(ext)) return { label: ext.toUpperCase(), className: 'card-badge blue' };
   return null;
 }
 
-function getIconBg(download: Download): string {
-  if (download.status === 'paused') return 'card-type-icon orange';
-  if (download.status === 'error') return 'card-type-icon red';
-  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return 'card-type-icon purple';
-  return 'card-type-icon blue';
+function getIconColorClass(download: Download): string {
+  if (download.status === 'error') return 'icon-red';
+  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return 'icon-purple';
+  const ext = getFileExtension(download.name);
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'm4v'].includes(ext)) return 'icon-blue';
+  if (['iso', 'zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return 'icon-orange';
+  if (['deb', 'rpm', 'appimage', 'exe', 'msi'].includes(ext)) return 'icon-purple';
+  return 'icon-blue';
+}
+
+function getStripeColor(download: Download): string {
+  if (download.status === 'error') return 'var(--color-destructive)';
+  const ext = getFileExtension(download.name);
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm', 'm4v'].includes(ext)) return 'var(--color-success)';
+  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return 'var(--icon-color-purple)';
+  if (['iso', 'zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return 'var(--icon-color-orange)';
+  return 'var(--color-primary)';
+}
+
+function getSourceDomain(download: Download): string | null {
+  const url = download.url || download.magnetUri;
+  if (!url) return null;
+  if (url.startsWith('magnet:')) return 'magnet link';
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
 }
 
 function DownloadCard({ download, selected, onSelect }: Props) {
@@ -95,18 +133,8 @@ function DownloadCard({ download, selected, onSelect }: Props) {
     download.status === 'active' && download.downloadSpeed > 0
       ? formatEta(download.totalSize - download.completedSize, download.downloadSpeed)
       : null;
-  const isPaused = download.status === 'paused';
   const typeBadge = getTypeBadge(download);
-
-  function getTypeIcon(type: string) {
-    switch (type) {
-      case 'torrent':
-      case 'magnet':
-        return <Magnet size={16} />;
-      default:
-        return <FileDown size={16} />;
-    }
-  }
+  const sourceDomain = getSourceDomain(download);
 
   async function handlePause() {
     try { await dispatch(pauseDownload(download.gid)); } catch (e) { console.error('Failed to pause:', e); }
@@ -133,7 +161,88 @@ function DownloadCard({ download, selected, onSelect }: Props) {
 
   return (
     <>
-      <div className={`download-card${selected ? ' selected' : ''}${isPaused ? ' paused' : ''}`}>
+      <div className={`download-card${selected ? ' selected' : ''}`}>
+        {/* Top progress stripe */}
+        <div className="card-stripe">
+          <div
+            className="card-stripe-fill"
+            style={{ width: `${progress}%`, background: getStripeColor(download) }}
+          />
+        </div>
+
+        <div className="card-body">
+          {/* Icon */}
+          <div className={`card-type-icon ${getIconColorClass(download)}`}>
+            <span className="material-symbols-outlined">{getTypeIcon(download)}</span>
+          </div>
+
+          {/* Info area */}
+          <div className="card-info">
+            {/* Row 1: Name + hover actions */}
+            <div className="card-row-top">
+              <h3 className="card-name" title={download.name}>{download.name}</h3>
+              <div className="card-actions">
+                {(download.status === 'active' || download.status === 'waiting') && (
+                  <button className="card-action-btn" onClick={handlePause} title="Pause" aria-label="Pause download">
+                    <span className="material-symbols-outlined">pause</span>
+                  </button>
+                )}
+                {download.status === 'paused' && (
+                  <button className="card-action-btn" onClick={handleResume} title="Resume" aria-label="Resume download">
+                    <span className="material-symbols-outlined">play_arrow</span>
+                  </button>
+                )}
+                {download.status === 'error' && (
+                  <button className="card-action-btn" onClick={handleResume} title="Retry" aria-label="Retry download">
+                    <span className="material-symbols-outlined">refresh</span>
+                  </button>
+                )}
+                <button className="card-action-btn danger" onClick={() => setShowDeleteConfirm(true)} title="Remove" aria-label="Remove download">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+                <button className="card-action-btn" onClick={handleOpenFolder} title="Open folder" aria-label="Open folder">
+                  <span className="material-symbols-outlined">folder_open</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Row 2: Badge + source domain */}
+            <div className="card-meta">
+              {typeBadge && <span className={typeBadge.className}>{typeBadge.label}</span>}
+              {sourceDomain && (
+                <>
+                  {typeBadge && <span className="meta-dot">&bull;</span>}
+                  <span className="meta-domain">{sourceDomain}</span>
+                </>
+              )}
+            </div>
+
+            {/* Row 3: Progress bar + size */}
+            <div className="card-progress-area">
+              <div className="card-progress-main">
+                <div className="card-progress-labels">
+                  <span className="progress-size">
+                    {formatBytes(download.completedSize)} <span className="progress-size-total">of {formatBytes(download.totalSize)}</span>
+                  </span>
+                  <span className="progress-percent" style={{ color: getStripeColor(download) }}>{progress}%</span>
+                </div>
+                <div className="progress">
+                  <div className="progress-bar" style={{ width: `${progress}%` }} />
+                </div>
+              </div>
+
+              {/* Speed + ETA */}
+              {download.status === 'active' && (
+                <div className="card-speed-area">
+                  <span className="speed-value">{formatSpeed(download.downloadSpeed)}</span>
+                  {eta && <span className="speed-eta">ETA: {eta}</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Checkbox overlay */}
         {onSelect && (
           <label className="card-checkbox" onClick={(e) => e.stopPropagation()}>
             <input
@@ -144,68 +253,6 @@ function DownloadCard({ download, selected, onSelect }: Props) {
             />
           </label>
         )}
-        <div className={getIconBg(download)}>
-          {getTypeIcon(download.downloadType)}
-        </div>
-        <div className="card-content">
-          <div className="card-name-row">
-            <span className="card-name" title={download.name}>{download.name}</span>
-            {typeBadge && <span className={typeBadge.className}>{typeBadge.label}</span>}
-          </div>
-          <div className="progress-container">
-            <div className="progress">
-              <div className="progress-bar" style={{ width: `${progress}%` }} />
-            </div>
-            <span className="progress-text">{progress}%</span>
-          </div>
-        </div>
-        <div className="card-col card-col-size">
-          <span className="col-value">{formatBytes(download.completedSize)}</span>
-          <span className="col-label">of {formatBytes(download.totalSize)}</span>
-        </div>
-        <div className="card-col card-col-speed">
-          {download.status === 'active' ? (
-            <>
-              <span className="col-value speed-down">
-                <ArrowDown size={10} /> {formatSpeed(download.downloadSpeed)}
-              </span>
-              {(download.downloadType === 'torrent' || download.downloadType === 'magnet') && (
-                <span className="col-label speed-up">
-                  <ArrowUp size={10} /> {formatSpeed(download.uploadSpeed)}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="col-value" style={{ color: getStatusColor(download.status) }}>
-              {getStatusText(download.status, download.downloadSpeed)}
-            </span>
-          )}
-        </div>
-        <div className="card-col card-col-eta">
-          {download.status === 'active' && eta ? (
-            <>
-              <span className="col-value">{eta}</span>
-              <span className="col-label">remaining</span>
-            </>
-          ) : download.status === 'active' && (download.downloadType === 'torrent' || download.downloadType === 'magnet') ? (
-            <span className="col-label">{download.seeders}S / {download.connections}P</span>
-          ) : null}
-        </div>
-        <div className="card-actions">
-          {(download.status === 'active' || download.status === 'waiting') && (
-            <button className="btn btn-ghost btn-icon" onClick={handlePause} title="Pause" aria-label="Pause download"><Pause size={16} /></button>
-          )}
-          {download.status === 'paused' && (
-            <button className="btn btn-ghost btn-icon" onClick={handleResume} title="Resume" aria-label="Resume download"><Play size={16} /></button>
-          )}
-          {download.status === 'error' && (
-            <button className="btn btn-ghost btn-icon" onClick={handleResume} title="Retry" aria-label="Retry download"><RotateCcw size={16} /></button>
-          )}
-          {download.status === 'complete' && (
-            <button className="btn btn-ghost btn-icon" onClick={handleOpenFolder} title="Open folder" aria-label="Open folder"><FolderOpen size={16} /></button>
-          )}
-          <button className="btn btn-ghost btn-icon" onClick={() => setShowDeleteConfirm(true)} title="Remove" aria-label="Remove download"><Trash2 size={16} /></button>
-        </div>
       </div>
 
       {showDeleteConfirm && (

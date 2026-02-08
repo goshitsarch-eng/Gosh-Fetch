@@ -35,6 +35,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('get-native-theme');
   },
 
+  getDiskSpace: (path?: string): Promise<{ total: number; free: number }> => {
+    return ipcRenderer.invoke('get-disk-space', path);
+  },
+
+  setLoginItemSettings: (openAtLogin: boolean): Promise<void> => {
+    return ipcRenderer.invoke('set-login-item-settings', openAtLogin);
+  },
+
+  getLoginItemSettings: (): Promise<{ openAtLogin: boolean }> => {
+    return ipcRenderer.invoke('get-login-item-settings');
+  },
+
+  setDefaultProtocolClient: (protocol: string): Promise<boolean> => {
+    return ipcRenderer.invoke('set-default-protocol-client', protocol);
+  },
+
+  removeDefaultProtocolClient: (protocol: string): Promise<boolean> => {
+    return ipcRenderer.invoke('remove-default-protocol-client', protocol);
+  },
+
+  isDefaultProtocolClient: (protocol: string): Promise<boolean> => {
+    return ipcRenderer.invoke('is-default-protocol-client', protocol);
+  },
+
+  importSettingsFile: (): Promise<any | null> => {
+    return ipcRenderer.invoke('import-settings-file');
+  },
+
   updaterDownload: (): Promise<void> => {
     return ipcRenderer.invoke('updater-download');
   },

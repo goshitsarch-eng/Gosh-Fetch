@@ -1,5 +1,35 @@
 /* Gosh Design System - Dark Mode Default */
 
+/* Self-hosted fonts */
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/SpaceGrotesk-Variable.woff2') format('woff2');
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  src: url('/fonts/MaterialSymbolsOutlined-Variable.woff2') format('woff2');
+  font-display: block;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
 :root {
   /* Colors - Dark Mode (Default) */
   --bg-primary: #0d1117;
@@ -16,10 +46,10 @@
   --border-secondary: #21262d;
 
   /* Semantic Colors */
-  --color-primary: #13e733;
-  --color-primary-hover: #1bf542;
-  --color-primary-dim: #238636;
-  --color-primary-text: #000000;
+  --color-primary: #137fec;
+  --color-primary-hover: #1a8fff;
+  --color-primary-dim: #0d5cbf;
+  --color-primary-text: #ffffff;
   --color-destructive: #da3633;
   --color-destructive-hover: #f85149;
   --color-warning: #d29922;
@@ -27,7 +57,7 @@
   --color-success: #3fb950;
 
   /* Progress Bar */
-  --progress-gradient: linear-gradient(90deg, #13e733 0%, #3fb950 100%);
+  --progress-gradient: linear-gradient(90deg, #137fec 0%, #1a8fff 100%);
   --progress-bg: #21262d;
 
   /* File type icon backgrounds */
@@ -55,6 +85,7 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
+  --radius-full: 9999px;
 
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -76,11 +107,15 @@
   --text-3xl: 2rem;      /* 32px */
 
   /* Sidebar */
-  --sidebar-width: 220px;
+  --sidebar-width: 256px;
   --sidebar-width-collapsed: 64px;
 
+  /* Layout */
+  --header-height: 80px;
+  --statusbar-height: 40px;
+
   /* Font */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  --font-sans: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Monaco, Consolas, monospace;
 }
 
@@ -99,9 +134,9 @@
   --border-primary: #d0d7de;
   --border-secondary: #e6e8eb;
 
-  --color-primary: #1a7f37;
-  --color-primary-hover: #2da44e;
-  --color-primary-dim: #1a7f37;
+  --color-primary: #137fec;
+  --color-primary-hover: #1a8fff;
+  --color-primary-dim: #0d5cbf;
   --color-primary-text: #ffffff;
 
   --icon-bg-blue: rgba(9, 105, 218, 0.1);
@@ -477,7 +512,7 @@ input[type="checkbox"]:checked::after {
 }
 
 .badge-primary {
-  background: rgba(19, 231, 51, 0.15);
+  background: rgba(19, 127, 236, 0.15);
   color: var(--color-primary);
 }
 
@@ -578,6 +613,14 @@ input[type="checkbox"]:checked::after {
   display: flex;
   height: 100%;
   overflow: hidden;
+}
+
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .main-content {
@@ -789,6 +832,6 @@ input[type="range"]::-moz-range-track {
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(19, 231, 51, 0.3) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(19, 127, 236, 0.3) 0%, transparent 70%);
   z-index: -1;
 }

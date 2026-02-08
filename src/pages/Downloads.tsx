@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Pause, Play, Plus, Trash2, ArrowDown, ArrowUp, Inbox, GripVertical, Loader, AlertCircle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -19,7 +19,9 @@ import {
 } from '@dnd-kit/sortable';
 import DownloadCard from '../components/downloads/DownloadCard';
 import SortableDownloadCard from '../components/downloads/SortableDownloadCard';
+import CompactDownloadRow from '../components/downloads/CompactDownloadRow';
 import AddDownloadModal from '../components/downloads/AddDownloadModal';
+import NotificationDropdown from '../components/layout/NotificationDropdown';
 import {
   selectDownloads,
   selectActiveDownloads,
@@ -28,8 +30,6 @@ import {
   selectCompletedDownloads,
   fetchDownloads,
   loadCompletedHistory,
-  pauseAll,
-  resumeAll,
   pauseDownload,
   resumeDownload,
   removeDownload,
@@ -38,26 +38,52 @@ import {
   selectError,
 } from '../store/downloadSlice';
 import { selectGidOrder, setOrder, setDragging } from '../store/orderSlice';
-import { selectStats } from '../store/statsSlice';
-import { formatSpeed } from '../lib/utils/format';
+import { getFileExtension } from '../lib/utils/format';
+import type { Download } from '../lib/types/download';
 import type { AppDispatch } from '../store/store';
 import './Downloads.css';
 
+type FileCategory = 'all' | 'video' | 'audio' | 'documents' | 'software' | 'images';
+
+const CATEGORIES: { label: string; value: FileCategory }[] = [
+  { label: 'All Files', value: 'all' },
+  { label: 'Video', value: 'video' },
+  { label: 'Audio', value: 'audio' },
+  { label: 'Documents', value: 'documents' },
+  { label: 'Software', value: 'software' },
+  { label: 'Images', value: 'images' },
+];
+
+function getFileCategory(download: Download): FileCategory {
+  const ext = getFileExtension(download.name);
+  if (['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v'].includes(ext)) return 'video';
+  if (['mp3', 'flac', 'wav', 'aac', 'ogg', 'wma', 'm4a', 'opus'].includes(ext)) return 'audio';
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'rtf', 'odt', 'epub'].includes(ext)) return 'documents';
+  if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'appimage', 'snap', 'flatpak', 'apk', 'iso'].includes(ext)) return 'software';
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'ico', 'tiff', 'psd', 'raw'].includes(ext)) return 'images';
+  if (['zip', 'tar', 'gz', 'bz2', 'xz', '7z', 'rar', 'zst'].includes(ext)) return 'software';
+  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return 'software';
+  return 'all';
+}
+
 export default function Downloads() {
   const dispatch = useDispatch<AppDispatch>();
+  const [searchParams] = useSearchParams();
+  const filter = (searchParams.get('filter') || 'all') as 'all' | 'active' | 'paused' | 'completed';
   const allDownloads = useSelector(selectDownloads);
   const activeDownloads = useSelector(selectActiveDownloads);
   const pausedDownloads = useSelector(selectPausedDownloads);
   const errorDownloads = useSelector(selectErrorDownloads);
   const completedDownloads = useSelector(selectCompletedDownloads);
-  const stats = useSelector(selectStats);
   const isLoading = useSelector(selectIsLoading);
   const error = useSelector(selectError);
   const gidOrder = useSelector(selectGidOrder);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'error' | 'completed'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [category, setCategory] = useState<FileCategory>('all');
   const [selectedGids, setSelectedGids] = useState<Set<string>>(new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -67,43 +93,72 @@ export default function Downloads() {
   useEffect(() => {
     dispatch(loadCompletedHistory());
     dispatch(fetchDownloads());
-    // Fallback heartbeat poll — primary refresh is push-based via App.tsx event handlers
     const interval = setInterval(() => dispatch(fetchDownloads()), 5000);
 
     const onOpenModal = () => setShowAddModal(true);
+    const onFocusSearch = () => searchInputRef.current?.focus();
     window.addEventListener('gosh-fetch:open-add-modal', onOpenModal);
+    window.addEventListener('gosh-fetch:focus-search', onFocusSearch);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('gosh-fetch:open-add-modal', onOpenModal);
+      window.removeEventListener('gosh-fetch:focus-search', onFocusSearch);
     };
   }, [dispatch]);
 
-  const filteredDownloads = filter === 'completed'
-    ? completedDownloads
-    : allDownloads.filter(d => d.status !== 'complete').filter(d => {
-        switch (filter) {
-          case 'active': return d.status === 'active' || d.status === 'waiting';
-          case 'paused': return d.status === 'paused';
-          case 'error': return d.status === 'error';
-          default: return true;
-        }
-      });
+  // Filter by status (from sidebar)
+  const statusFiltered = useMemo(() => {
+    switch (filter) {
+      case 'active': return activeDownloads;
+      case 'paused': return [...pausedDownloads, ...errorDownloads];
+      case 'completed': return completedDownloads;
+      default: return [...allDownloads.filter(d => d.status !== 'complete'), ...completedDownloads];
+    }
+  }, [filter, allDownloads, activeDownloads, pausedDownloads, errorDownloads, completedDownloads]);
 
-  // Sort filtered downloads by gidOrder index
-  const sortedFilteredDownloads = useMemo(() => {
+  // Filter by search query
+  const searchFiltered = useMemo(() => {
+    if (!searchQuery.trim()) return statusFiltered;
+    const q = searchQuery.toLowerCase();
+    return statusFiltered.filter(d =>
+      d.name.toLowerCase().includes(q) ||
+      (d.url && d.url.toLowerCase().includes(q))
+    );
+  }, [statusFiltered, searchQuery]);
+
+  // Filter by file category
+  const categoryFiltered = useMemo(() => {
+    if (category === 'all') return searchFiltered;
+    return searchFiltered.filter(d => getFileCategory(d) === category);
+  }, [searchFiltered, category]);
+
+  // Split into active and paused/completed sections
+  const activeItems = useMemo(() =>
+    categoryFiltered.filter(d => d.status === 'active' || d.status === 'waiting'),
+    [categoryFiltered]
+  );
+
+  const pausedCompletedItems = useMemo(() =>
+    categoryFiltered.filter(d => d.status !== 'active' && d.status !== 'waiting'),
+    [categoryFiltered]
+  );
+
+  // Sort active items by gidOrder
+  const sortedActiveItems = useMemo(() => {
     const orderMap = new Map(gidOrder.map((gid, i) => [gid, i]));
-    return [...filteredDownloads].sort((a, b) => {
+    return [...activeItems].sort((a, b) => {
       const ai = orderMap.get(a.gid) ?? Infinity;
       const bi = orderMap.get(b.gid) ?? Infinity;
       return ai - bi;
     });
-  }, [filteredDownloads, gidOrder]);
+  }, [activeItems, gidOrder]);
 
   const activeDownload = activeId ? allDownloads.find(d => d.gid === activeId) : null;
 
+  const allItems = [...sortedActiveItems, ...pausedCompletedItems];
   const hasSelection = selectedGids.size > 0;
-  const allSelected = sortedFilteredDownloads.length > 0 && sortedFilteredDownloads.every(d => selectedGids.has(d.gid));
+  const allSelected = allItems.length > 0 && allItems.every(d => selectedGids.has(d.gid));
 
   function handleSelect(gid: string, selected: boolean) {
     setSelectedGids(prev => {
@@ -118,7 +173,7 @@ export default function Downloads() {
     if (allSelected) {
       setSelectedGids(new Set());
     } else {
-      setSelectedGids(new Set(sortedFilteredDownloads.map(d => d.gid)));
+      setSelectedGids(new Set(allItems.map(d => d.gid)));
     }
   }
 
@@ -169,117 +224,178 @@ export default function Downloads() {
     dispatch(setDragging(false));
   }
 
+  const totalItems = categoryFiltered.length;
+  const showEmptyState = !isLoading && totalItems === 0 && !searchQuery && category === 'all';
+  const showNoResults = !isLoading && totalItems === 0 && (searchQuery || category !== 'all');
+
   return (
     <div className="page">
-      <header className="page-header">
-        <div className="header-left">
-          <h1>Downloads</h1>
-          <div className="header-stats">
-            <span className="stat"><ArrowDown size={12} className="stat-icon" /> {formatSpeed(stats.downloadSpeed)}</span>
-            <span className="stat"><ArrowUp size={12} className="stat-icon" /> {formatSpeed(stats.uploadSpeed)}</span>
-            <span className="stat-divider">|</span>
-            <span className="stat"><span className="pulse-dot" /> {stats.numActive} Active</span>
-          </div>
+      <header className="toolbar-header">
+        <div className="search-bar">
+          <span className="material-symbols-outlined">search</span>
+          <input
+            ref={searchInputRef}
+            className="search-input"
+            type="text"
+            placeholder="Search by filename or paste URL..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <kbd className="search-shortcut">Ctrl K</kbd>
         </div>
-        <div className="header-actions">
-          <button className="btn btn-secondary btn-sm" onClick={() => dispatch(pauseAll())}><Pause size={14} /> Pause All</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => dispatch(resumeAll())}><Play size={14} /> Resume All</button>
-          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}><Plus size={14} /> Add Download</button>
+        <div className="toolbar-actions">
+          <NotificationDropdown />
+          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>add</span>
+            Add Download
+          </button>
         </div>
       </header>
 
-      <div className="filter-bar" role="tablist" aria-label="Download filters">
-        <label className="select-all-checkbox">
-          <input type="checkbox" checked={allSelected} onChange={handleSelectAll} disabled={sortedFilteredDownloads.length === 0} aria-label="Select all downloads" />
-        </label>
-        <button className={`filter-btn${filter === 'all' ? ' active' : ''}`} role="tab" aria-selected={filter === 'all'} onClick={() => setFilter('all')}>All</button>
-        <button className={`filter-btn${filter === 'active' ? ' active' : ''}`} role="tab" aria-selected={filter === 'active'} onClick={() => setFilter('active')}>Active ({activeDownloads.length})</button>
-        <button className={`filter-btn${filter === 'paused' ? ' active' : ''}`} role="tab" aria-selected={filter === 'paused'} onClick={() => setFilter('paused')}>Paused ({pausedDownloads.length})</button>
-        <button className={`filter-btn${filter === 'error' ? ' active' : ''}`} role="tab" aria-selected={filter === 'error'} onClick={() => setFilter('error')}>Errors ({errorDownloads.length})</button>
-        <button className={`filter-btn${filter === 'completed' ? ' active' : ''}`} role="tab" aria-selected={filter === 'completed'} onClick={() => setFilter('completed')}>Completed ({completedDownloads.length})</button>
-      </div>
-
       {hasSelection && (
         <div className="batch-action-bar">
+          <label className="select-all-checkbox">
+            <input type="checkbox" checked={allSelected} onChange={handleSelectAll} aria-label="Select all downloads" />
+          </label>
           <span className="batch-count">{selectedGids.size} selected</span>
-          <button className="btn btn-secondary btn-sm" onClick={handleBatchPause}><Pause size={14} /> Pause</button>
-          <button className="btn btn-secondary btn-sm" onClick={handleBatchResume}><Play size={14} /> Resume</button>
-          <button className="btn btn-destructive btn-sm" onClick={handleBatchRemove}><Trash2 size={14} /> Remove</button>
+          <button className="btn btn-secondary btn-sm" onClick={handleBatchPause}>
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>pause</span> Pause
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={handleBatchResume}>
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>play_arrow</span> Resume
+          </button>
+          <button className="btn btn-destructive btn-sm" onClick={handleBatchRemove}>
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>delete</span> Remove
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={() => setSelectedGids(new Set())}>Clear</button>
         </div>
       )}
 
       {error && (
         <div className="error-banner">
-          <AlertCircle size={14} />
+          <span className="material-symbols-outlined" style={{ fontSize: 14 }}>error</span>
           <span>{error}</span>
           <button className="btn btn-ghost btn-sm" onClick={() => dispatch(fetchDownloads())}>Retry</button>
         </div>
       )}
 
-      {/* Column header row */}
-      {sortedFilteredDownloads.length > 0 && (
-        <div className="column-headers">
-          <span className="col-h col-h-name">Name</span>
-          <span className="col-h col-h-size">Size</span>
-          <span className="col-h col-h-speed">Speed</span>
-          <span className="col-h col-h-eta">ETA</span>
+      <div className="content-scroll">
+        {/* Category pills */}
+        <div className="category-pills">
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat.value}
+              className={`category-pill${category === cat.value ? ' active' : ''}`}
+              onClick={() => setCategory(cat.value)}
+            >
+              {cat.label}
+            </button>
+          ))}
         </div>
-      )}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        <div className="downloads-list">
-          {isLoading && sortedFilteredDownloads.length === 0 ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          {isLoading && totalItems === 0 && !searchQuery ? (
             <div className="empty-state">
-              <Loader size={32} className="spin" />
+              <span className="material-symbols-outlined spin" style={{ fontSize: 32 }}>progress_activity</span>
               <p>Loading downloads...</p>
             </div>
-          ) : sortedFilteredDownloads.length === 0 ? (
+          ) : showEmptyState ? (
             <div className="empty-state">
-              <div className="empty-icon"><Inbox size={48} /></div>
+              <div className="empty-icon">
+                <span className="material-symbols-outlined" style={{ fontSize: 48 }}>inbox</span>
+              </div>
               <h3>No downloads</h3>
               <p>Click &quot;Add Download&quot; or press Ctrl+N to get started</p>
               <button className="btn btn-primary" onClick={() => setShowAddModal(true)} style={{ marginTop: 'var(--space-md)' }}>
-                <Plus size={14} /> Add Download
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>add</span> Add Download
               </button>
+            </div>
+          ) : showNoResults ? (
+            <div className="empty-state">
+              <div className="empty-icon">
+                <span className="material-symbols-outlined" style={{ fontSize: 48 }}>search_off</span>
+              </div>
+              <h3>No results</h3>
+              <p>Try a different search term or category</p>
             </div>
           ) : (
             <>
-              <SortableContext items={sortedFilteredDownloads.map(d => d.gid)} strategy={verticalListSortingStrategy}>
-                {sortedFilteredDownloads.map(download => (
-                  <SortableDownloadCard
-                    key={download.gid}
-                    download={download}
-                    selected={selectedGids.has(download.gid)}
-                    onSelect={handleSelect}
-                  />
-                ))}
-              </SortableContext>
-              <div className="add-more-zone" onClick={() => setShowAddModal(true)}>
-                <Plus size={16} />
-                <span>Ready for more</span>
-              </div>
+              {/* Active Downloads Section */}
+              {sortedActiveItems.length > 0 && (
+                <div className="download-section">
+                  <div className="dl-section-header">
+                    <span className="section-dot green" />
+                    <span className="section-label">Active Downloads</span>
+                  </div>
+                  <div className="downloads-list">
+                    <SortableContext items={sortedActiveItems.map(d => d.gid)} strategy={verticalListSortingStrategy}>
+                      {sortedActiveItems.map(download => (
+                        <SortableDownloadCard
+                          key={download.gid}
+                          download={download}
+                          selected={selectedGids.has(download.gid)}
+                          onSelect={handleSelect}
+                        />
+                      ))}
+                    </SortableContext>
+                    <div className="add-more-zone" onClick={() => setShowAddModal(true)}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+                      <span>Ready for more</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Paused & Recent Section */}
+              {pausedCompletedItems.length > 0 && (
+                <div className="download-section">
+                  <div className="dl-section-header">
+                    <span className="section-dot yellow" />
+                    <span className="section-label">Paused &amp; Recent</span>
+                  </div>
+                  <div className="compact-list">
+                    {pausedCompletedItems.map(download => (
+                      <CompactDownloadRow
+                        key={download.gid}
+                        download={download}
+                        selected={selectedGids.has(download.gid)}
+                        onSelect={handleSelect}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* If only active but no paused, still show add zone */}
+              {sortedActiveItems.length === 0 && pausedCompletedItems.length > 0 && (
+                <div className="add-more-zone" onClick={() => setShowAddModal(true)}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add</span>
+                  <span>Ready for more</span>
+                </div>
+              )}
             </>
           )}
-        </div>
 
-        <DragOverlay>
-          {activeDownload ? (
-            <div className="drag-overlay-card">
-              <div className="sortable-card-wrapper">
-                <div className="drag-handle"><GripVertical size={16} /></div>
-                <DownloadCard download={activeDownload} />
+          <DragOverlay>
+            {activeDownload ? (
+              <div className="drag-overlay-card">
+                <div className="sortable-card-wrapper">
+                  <div className="drag-handle">
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>drag_indicator</span>
+                  </div>
+                  <DownloadCard download={activeDownload} />
+                </div>
               </div>
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      </div>
 
       {showAddModal && <AddDownloadModal onClose={() => setShowAddModal(false)} />}
     </div>

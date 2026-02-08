@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gosh-Fetch Tray</title>
+<style id="dynamic-fonts"></style>
+<style>
+  :root {
+    --bg: #101922;
+    --surface: #1a242d;
+    --surface-hover: #24303b;
+    --primary: #137fec;
+    --text: #e2e8f0;
+    --text-secondary: #cbd5e1;
+    --text-muted: #64748b;
+    --text-faint: #475569;
+    --emerald: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-light: rgba(255, 255, 255, 0.05);
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    background: transparent;
+    overflow: hidden;
+    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+
+  .tray-container {
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+  }
+
+  /* Header */
+  .tray-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: rgba(16, 25, 34, 0.5);
+    border-bottom: 1px solid var(--border-light);
+  }
+
+  .speed-stats {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .speed-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .speed-row {
+    display: flex;
+    gap: 16px;
+  }
+
+  .speed-value {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .speed-value .arrow {
+    font-size: 16px;
+    font-variation-settings: 'FILL' 0, 'wght' 500;
+  }
+
+  .speed-value.upload .arrow {
+    color: var(--emerald);
+  }
+
+  .speed-value.download {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .speed-value.download .arrow {
+    color: var(--primary);
+  }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+
+  .icon-btn:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .icon-btn .icon {
+    font-size: 20px;
+  }
+
+  /* Sections */
+  .tray-section {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 16px;
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+
+  .view-all {
+    font-size: 12px;
+    color: var(--primary);
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .view-all:hover {
+    text-decoration: underline;
+  }
+
+  /* Download Items */
+  .download-item {
+    padding: 8px 16px;
+    transition: background 0.15s ease;
+    cursor: default;
+  }
+
+  .download-item:hover {
+    background: var(--surface-hover);
+  }
+
+  .download-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+
+  .download-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+  }
+
+  .download-percent {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-weight: 500;
+    flex-shrink: 0;
+    margin-left: 8px;
+  }
+
+  .progress-bar {
+    height: 6px;
+    width: 100%;
+    background: var(--bg);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.3s ease;
+  }
+
+  .progress-fill.blue { background: var(--primary); }
+  .progress-fill.green { background: var(--emerald); }
+  .progress-fill.amber { background: var(--amber); }
+
+  .download-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 4px;
+  }
+
+  .download-speed,
+  .download-eta {
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+
+  /* Divider */
+  .divider {
+    height: 1px;
+    background: var(--border-light);
+    margin: 4px 16px;
+  }
+
+  /* Action Buttons */
+  .action-btn {
+    width: 100%;
+    text-align: left;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .action-btn:hover {
+    background: var(--surface-hover);
+  }
+
+  .action-btn .icon {
+    font-size: 20px;
+    color: var(--text-muted);
+  }
+
+  .action-btn.primary {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .action-btn.primary:hover {
+    background: rgba(19, 127, 236, 0.15);
+  }
+
+  .action-btn.primary .icon {
+    color: var(--primary);
+  }
+
+  .action-btn.quit {
+    color: var(--text-secondary);
+  }
+
+  .action-btn.quit:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--red);
+  }
+
+  .action-btn.quit:hover .icon {
+    color: var(--red);
+  }
+
+  /* Footer */
+  .tray-footer {
+    background: rgba(16, 25, 34, 0.3);
+    border-top: 1px solid var(--border-light);
+    padding: 4px 0;
+  }
+
+  /* Empty State */
+  .empty-state {
+    padding: 20px 16px;
+    text-align: center;
+    color: var(--text-faint);
+    font-size: 12px;
+    display: none;
+  }
+
+  .empty-state.visible {
+    display: block;
+  }
+
+  /* Icon (Material Symbols) */
+  .icon {
+    font-family: 'Material Symbols Outlined';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 20px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-flex;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+</style>
+</head>
+<body>
+<div class="tray-container">
+  <!-- Header: Global Speed -->
+  <div class="tray-header">
+    <div class="speed-stats">
+      <span class="speed-label">Global Speed</span>
+      <div class="speed-row">
+        <span class="speed-value upload">
+          <span class="icon arrow">arrow_upward</span>
+          <span id="ul-speed">0 B/s</span>
+        </span>
+        <span class="speed-value download">
+          <span class="icon arrow">arrow_downward</span>
+          <span id="dl-speed">0 B/s</span>
+        </span>
+      </div>
+    </div>
+    <button class="icon-btn" onclick="trayAPI.send('open-settings')" title="Settings">
+      <span class="icon">settings</span>
+    </button>
+  </div>
+
+  <!-- Active Downloads -->
+  <div class="tray-section">
+    <div class="section-header">
+      <span class="section-label">Active Tasks (<span id="active-count">0</span>)</span>
+      <a class="view-all" onclick="trayAPI.send('open-app')">View All</a>
+    </div>
+    <div id="downloads-list"></div>
+    <div id="empty-state" class="empty-state visible">No active downloads</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Actions -->
+  <div class="tray-section">
+    <button class="action-btn primary" onclick="trayAPI.send('open-app')">
+      <span class="icon">open_in_new</span>
+      <span>Open Gosh-Fetch</span>
+    </button>
+    <button class="action-btn" onclick="trayAPI.send('add-url')">
+      <span class="icon">add_link</span>
+      <span>Add URL...</span>
+    </button>
+    <div class="divider"></div>
+    <button class="action-btn" onclick="trayAPI.send('pause-all')">
+      <span class="icon">pause_circle</span>
+      <span>Pause All</span>
+    </button>
+    <button class="action-btn" onclick="trayAPI.send('resume-all')">
+      <span class="icon">play_circle</span>
+      <span>Resume All</span>
+    </button>
+  </div>
+
+  <!-- Footer: Quit -->
+  <div class="tray-footer">
+    <button class="action-btn quit" onclick="trayAPI.send('quit')">
+      <span class="icon">power_settings_new</span>
+      <span>Quit</span>
+    </button>
+  </div>
+</div>
+
+<script>
+  // --- Utility Functions ---
+
+  const KB = 1024;
+  const MB = KB * 1024;
+  const GB = MB * 1024;
+
+  function formatSpeed(bytesPerSec) {
+    if (bytesPerSec === 0) return '0 B/s';
+    if (bytesPerSec >= GB) return (bytesPerSec / GB).toFixed(1) + ' GB/s';
+    if (bytesPerSec >= MB) return (bytesPerSec / MB).toFixed(1) + ' MB/s';
+    if (bytesPerSec >= KB) return (bytesPerSec / KB).toFixed(1) + ' KB/s';
+    return bytesPerSec + ' B/s';
+  }
+
+  function formatEta(bytesRemaining, speed) {
+    if (speed === 0 || bytesRemaining <= 0) return '--';
+    const seconds = Math.floor(bytesRemaining / speed);
+    if (seconds < 60) return seconds + 's';
+    if (seconds < 3600) {
+      const mins = Math.floor(seconds / 60);
+      return mins + 'm remaining';
+    }
+    if (seconds < 86400) {
+      const hours = Math.floor(seconds / 3600);
+      const mins = Math.floor((seconds % 3600) / 60);
+      return hours + 'h ' + mins + 'm';
+    }
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    return days + 'd ' + hours + 'h';
+  }
+
+  function getProgressColor(percent) {
+    if (percent < 30) return 'amber';
+    if (percent > 65) return 'green';
+    return 'blue';
+  }
+
+  function truncateName(name, maxLen) {
+    if (!name) return 'Unknown';
+    if (name.length <= maxLen) return name;
+    const ext = name.lastIndexOf('.');
+    if (ext > 0 && name.length - ext <= 8) {
+      const extPart = name.slice(ext);
+      const available = maxLen - extPart.length - 3;
+      if (available > 4) {
+        return name.slice(0, available) + '...' + extPart;
+      }
+    }
+    return name.slice(0, maxLen - 3) + '...';
+  }
+
+  // --- DOM References ---
+
+  const ulSpeedEl = document.getElementById('ul-speed');
+  const dlSpeedEl = document.getElementById('dl-speed');
+  const activeCountEl = document.getElementById('active-count');
+  const downloadsListEl = document.getElementById('downloads-list');
+  const emptyStateEl = document.getElementById('empty-state');
+
+  // --- Data Update Handler ---
+
+  trayAPI.onUpdate(function(data) {
+    // Update global speeds
+    ulSpeedEl.textContent = formatSpeed(data.uploadSpeed || 0);
+    dlSpeedEl.textContent = formatSpeed(data.downloadSpeed || 0);
+
+    const downloads = data.activeDownloads || [];
+    const displayDownloads = downloads.slice(0, 3);
+
+    activeCountEl.textContent = downloads.length;
+
+    if (displayDownloads.length === 0) {
+      downloadsListEl.innerHTML = '';
+      emptyStateEl.classList.add('visible');
+      return;
+    }
+
+    emptyStateEl.classList.remove('visible');
+
+    let html = '';
+    for (let i = 0; i < displayDownloads.length; i++) {
+      const d = displayDownloads[i];
+      const total = d.totalSize || 0;
+      const completed = d.completedSize || 0;
+      const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+      const speed = d.downloadSpeed || 0;
+      const remaining = total - completed;
+      const color = getProgressColor(percent);
+      const name = truncateName(d.name, 28);
+
+      html += '<div class="download-item">' +
+        '<div class="download-top">' +
+          '<span class="download-name" title="' + (d.name || '').replace(/"/g, '&quot;') + '">' + name + '</span>' +
+          '<span class="download-percent">' + percent + '%</span>' +
+        '</div>' +
+        '<div class="progress-bar">' +
+          '<div class="progress-fill ' + color + '" style="width: ' + percent + '%"></div>' +
+        '</div>' +
+        '<div class="download-meta">' +
+          '<span class="download-speed">' + formatSpeed(speed) + '</span>' +
+          '<span class="download-eta">' + formatEta(remaining, speed) + '</span>' +
+        '</div>' +
+      '</div>';
+    }
+
+    downloadsListEl.innerHTML = html;
+  });
+
+  // --- Font Loading ---
+
+  document.addEventListener('DOMContentLoaded', function() {
+    trayAPI.getFontsPath().then(function(fontsPath) {
+      const styleEl = document.getElementById('dynamic-fonts');
+      const fileUrl = 'file://' + fontsPath.replace(/\\/g, '/');
+      styleEl.textContent =
+        "@font-face { " +
+          "font-family: 'Space Grotesk'; " +
+          "src: url('" + fileUrl + "/SpaceGrotesk-Variable.woff2') format('woff2'); " +
+          "font-weight: 300 700; " +
+          "font-display: swap; " +
+        "} " +
+        "@font-face { " +
+          "font-family: 'Material Symbols Outlined'; " +
+          "src: url('" + fileUrl + "/MaterialSymbolsOutlined-Variable.woff2') format('woff2'); " +
+          "font-weight: 100 700; " +
+          "font-display: block; " +
+        "}";
+    }).catch(function() {
+      // Fonts will fall back to system fonts
+    });
+  });
+</script>
+</body>
+</html>

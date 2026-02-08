@@ -1,16 +1,17 @@
 import React, { useEffect, useCallback, useState } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { WifiOff, RefreshCw } from 'lucide-react';
 import Onboarding from './components/Onboarding';
 import Sidebar from './components/layout/Sidebar';
+import StatusBar from './components/layout/StatusBar';
 import Downloads from './pages/Downloads';
-import Completed from './pages/Completed';
+import History from './pages/History';
 import Settings from './pages/Settings';
 import About from './pages/About';
 import { updateStats, setDisconnected, selectIsConnected } from './store/statsSlice';
-import { setTheme } from './store/themeSlice';
+import { setTheme, applySystemTheme } from './store/themeSlice';
 import { addDownload, addMagnet, fetchDownloads, restoreIncomplete } from './store/downloadSlice';
+import { addNotification } from './store/notificationSlice';
 import type { AppDispatch } from './store/store';
 import './App.css';
 
@@ -29,8 +30,10 @@ export default function App() {
     if (mod && e.key === 'n') {
       e.preventDefault();
       navigate('/');
-      // Trigger add modal via custom event
       window.dispatchEvent(new CustomEvent('gosh-fetch:open-add-modal'));
+    } else if (mod && e.key === 'k') {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('gosh-fetch:focus-search'));
     } else if (mod && e.key === ',') {
       e.preventDefault();
       navigate('/settings');
@@ -88,7 +91,7 @@ export default function App() {
 
   useEffect(() => {
     // Initialize theme
-    const saved = localStorage.getItem('gosh-fetch-theme') as 'dark' | 'light' | null;
+    const saved = localStorage.getItem('gosh-fetch-theme') as 'dark' | 'light' | 'system' | null;
     dispatch(setTheme(saved ?? 'dark'));
 
     // Restore incomplete downloads once on app startup
@@ -102,16 +105,37 @@ export default function App() {
       if (event === 'navigate') {
         navigate(data);
       }
+      if (event === 'open-add-modal') {
+        window.dispatchEvent(new CustomEvent('gosh-fetch:open-add-modal'));
+      }
+      if (event === 'native-theme-changed') {
+        dispatch(applySystemTheme());
+      }
       if (event === 'engine-status') {
         if (!data.connected && !data.restarting) {
           dispatch(setDisconnected());
         }
       }
       // Push-based download list refresh on state changes
+      if (event === 'download:added') {
+        dispatch(fetchDownloads());
+        if (data?.name) {
+          dispatch(addNotification({ type: 'added', downloadName: data.name }));
+        }
+      }
+      if (event === 'download:completed') {
+        dispatch(fetchDownloads());
+        if (data?.name) {
+          dispatch(addNotification({ type: 'completed', downloadName: data.name }));
+        }
+      }
+      if (event === 'download:failed') {
+        dispatch(fetchDownloads());
+        if (data?.name) {
+          dispatch(addNotification({ type: 'failed', downloadName: data.name }));
+        }
+      }
       if (
-        event === 'download:added' ||
-        event === 'download:completed' ||
-        event === 'download:failed' ||
         event === 'download:removed' ||
         event === 'download:paused' ||
         event === 'download:resumed' ||
@@ -137,22 +161,25 @@ export default function App() {
       onDrop={handleDrop}
     >
       <Sidebar />
-      <main className="main-content">
-        {!isConnected && (
-          <div className="connection-banner">
-            <WifiOff size={14} />
-            <span>Engine disconnected</span>
-            <RefreshCw size={12} className="spin" />
-            <span>Reconnecting...</span>
-          </div>
-        )}
-        <Routes>
-          <Route path="/" element={<Downloads />} />
-          <Route path="/completed" element={<Completed />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="/about" element={<About />} />
-        </Routes>
-      </main>
+      <div className="main-area">
+        <main className="main-content">
+          {!isConnected && (
+            <div className="connection-banner">
+              <span className="material-symbols-outlined" style={{ fontSize: 14 }}>wifi_off</span>
+              <span>Engine disconnected</span>
+              <span className="material-symbols-outlined spin" style={{ fontSize: 12 }}>sync</span>
+              <span>Reconnecting...</span>
+            </div>
+          )}
+          <Routes>
+            <Route path="/" element={<Downloads />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/about" element={<About />} />
+          </Routes>
+        </main>
+        <StatusBar />
+      </div>
 
       {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
 

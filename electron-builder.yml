@@ -18,6 +18,10 @@ extraResources:
       - "!*.pdb"
   - from: src-rust/icons/
     to: icons/
+  - from: src-electron/tray-popup.html
+    to: tray-popup.html
+  - from: public/fonts/
+    to: fonts/
 
 linux:
   target:

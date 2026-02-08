@@ -1,7 +1,6 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical } from 'lucide-react';
 import DownloadCard from './DownloadCard';
 import type { Download } from '../../lib/types/download';
 import './SortableDownloadCard.css';
@@ -34,7 +33,7 @@ export default function SortableDownloadCard({ download, selected, onSelect }: P
       className={`sortable-card-wrapper${isDragging ? ' is-dragging' : ''}`}
     >
       <div className="drag-handle" {...attributes} {...listeners}>
-        <GripVertical size={16} />
+        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>drag_indicator</span>
       </div>
       <DownloadCard download={download} selected={selected} onSelect={onSelect} />
     </div>

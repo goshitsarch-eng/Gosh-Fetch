@@ -10,6 +10,7 @@ import {
   nativeTheme,
   MenuItemConstructorOptions,
   session,
+  screen,
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
@@ -18,9 +19,11 @@ import { SidecarManager } from './sidecar';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let trayPopup: BrowserWindow | null = null;
 let sidecar: SidecarManager | null = null;
 let closeToTray = true;
 let isQuitting = false;
+let lastTrayData: any = null;
 
 // Single-instance lock
 const gotLock = app.requestSingleInstanceLock();
@@ -40,8 +43,11 @@ app.on('second-instance', (_event, argv) => {
   if (torrentArg) handleTorrentFile(torrentArg);
 });
 
-// Register as handler for magnet: protocol
-app.setAsDefaultProtocolClient('magnet');
+// Register as handler for magnet: protocol (conditionally, based on user preference)
+// Will be set/unset during onboarding and via settings
+if (!app.isPackaged || app.isDefaultProtocolClient('magnet')) {
+  app.setAsDefaultProtocolClient('magnet');
+}
 
 // macOS: handle magnet: links via open-url
 app.on('open-url', (event, url) => {
@@ -142,6 +148,22 @@ function getTrayIconPath(): string {
     return path.join(app.getAppPath(), 'src-rust', 'icons', 'tray-icon.png');
   }
   return path.join(process.resourcesPath, 'icons', 'tray-icon.png');
+}
+
+function getTrayPopupHtmlPath(): string {
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    return path.join(app.getAppPath(), 'src-electron', 'tray-popup.html');
+  }
+  return path.join(process.resourcesPath, 'tray-popup.html');
+}
+
+function getFontsPath(): string {
+  const isDev = !app.isPackaged;
+  if (isDev) {
+    return path.join(app.getAppPath(), 'public', 'fonts');
+  }
+  return path.join(process.resourcesPath, 'fonts');
 }
 
 // --- Window state persistence ---
@@ -247,71 +269,114 @@ function createWindow(): void {
   }
 }
 
+function createTrayPopup(): void {
+  trayPopup = new BrowserWindow({
+    width: 320,
+    height: 500,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'tray-popup-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  trayPopup.loadFile(getTrayPopupHtmlPath());
+
+  trayPopup.on('blur', () => {
+    trayPopup?.hide();
+  });
+
+  trayPopup.on('closed', () => {
+    trayPopup = null;
+  });
+}
+
+function toggleTrayPopup(): void {
+  if (!trayPopup || trayPopup.isDestroyed()) {
+    createTrayPopup();
+  }
+
+  if (trayPopup!.isVisible()) {
+    trayPopup!.hide();
+    return;
+  }
+
+  // Detect panel position from work area vs screen bounds
+  const display = screen.getPrimaryDisplay();
+  const { bounds, workArea } = display;
+  const popupBounds = trayPopup!.getBounds();
+
+  const hasTopPanel = workArea.y > bounds.y;
+  const hasBottomPanel = (workArea.y + workArea.height) < (bounds.y + bounds.height);
+
+  // Position at the right edge, near the panel (where system tray lives)
+  const x = workArea.x + workArea.width - popupBounds.width - 8;
+  let y: number;
+
+  if (hasBottomPanel) {
+    // Bottom panel: popup appears above the panel
+    y = workArea.y + workArea.height - popupBounds.height - 4;
+  } else if (hasTopPanel) {
+    // Top panel (GNOME, etc.): popup appears just below the panel
+    y = workArea.y + 4;
+  } else {
+    // No detectable panel: default to top-right
+    y = workArea.y + 4;
+  }
+
+  trayPopup!.setPosition(x, y);
+  trayPopup!.show();
+
+  // Send current data immediately
+  if (lastTrayData && trayPopup && !trayPopup.isDestroyed()) {
+    trayPopup.webContents.send('tray-update', lastTrayData);
+  }
+}
+
+async function pushTrayData(globalStats: any): Promise<void> {
+  try {
+    const activeDownloads = sidecar ? await sidecar.invoke('get_active_downloads') : [];
+
+    const trayData = {
+      downloadSpeed: globalStats.downloadSpeed || 0,
+      uploadSpeed: globalStats.uploadSpeed || 0,
+      activeDownloads: (Array.isArray(activeDownloads) ? activeDownloads : []).map((d: any) => ({
+        name: d.name,
+        completedSize: d.completedSize || 0,
+        totalSize: d.totalSize || 0,
+        downloadSpeed: d.downloadSpeed || 0,
+      })),
+    };
+
+    lastTrayData = trayData;
+
+    if (trayPopup && !trayPopup.isDestroyed() && trayPopup.isVisible()) {
+      trayPopup.webContents.send('tray-update', trayData);
+    }
+  } catch {
+    // Ignore errors fetching active downloads
+  }
+}
+
 function createTray(): void {
   const iconPath = getTrayIconPath();
   const icon = nativeImage.createFromPath(iconPath);
   tray = new Tray(icon.resize({ width: 22, height: 22 }));
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show/Hide Window',
-      click: () => {
-        if (mainWindow?.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow?.show();
-          mainWindow?.focus();
-        }
-      },
-    },
-    { type: 'separator' },
-    {
-      label: 'Pause All',
-      click: () => {
-        sidecar?.invoke('pause_all').catch(console.error);
-      },
-    },
-    {
-      label: 'Resume All',
-      click: () => {
-        sidecar?.invoke('resume_all').catch(console.error);
-      },
-    },
-    { type: 'separator' },
-    {
-      label: 'Settings',
-      click: () => {
-        mainWindow?.show();
-        mainWindow?.focus();
-        mainWindow?.webContents.send('rpc-event', 'navigate', '/settings');
-      },
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      },
-    },
-  ]);
-
-  tray.setContextMenu(contextMenu);
   tray.setToolTip('Gosh-Fetch');
 
-  // Left-click toggles window (macOS only fires double-click, not click)
-  const toggleWindow = () => {
-    if (mainWindow?.isVisible()) {
-      mainWindow.hide();
-    } else {
-      mainWindow?.show();
-      mainWindow?.focus();
-    }
-  };
+  // Both click and right-click show the popup
   if (process.platform === 'darwin') {
-    tray.on('double-click', toggleWindow);
+    tray.on('double-click', toggleTrayPopup);
   } else {
-    tray.on('click', toggleWindow);
+    tray.on('click', toggleTrayPopup);
+    tray.on('right-click', toggleTrayPopup);
   }
 }
 
@@ -338,12 +403,13 @@ function setupSidecar(): void {
         mainWindow.webContents.send('rpc-event', event, data);
       }
 
-      // Update tray tooltip with speed stats
+      // Update tray tooltip and popup with speed stats
       if (event === 'global-stats' && tray) {
         const dl = formatSpeed(data.downloadSpeed || 0);
         const ul = formatSpeed(data.uploadSpeed || 0);
         const active = data.numActive || 0;
         tray.setToolTip(`Gosh-Fetch\n↓ ${dl}  ↑ ${ul}\n${active} active`);
+        pushTrayData(data);
       }
     });
 
@@ -426,12 +492,98 @@ function setupIPC(): void {
     new Notification({ title, body }).show();
   });
 
+  // Disk space
+  ipcMain.handle('get-disk-space', async (_event, dirPath?: string) => {
+    const targetPath = dirPath || app.getPath('downloads');
+    const { statfs } = await import('fs/promises');
+    const stats = await statfs(targetPath);
+    return {
+      total: Number(stats.blocks) * Number(stats.bsize),
+      free: Number(stats.bavail) * Number(stats.bsize),
+    };
+  });
+
   // Native theme (dark mode detection)
   ipcMain.handle('get-native-theme', () => nativeTheme.shouldUseDarkColors);
+
+  // Login item (run at startup)
+  ipcMain.handle('set-login-item-settings', (_event, openAtLogin: boolean) => {
+    app.setLoginItemSettings({ openAtLogin });
+  });
+
+  ipcMain.handle('get-login-item-settings', () => {
+    return app.getLoginItemSettings();
+  });
+
+  // Default protocol client
+  ipcMain.handle('set-default-protocol-client', (_event, protocol: string) => {
+    return app.setAsDefaultProtocolClient(protocol);
+  });
+
+  ipcMain.handle('remove-default-protocol-client', (_event, protocol: string) => {
+    return app.removeAsDefaultProtocolClient(protocol);
+  });
+
+  ipcMain.handle('is-default-protocol-client', (_event, protocol: string) => {
+    return app.isDefaultProtocolClient(protocol);
+  });
+
+  // Import settings from file
+  ipcMain.handle('import-settings-file', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      properties: ['openFile'],
+      filters: [{ name: 'JSON Settings', extensions: ['json'] }],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    try {
+      const content = fs.readFileSync(result.filePaths[0], 'utf-8');
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  });
 
   // Auto-updater controls
   ipcMain.handle('updater-download', () => autoUpdater.downloadUpdate());
   ipcMain.handle('updater-install', () => autoUpdater.quitAndInstall());
+
+  // Tray popup IPC
+  ipcMain.handle('get-fonts-path', () => getFontsPath());
+
+  ipcMain.on('tray-action', (_event, action: string) => {
+    switch (action) {
+      case 'open-app':
+        mainWindow?.show();
+        mainWindow?.focus();
+        trayPopup?.hide();
+        break;
+      case 'add-url':
+        mainWindow?.show();
+        mainWindow?.focus();
+        mainWindow?.webContents.send('rpc-event', 'navigate', '/');
+        setTimeout(() => {
+          mainWindow?.webContents.send('rpc-event', 'open-add-modal', {});
+        }, 100);
+        trayPopup?.hide();
+        break;
+      case 'pause-all':
+        sidecar?.invoke('pause_all').catch(console.error);
+        break;
+      case 'resume-all':
+        sidecar?.invoke('resume_all').catch(console.error);
+        break;
+      case 'open-settings':
+        mainWindow?.show();
+        mainWindow?.focus();
+        mainWindow?.webContents.send('rpc-event', 'navigate', '/settings');
+        trayPopup?.hide();
+        break;
+      case 'quit':
+        isQuitting = true;
+        app.quit();
+        break;
+    }
+  });
 }
 
 function setupAutoUpdater(): void {
@@ -468,6 +620,11 @@ app.whenReady().then(() => {
   // Set CSP headers in production (dev needs inline scripts for Vite HMR)
   if (app.isPackaged) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      // Skip CSP for tray popup (trusted local file with inline scripts)
+      if (details.url.includes('tray-popup')) {
+        callback({});
+        return;
+      }
       callback({
         responseHeaders: {
           ...details.responseHeaders,

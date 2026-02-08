@@ -1,36 +1,284 @@
+/* Download Card — Rich card with colored progress stripe */
 .download-card {
-  display: grid;
-  grid-template-columns: auto auto 1fr 100px 120px 80px auto;
-  align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
-  background: var(--bg-tertiary);
+  position: relative;
+  background: color-mix(in srgb, var(--bg-tertiary) 40%, transparent);
   border: 1px solid var(--border-primary);
-  border-radius: var(--radius-lg);
-  transition: border-color var(--transition-fast), opacity var(--transition-normal);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+  animation: fadeIn 200ms ease;
 }
 
 .download-card:hover {
-  border-color: var(--text-muted);
-  background: color-mix(in srgb, var(--bg-tertiary) 90%, var(--bg-hover));
+  border-color: var(--bg-hover);
 }
 
-.download-card.paused {
-  opacity: 0.65;
+.download-card.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, var(--bg-tertiary));
 }
 
-.download-card.paused:hover {
+/* Top progress stripe */
+.card-stripe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--bg-tertiary);
+}
+
+.card-stripe-fill {
+  height: 100%;
+  border-radius: 0 1px 1px 0;
+  transition: width var(--transition-normal);
+}
+
+/* Card body layout */
+.card-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  padding-top: calc(var(--space-md) + 2px);
+}
+
+/* File type icon */
+.card-type-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  flex-shrink: 0;
+}
+
+.card-type-icon .material-symbols-outlined {
+  font-size: 24px;
+}
+
+.card-type-icon.icon-blue {
+  background: var(--icon-bg-blue);
+  color: var(--icon-color-blue);
+}
+
+.card-type-icon.icon-purple {
+  background: var(--icon-bg-purple);
+  color: var(--icon-color-purple);
+}
+
+.card-type-icon.icon-orange {
+  background: var(--icon-bg-orange);
+  color: var(--icon-color-orange);
+}
+
+.card-type-icon.icon-green {
+  background: var(--icon-bg-green);
+  color: var(--icon-color-green);
+}
+
+.card-type-icon.icon-red {
+  background: var(--icon-bg-red);
+  color: var(--icon-color-red);
+}
+
+/* Info area */
+.card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Row 1: Name + actions */
+.card-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin-bottom: 4px;
+}
+
+.card-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+  padding-right: var(--space-md);
+}
+
+/* Actions: visible on hover */
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.download-card:hover .card-actions {
   opacity: 1;
 }
 
-/* Checkbox: visible on hover or when selected */
-.card-checkbox {
+.card-action-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.card-action-btn .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.card-action-btn:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.card-action-btn.danger:hover {
+  color: var(--color-destructive);
+}
+
+/* Row 2: Meta - badge + source */
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-sm);
+}
+
+.card-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.card-badge.blue {
+  background: var(--icon-bg-blue);
+  color: var(--icon-color-blue);
+  border: 1px solid color-mix(in srgb, var(--icon-color-blue) 20%, transparent);
+}
+
+.card-badge.purple {
+  background: var(--icon-bg-purple);
+  color: var(--icon-color-purple);
+  border: 1px solid color-mix(in srgb, var(--icon-color-purple) 20%, transparent);
+}
+
+.card-badge.orange {
+  background: var(--icon-bg-orange);
+  color: var(--icon-color-orange);
+  border: 1px solid color-mix(in srgb, var(--icon-color-orange) 20%, transparent);
+}
+
+.card-badge.green {
+  background: var(--icon-bg-green);
+  color: var(--icon-color-green);
+  border: 1px solid color-mix(in srgb, var(--icon-color-green) 20%, transparent);
+}
+
+.card-badge.red {
+  background: var(--icon-bg-red);
+  color: var(--icon-color-red);
+  border: 1px solid color-mix(in srgb, var(--icon-color-red) 20%, transparent);
+}
+
+.meta-dot {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.meta-domain {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+/* Row 3: Progress area */
+.card-progress-area {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-md);
+}
+
+.card-progress-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.progress-size {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-size-total {
+  color: var(--text-muted);
+}
+
+.progress-percent {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Speed + ETA column */
+.card-speed-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   flex-shrink: 0;
+  min-width: 100px;
+}
+
+.speed-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.speed-eta {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Checkbox overlay */
+.card-checkbox {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  display: flex;
+  align-items: center;
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--transition-fast);
+  z-index: 1;
 }
 
 .download-card:hover .card-checkbox,
@@ -44,142 +292,7 @@
   cursor: pointer;
 }
 
-/* File type icon with colored background */
-.card-type-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-}
-
-.card-type-icon.blue {
-  background: var(--icon-bg-blue);
-  color: var(--icon-color-blue);
-}
-
-.card-type-icon.purple {
-  background: var(--icon-bg-purple);
-  color: var(--icon-color-purple);
-}
-
-.card-type-icon.orange {
-  background: var(--icon-bg-orange);
-  color: var(--icon-color-orange);
-}
-
-.card-type-icon.green {
-  background: var(--icon-bg-green);
-  color: var(--icon-color-green);
-}
-
-.card-type-icon.red {
-  background: var(--icon-bg-red);
-  color: var(--icon-color-red);
-}
-
-/* Content column */
-.card-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.card-name-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: 4px;
-}
-
-.card-name {
-  font-weight: 500;
-  font-size: 13px;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.progress-container {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-}
-
-.progress-container .progress {
-  flex: 1;
-}
-
-.progress-text {
-  font-size: 11px;
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-  min-width: 32px;
-  text-align: right;
-}
-
-/* Data columns */
-.card-col {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 0;
-}
-
-.col-value {
-  font-size: 12px;
-  font-family: var(--font-mono);
-  color: var(--text-primary);
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.col-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.speed-down {
-  color: var(--color-primary);
-}
-
-.speed-up {
-  color: var(--color-info);
-}
-
-/* Actions: visible on hover */
-.card-actions {
-  display: flex;
-  gap: var(--space-xs);
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-}
-
-.download-card:hover .card-actions {
-  opacity: 1;
-}
-
-/* Selected state */
-.download-card.selected {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 5%, var(--bg-tertiary));
-}
-
-/* Error message */
-.info-error {
-  color: var(--color-destructive);
-  font-size: 12px;
-}
-
+/* Legacy checkbox-label for delete confirm modal */
 .checkbox-label {
   display: flex;
   align-items: center;
@@ -191,16 +304,4 @@
 .checkbox-label span {
   font-size: 14px;
   color: var(--text-secondary);
-}
-
-/* Responsive: collapse columns on narrow screens */
-@media (max-width: 700px) {
-  .download-card {
-    grid-template-columns: auto auto 1fr auto;
-  }
-  .card-col-size,
-  .card-col-speed,
-  .card-col-eta {
-    display: none;
-  }
 }
