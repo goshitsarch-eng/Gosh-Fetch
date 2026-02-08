@@ -14,6 +14,9 @@ import { updateStats, setDisconnected, selectIsConnected } from './store/statsSl
 import { setTheme, applySystemTheme } from './store/themeSlice';
 import { addDownload, addMagnet, fetchDownloads, restoreIncomplete } from './store/downloadSlice';
 import { addNotification } from './store/notificationSlice';
+import { setUpdateAvailable, setDownloadProgress, setUpdateDownloaded } from './store/updaterSlice';
+import UpdateToast from './components/updater/UpdateToast';
+import UpdateModal from './components/updater/UpdateModal';
 import type { AppDispatch } from './store/store';
 import './App.css';
 
@@ -145,6 +148,16 @@ export default function App() {
       ) {
         dispatch(fetchDownloads());
       }
+      // Auto-updater events
+      if (event === 'update-available') {
+        dispatch(setUpdateAvailable(data));
+      }
+      if (event === 'update-progress') {
+        dispatch(setDownloadProgress(data));
+      }
+      if (event === 'update-downloaded') {
+        dispatch(setUpdateDownloaded());
+      }
     });
 
     document.addEventListener('keydown', handleKeyDown);
@@ -186,6 +199,9 @@ export default function App() {
       </div>
 
       {showOnboarding && <Onboarding onComplete={() => setShowOnboarding(false)} />}
+
+      <UpdateToast />
+      <UpdateModal />
 
       {isDragOver && (
         <div className="drop-overlay">

@@ -592,8 +592,30 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on('update-available', (info) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
+      let releaseNotes = '';
+      if (typeof info.releaseNotes === 'string') {
+        releaseNotes = info.releaseNotes;
+      } else if (Array.isArray(info.releaseNotes)) {
+        releaseNotes = info.releaseNotes
+          .map((rn: any) => `## ${rn.version}\n${rn.note ?? ''}`)
+          .join('\n\n');
+      }
       mainWindow.webContents.send('rpc-event', 'update-available', {
         version: info.version,
+        releaseName: info.releaseName ?? null,
+        releaseNotes,
+        releaseDate: info.releaseDate,
+      });
+    }
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('rpc-event', 'update-progress', {
+        total: progress.total,
+        transferred: progress.transferred,
+        percent: progress.percent,
+        bytesPerSecond: progress.bytesPerSecond,
       });
     }
   });

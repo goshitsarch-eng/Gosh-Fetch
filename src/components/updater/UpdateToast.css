@@ -1,0 +1,130 @@
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.update-toast {
+  position: fixed;
+  bottom: calc(var(--statusbar-height) + var(--space-md));
+  right: var(--space-lg);
+  z-index: 1050;
+  width: 380px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  animation: slideInRight 300ms ease;
+}
+
+.update-toast-close {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: var(--space-xs);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+
+.update-toast-close:hover {
+  color: var(--text-primary);
+}
+
+.update-toast-close .material-symbols-outlined {
+  font-size: 18px;
+}
+
+/* Header: icon badge + label + version */
+.update-toast-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.update-toast-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+  color: white;
+  flex-shrink: 0;
+}
+
+.update-toast-icon-badge .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.update-toast-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.update-toast-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.update-toast-version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-success);
+}
+
+.update-toast-pulse-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Body */
+.update-toast-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.update-toast-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.update-toast-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Actions */
+.update-toast-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.update-toast-actions .btn {
+  flex: 1;
+}
