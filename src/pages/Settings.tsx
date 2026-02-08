@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { selectTheme, setTheme } from '../store/themeSlice';
@@ -131,6 +132,7 @@ export default function Settings() {
   const [userAgentPresets, setUserAgentPresets] = useState<[string, string][]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const savedSnapshot = useRef<string>('');
 
   const isDirty = savedSnapshot.current ? JSON.stringify(form) !== savedSnapshot.current : false;
@@ -318,7 +320,7 @@ export default function Settings() {
                   {saveMessage}
                 </span>
               )}
-              <button className="btn btn-ghost" onClick={handleResetDefaults}>Reset Defaults</button>
+              <button className="btn btn-ghost" onClick={() => setShowResetConfirm(true)}>Reset Defaults</button>
               <button className="btn btn-primary" onClick={handleSave} disabled={isSaving}>
                 <span className="material-symbols-outlined" style={{ fontSize: 16 }}>save</span>
                 {isSaving ? 'Saving...' : 'Save Changes'}
@@ -352,6 +354,31 @@ export default function Settings() {
           )}
         </div>
       </div>
+      {showResetConfirm && createPortal(
+        <div className="modal-backdrop" onClick={() => setShowResetConfirm(false)}>
+          <div className="modal reset-confirm-modal" onClick={e => e.stopPropagation()}>
+            <div className="reset-confirm-icon">
+              <span className="material-symbols-outlined">warning</span>
+            </div>
+            <h3>Reset all settings?</h3>
+            <p>
+              This will revert all network, BitTorrent, and appearance
+              preferences to their original values. Your download history
+              and files will not be affected.
+            </p>
+            <div className="reset-confirm-actions">
+              <button className="btn btn-ghost" onClick={() => setShowResetConfirm(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={() => { handleResetDefaults(); setShowResetConfirm(false); }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>restart_alt</span>
+                Reset Everything
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

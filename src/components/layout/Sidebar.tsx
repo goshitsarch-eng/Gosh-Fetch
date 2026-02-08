@@ -119,6 +119,34 @@ export default function Sidebar() {
               <span className={`nav-badge${location.pathname === '/history' ? ' active' : ''}`}>{completedDownloads.length}</span>
             )}
           </button>
+
+          {/* Statistics Link */}
+          <button
+            className={`nav-item${location.pathname === '/statistics' ? ' active' : ''}`}
+            onClick={() => navigate('/statistics')}
+          >
+            <span
+              className="material-symbols-outlined nav-icon"
+              style={location.pathname === '/statistics' ? { fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24" } : undefined}
+            >
+              monitoring
+            </span>
+            <span className="nav-label">Statistics</span>
+          </button>
+
+          {/* Scheduler Link */}
+          <button
+            className={`nav-item${location.pathname === '/scheduler' ? ' active' : ''}`}
+            onClick={() => navigate('/scheduler')}
+          >
+            <span
+              className="material-symbols-outlined nav-icon"
+              style={location.pathname === '/scheduler' ? { fontVariationSettings: "'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24" } : undefined}
+            >
+              calendar_month
+            </span>
+            <span className="nav-label">Scheduler</span>
+          </button>
         </nav>
 
         {/* Footer */}
