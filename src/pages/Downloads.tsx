@@ -28,7 +28,6 @@ import {
   selectCompletedDownloads,
   fetchDownloads,
   loadCompletedHistory,
-  restoreIncomplete,
   pauseAll,
   resumeAll,
   pauseDownload,
@@ -67,7 +66,6 @@ export default function Downloads() {
 
   useEffect(() => {
     dispatch(loadCompletedHistory());
-    dispatch(restoreIncomplete());
     dispatch(fetchDownloads());
     // Fallback heartbeat poll — primary refresh is push-based via App.tsx event handlers
     const interval = setInterval(() => dispatch(fetchDownloads()), 5000);

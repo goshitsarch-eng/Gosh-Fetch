@@ -10,7 +10,7 @@ import Settings from './pages/Settings';
 import About from './pages/About';
 import { updateStats, setDisconnected, selectIsConnected } from './store/statsSlice';
 import { setTheme } from './store/themeSlice';
-import { addDownload, addMagnet, fetchDownloads } from './store/downloadSlice';
+import { addDownload, addMagnet, fetchDownloads, restoreIncomplete } from './store/downloadSlice';
 import type { AppDispatch } from './store/store';
 import './App.css';
 
@@ -90,6 +90,9 @@ export default function App() {
     // Initialize theme
     const saved = localStorage.getItem('gosh-fetch-theme') as 'dark' | 'light' | null;
     dispatch(setTheme(saved ?? 'dark'));
+
+    // Restore incomplete downloads once on app startup
+    dispatch(restoreIncomplete());
 
     // Listen for events from sidecar via Electron
     const cleanupEvent = window.electronAPI.onEvent((event: string, data: any) => {

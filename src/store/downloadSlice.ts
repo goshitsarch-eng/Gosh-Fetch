@@ -22,16 +22,7 @@ const initialState = downloadsAdapter.getInitialState<DownloadExtraState>({
 export const fetchDownloads = createAsyncThunk(
   'downloads/fetchAll',
   async () => {
-    const downloads = await api.getAllDownloads();
-    // Save all downloads to DB for persistence
-    for (const d of downloads) {
-      try {
-        await api.dbSaveDownload(d);
-      } catch {
-        // Ignore save errors during polling
-      }
-    }
-    return downloads;
+    return await api.getAllDownloads();
   }
 );
 

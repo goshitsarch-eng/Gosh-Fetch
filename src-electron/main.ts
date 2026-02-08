@@ -9,6 +9,7 @@ import {
   nativeImage,
   nativeTheme,
   MenuItemConstructorOptions,
+  session,
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
@@ -464,6 +465,20 @@ function setupNativeThemeListener(): void {
 
 // App lifecycle
 app.whenReady().then(() => {
+  // Set CSP headers in production (dev needs inline scripts for Vite HMR)
+  if (app.isPackaged) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'",
+          ],
+        },
+      });
+    });
+  }
+
   createAppMenu();
   setupSidecar();
   createWindow();
