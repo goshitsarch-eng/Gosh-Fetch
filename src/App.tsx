@@ -7,7 +7,6 @@ import StatusBar from './components/layout/StatusBar';
 import Downloads from './pages/Downloads';
 import History from './pages/History';
 import Settings from './pages/Settings';
-import About from './pages/About';
 import Scheduler from './pages/Scheduler';
 import Statistics from './pages/Statistics';
 import { updateStats, setDisconnected, selectIsConnected } from './store/statsSlice';
@@ -192,7 +191,6 @@ export default function App() {
             <Route path="/statistics" element={<Statistics />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/scheduler" element={<Scheduler />} />
-            <Route path="/about" element={<About />} />
           </Routes>
         </main>
         <StatusBar />

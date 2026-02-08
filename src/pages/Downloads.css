@@ -39,7 +39,7 @@
   color: var(--color-primary);
 }
 
-.search-input {
+.search-bar .search-input {
   width: 100%;
   height: 42px;
   padding: 0 48px 0 40px;

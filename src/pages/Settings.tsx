@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useSelector, useDispatch } from 'react-redux';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { selectTheme, setTheme } from '../store/themeSlice';
 import { api } from '../lib/api';
 import type { Settings as SettingsType } from '../lib/api';
@@ -10,6 +10,7 @@ import GeneralPanel from '../components/settings/GeneralPanel';
 import NetworkPanel from '../components/settings/NetworkPanel';
 import BitTorrentPanel from '../components/settings/BitTorrentPanel';
 import AppearancePanel from '../components/settings/AppearancePanel';
+import About from './About';
 import './Settings.css';
 
 export interface SettingsFormState {
@@ -119,7 +120,6 @@ const PANEL_META: Record<Exclude<SettingsTab, 'about'>, { title: string; subtitl
 
 export default function Settings() {
   const dispatch = useDispatch<AppDispatch>();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const theme = useSelector(selectTheme);
 
@@ -142,10 +142,6 @@ export default function Settings() {
   }, []);
 
   function handleTabChange(tab: SettingsTab) {
-    if (tab === 'about') {
-      navigate('/about');
-      return;
-    }
     setActiveTab(tab);
     setSearchParams({ tab });
   }
@@ -352,6 +348,7 @@ export default function Settings() {
           {activeTab === 'appearance' && (
             <AppearancePanel theme={theme} onThemeChange={handleThemeChange} />
           )}
+          {activeTab === 'about' && <About />}
         </div>
       </div>
       {showResetConfirm && createPortal(

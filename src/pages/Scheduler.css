@@ -403,7 +403,7 @@
   flex: 1;
 }
 
-.speed-input-wrapper input {
+.speed-input-wrapper input[type="text"] {
   width: 100%;
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
