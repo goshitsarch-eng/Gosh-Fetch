@@ -5,10 +5,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('rpc-invoke', method, params);
   },
 
-  onEvent: (callback: (event: string, data: any) => void): void => {
-    ipcRenderer.on('rpc-event', (_event, eventName: string, data: any) => {
+  onEvent: (callback: (event: string, data: any) => void): (() => void) => {
+    const handler = (_event: any, eventName: string, data: any) => {
       callback(eventName, data);
-    });
+    };
+    ipcRenderer.on('rpc-event', handler);
+    return () => {
+      ipcRenderer.removeListener('rpc-event', handler);
+    };
   },
 
   removeAllListeners: (channel: string): void => {

@@ -120,11 +120,32 @@ impl Database {
         .map_err(|e| Error::Database(e.to_string()))?
     }
 
-    /// Synchronous migration — called only once during Database::new() (not on Tokio runtime yet)
+    /// Synchronous migration -- called only once during Database::new() (not on Tokio runtime yet).
+    /// Checks schema_version table to skip already-applied migrations.
     fn run_migrations_sync(&self) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
-        let migration_sql = include_str!("../../migrations/001_initial.sql");
-        conn.execute_batch(migration_sql)?;
+
+        // Check if schema_version table exists and what version we're at
+        let current_version: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0); // Table doesn't exist yet => version 0
+
+        if current_version < 1 {
+            let migration_sql = include_str!("../../migrations/001_initial.sql");
+            conn.execute_batch(migration_sql)?;
+            log::info!("Applied migration 001_initial.sql");
+        }
+
+        // Future migrations go here:
+        // if current_version < 2 {
+        //     let sql = include_str!("../../migrations/002_xxx.sql");
+        //     conn.execute_batch(sql)?;
+        // }
+
         Ok(())
     }
 
@@ -302,31 +323,31 @@ impl Database {
 }
 
 fn row_to_download(row: &rusqlite::Row) -> Download {
-    let status_str: String = row.get(7).unwrap_or_default();
-    let dl_type_str: String = row.get(6).unwrap_or_default();
-    let selected_files_str: Option<String> = row.get(16).unwrap_or(None);
+    let status_str: String = row.get::<_, String>("status").unwrap_or_default();
+    let dl_type_str: String = row.get::<_, String>("download_type").unwrap_or_default();
+    let selected_files_str: Option<String> = row.get::<_, Option<String>>("selected_files").unwrap_or(None);
 
     Download {
-        id: row.get(0).unwrap_or(0),
-        gid: row.get(1).unwrap_or_default(),
-        name: row.get(2).unwrap_or_default(),
-        url: row.get(3).unwrap_or(None),
-        magnet_uri: row.get(4).unwrap_or(None),
-        info_hash: row.get(5).unwrap_or(None),
+        id: row.get::<_, i64>("id").unwrap_or(0),
+        gid: row.get::<_, String>("gid").unwrap_or_default(),
+        name: row.get::<_, String>("name").unwrap_or_default(),
+        url: row.get::<_, Option<String>>("url").unwrap_or(None),
+        magnet_uri: row.get::<_, Option<String>>("magnet_uri").unwrap_or(None),
+        info_hash: row.get::<_, Option<String>>("info_hash").unwrap_or(None),
         download_type: match dl_type_str.as_str() {
             "torrent" => DownloadType::Torrent,
             "magnet" => DownloadType::Magnet,
             _ => DownloadType::Http,
         },
         status: DownloadState::from(status_str.as_str()),
-        total_size: row.get::<_, i64>(8).unwrap_or(0) as u64,
-        completed_size: row.get::<_, i64>(9).unwrap_or(0) as u64,
-        download_speed: row.get::<_, i64>(10).unwrap_or(0) as u64,
-        upload_speed: row.get::<_, i64>(11).unwrap_or(0) as u64,
-        save_path: row.get(12).unwrap_or_default(),
-        created_at: row.get(13).unwrap_or_default(),
-        completed_at: row.get(14).unwrap_or(None),
-        error_message: row.get(15).unwrap_or(None),
+        total_size: row.get::<_, i64>("total_size").unwrap_or(0) as u64,
+        completed_size: row.get::<_, i64>("completed_size").unwrap_or(0) as u64,
+        download_speed: row.get::<_, i64>("download_speed").unwrap_or(0) as u64,
+        upload_speed: row.get::<_, i64>("upload_speed").unwrap_or(0) as u64,
+        save_path: row.get::<_, String>("save_path").unwrap_or_default(),
+        created_at: row.get::<_, String>("created_at").unwrap_or_default(),
+        completed_at: row.get::<_, Option<String>>("completed_at").unwrap_or(None),
+        error_message: row.get::<_, Option<String>>("error_message").unwrap_or(None),
         connections: 0,
         seeders: 0,
         selected_files: selected_files_str.and_then(|s| serde_json::from_str(&s).ok()),
@@ -341,5 +362,243 @@ pub fn download_type_from_url(url: &str) -> DownloadType {
         DownloadType::Torrent
     } else {
         DownloadType::Http
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_db() -> Database {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;").unwrap();
+        let db = Database {
+            conn: Arc::new(Mutex::new(conn)),
+        };
+        db.run_migrations_sync().unwrap();
+        db
+    }
+
+    #[test]
+    fn test_download_type_from_url() {
+        assert_eq!(download_type_from_url("https://example.com/file.zip"), DownloadType::Http);
+        assert_eq!(download_type_from_url("https://example.com/file.torrent"), DownloadType::Torrent);
+        assert_eq!(download_type_from_url("magnet:?xt=urn:btih:abc"), DownloadType::Magnet);
+        assert_eq!(download_type_from_url("MAGNET:?xt=urn:btih:abc"), DownloadType::Magnet);
+        assert_eq!(download_type_from_url("https://example.com/torrent/details"), DownloadType::Torrent);
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        let expanded = expand_tilde("~/Downloads");
+        assert!(!expanded.starts_with("~"));
+        assert!(expanded.ends_with("/Downloads"));
+
+        assert_eq!(expand_tilde("/absolute/path"), "/absolute/path");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+    }
+
+    #[test]
+    fn test_default_settings() {
+        let settings = Settings::default();
+        assert_eq!(settings.max_concurrent_downloads, 5);
+        assert_eq!(settings.max_connections_per_server, 8);
+        assert!(settings.enable_notifications);
+        assert!(settings.close_to_tray);
+        assert_eq!(settings.theme, "dark");
+        assert!(settings.bt_enable_dht);
+        assert_eq!(settings.bt_seed_ratio, 1.0);
+        assert_eq!(settings.connect_timeout, 30);
+        assert_eq!(settings.read_timeout, 60);
+        assert_eq!(settings.max_retries, 3);
+        assert_eq!(settings.allocation_mode, "sparse");
+    }
+
+    #[test]
+    fn test_settings_round_trip() {
+        let db = test_db();
+        let settings = db.get_settings().unwrap();
+        assert_eq!(settings.max_concurrent_downloads, 5);
+        assert_eq!(settings.theme, "dark");
+    }
+
+    #[tokio::test]
+    async fn test_settings_save_and_load() {
+        let db = test_db();
+        let mut settings = Settings::default();
+        settings.max_concurrent_downloads = 10;
+        settings.theme = "light".to_string();
+        settings.proxy_url = "http://proxy:8080".to_string();
+
+        db.save_settings_async(settings).await.unwrap();
+
+        let loaded = db.get_settings_async().await.unwrap();
+        assert_eq!(loaded.max_concurrent_downloads, 10);
+        assert_eq!(loaded.theme, "light");
+        assert_eq!(loaded.proxy_url, "http://proxy:8080");
+    }
+
+    #[tokio::test]
+    async fn test_save_and_load_download() {
+        let db = test_db();
+        let download = Download {
+            id: 0,
+            gid: "test-gid-123".to_string(),
+            name: "test-file.zip".to_string(),
+            url: Some("https://example.com/file.zip".to_string()),
+            magnet_uri: None,
+            info_hash: None,
+            download_type: DownloadType::Http,
+            status: DownloadState::Complete,
+            total_size: 1024,
+            completed_size: 1024,
+            download_speed: 0,
+            upload_speed: 0,
+            save_path: "/tmp/downloads".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            completed_at: Some("2026-01-01T00:01:00Z".to_string()),
+            error_message: None,
+            connections: 0,
+            seeders: 0,
+            selected_files: None,
+        };
+
+        db.save_download_async(download).await.unwrap();
+
+        let completed = db.get_completed_downloads_async().await.unwrap();
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].gid, "test-gid-123");
+        assert_eq!(completed[0].name, "test-file.zip");
+        assert_eq!(completed[0].total_size, 1024);
+    }
+
+    #[tokio::test]
+    async fn test_remove_download() {
+        let db = test_db();
+        let download = Download {
+            id: 0,
+            gid: "remove-me".to_string(),
+            name: "to-remove.zip".to_string(),
+            url: Some("https://example.com/file.zip".to_string()),
+            magnet_uri: None,
+            info_hash: None,
+            download_type: DownloadType::Http,
+            status: DownloadState::Complete,
+            total_size: 512,
+            completed_size: 512,
+            download_speed: 0,
+            upload_speed: 0,
+            save_path: "/tmp".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            completed_at: Some("2026-01-01T00:01:00Z".to_string()),
+            error_message: None,
+            connections: 0,
+            seeders: 0,
+            selected_files: None,
+        };
+
+        db.save_download_async(download).await.unwrap();
+        assert_eq!(db.get_completed_downloads_async().await.unwrap().len(), 1);
+
+        db.remove_download_async("remove-me".to_string()).await.unwrap();
+        assert_eq!(db.get_completed_downloads_async().await.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_clear_history() {
+        let db = test_db();
+        for i in 0..3 {
+            let download = Download {
+                id: 0,
+                gid: format!("gid-{}", i),
+                name: format!("file-{}.zip", i),
+                url: Some("https://example.com/file.zip".to_string()),
+                magnet_uri: None,
+                info_hash: None,
+                download_type: DownloadType::Http,
+                status: DownloadState::Complete,
+                total_size: 100,
+                completed_size: 100,
+                download_speed: 0,
+                upload_speed: 0,
+                save_path: "/tmp".to_string(),
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                completed_at: Some("2026-01-01T00:01:00Z".to_string()),
+                error_message: None,
+                connections: 0,
+                seeders: 0,
+                selected_files: None,
+            };
+            db.save_download_async(download).await.unwrap();
+        }
+        assert_eq!(db.get_completed_downloads_async().await.unwrap().len(), 3);
+
+        db.clear_history_async().await.unwrap();
+        assert_eq!(db.get_completed_downloads_async().await.unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_incomplete_downloads() {
+        let db = test_db();
+        // Save an active download
+        let active = Download {
+            id: 0,
+            gid: "active-1".to_string(),
+            name: "downloading.zip".to_string(),
+            url: Some("https://example.com/file.zip".to_string()),
+            magnet_uri: None,
+            info_hash: None,
+            download_type: DownloadType::Http,
+            status: DownloadState::Active,
+            total_size: 1000,
+            completed_size: 500,
+            download_speed: 0,
+            upload_speed: 0,
+            save_path: "/tmp".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            completed_at: None,
+            error_message: None,
+            connections: 0,
+            seeders: 0,
+            selected_files: None,
+        };
+        db.save_download_async(active).await.unwrap();
+
+        // Save a completed download
+        let complete = Download {
+            id: 0,
+            gid: "complete-1".to_string(),
+            name: "done.zip".to_string(),
+            url: Some("https://example.com/done.zip".to_string()),
+            magnet_uri: None,
+            info_hash: None,
+            download_type: DownloadType::Http,
+            status: DownloadState::Complete,
+            total_size: 100,
+            completed_size: 100,
+            download_speed: 0,
+            upload_speed: 0,
+            save_path: "/tmp".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            completed_at: Some("2026-01-01T00:01:00Z".to_string()),
+            error_message: None,
+            connections: 0,
+            seeders: 0,
+            selected_files: None,
+        };
+        db.save_download_async(complete).await.unwrap();
+
+        let incomplete = db.get_incomplete_downloads_async().await.unwrap();
+        assert_eq!(incomplete.len(), 1);
+        assert_eq!(incomplete[0].gid, "active-1");
+    }
+
+    #[test]
+    fn test_migration_idempotent() {
+        let db = test_db();
+        // Running migrations again should not fail
+        db.run_migrations_sync().unwrap();
+        let settings = db.get_settings().unwrap();
+        assert_eq!(settings.max_concurrent_downloads, 5);
     }
 }

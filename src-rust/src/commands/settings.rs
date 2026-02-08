@@ -1,5 +1,4 @@
 use crate::db::Settings;
-use crate::utils::TrackerUpdater;
 use crate::{AppState, Result};
 use std::path::PathBuf;
 
@@ -28,13 +27,26 @@ pub async fn set_user_agent(state: &AppState, user_agent: String) -> Result<()> 
     Ok(())
 }
 
-pub async fn get_tracker_list() -> Result<Vec<String>> {
-    let mut updater = TrackerUpdater::new();
+pub async fn get_tracker_list(state: &AppState) -> Result<Vec<String>> {
+    let updater_lock = state.get_tracker_updater();
+    {
+        let updater = updater_lock.read().await;
+        if !updater.needs_update() {
+            return Ok(updater.get_trackers().to_vec());
+        }
+    }
+    // Needs update -- acquire write lock and fetch
+    let mut updater = updater_lock.write().await;
+    // Double-check after acquiring write lock (another task may have updated)
+    if !updater.needs_update() {
+        return Ok(updater.get_trackers().to_vec());
+    }
     updater.fetch_trackers().await
 }
 
 pub async fn update_tracker_list(state: &AppState) -> Result<Vec<String>> {
-    let mut updater = TrackerUpdater::new();
+    let updater_lock = state.get_tracker_updater();
+    let mut updater = updater_lock.write().await;
     let trackers = updater.fetch_trackers().await?;
     let _engine = state.get_engine().await?;
     Ok(trackers)

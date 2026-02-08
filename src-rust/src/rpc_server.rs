@@ -125,20 +125,15 @@ pub async fn run_rpc_server(state: AppState, mut event_rx: broadcast::Receiver<V
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             if let Ok(adapter) = stats_state.get_adapter().await {
                 let stats = adapter.get_global_stats();
-                let download_speed: u64 = stats.download_speed.parse().unwrap_or(0);
-                let upload_speed: u64 = stats.upload_speed.parse().unwrap_or(0);
-                let num_active: u32 = stats.num_active.parse().unwrap_or(0);
-                let num_waiting: u32 = stats.num_waiting.parse().unwrap_or(0);
-                let num_stopped: u32 = stats.num_stopped.parse().unwrap_or(0);
 
                 let event = serde_json::json!({
                     "event": "global-stats",
                     "data": {
-                        "downloadSpeed": download_speed,
-                        "uploadSpeed": upload_speed,
-                        "numActive": num_active,
-                        "numWaiting": num_waiting,
-                        "numStopped": num_stopped,
+                        "downloadSpeed": stats.download_speed,
+                        "uploadSpeed": stats.upload_speed,
+                        "numActive": stats.num_active,
+                        "numWaiting": stats.num_waiting,
+                        "numStopped": stats.num_stopped,
                     }
                 });
 
@@ -321,7 +316,7 @@ async fn handle_method(
             Ok(Value::Null)
         }
         "get_tracker_list" => {
-            let trackers = commands::get_tracker_list().await?;
+            let trackers = commands::get_tracker_list(state).await?;
             Ok(serde_json::to_value(trackers)?)
         }
         "update_tracker_list" => {
@@ -450,4 +445,71 @@ fn send_error_response(tx: &mpsc::UnboundedSender<String>, id: Option<Value>, co
     });
     let line = serde_json::to_string(&response).unwrap_or_default();
     let _ = tx.send(line);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_download_url_valid() {
+        assert!(validate_download_url("https://example.com/file.zip").is_ok());
+        assert!(validate_download_url("http://example.com/file.zip").is_ok());
+        assert!(validate_download_url("magnet:?xt=urn:btih:abc123").is_ok());
+    }
+
+    #[test]
+    fn test_validate_download_url_empty() {
+        assert!(validate_download_url("").is_err());
+    }
+
+    #[test]
+    fn test_validate_download_url_bad_scheme() {
+        assert!(validate_download_url("file:///etc/passwd").is_err());
+        assert!(validate_download_url("ftp://example.com/file").is_err());
+        assert!(validate_download_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn test_validate_download_url_too_long() {
+        let long_url = format!("https://example.com/{}", "a".repeat(MAX_URL_LENGTH));
+        assert!(validate_download_url(&long_url).is_err());
+    }
+
+    #[test]
+    fn test_validate_download_url_private_ips() {
+        assert!(validate_download_url("http://127.0.0.1/file").is_err());
+        assert!(validate_download_url("http://192.168.1.1/file").is_err());
+        assert!(validate_download_url("http://10.0.0.1/file").is_err());
+        assert!(validate_download_url("http://172.16.0.1/file").is_err());
+        assert!(validate_download_url("http://0.0.0.0/file").is_err());
+    }
+
+    #[test]
+    fn test_is_private_ip() {
+        assert!(is_private_ip(&"127.0.0.1".parse().unwrap()));
+        assert!(is_private_ip(&"10.0.0.1".parse().unwrap()));
+        assert!(is_private_ip(&"192.168.0.1".parse().unwrap()));
+        assert!(is_private_ip(&"172.16.0.1".parse().unwrap()));
+        assert!(is_private_ip(&"169.254.1.1".parse().unwrap()));
+        assert!(is_private_ip(&"::1".parse().unwrap()));
+
+        assert!(!is_private_ip(&"8.8.8.8".parse().unwrap()));
+        assert!(!is_private_ip(&"1.1.1.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_validate_torrent_path_empty() {
+        assert!(validate_torrent_path("").is_err());
+    }
+
+    #[test]
+    fn test_validate_torrent_path_wrong_extension() {
+        assert!(validate_torrent_path("/tmp/file.zip").is_err());
+    }
+
+    #[test]
+    fn test_validate_torrent_path_nonexistent() {
+        assert!(validate_torrent_path("/nonexistent/path/file.torrent").is_err());
+    }
 }

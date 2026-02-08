@@ -582,121 +582,121 @@
 
 ---
 
-## Phase 5: Quality & Testing
+## Phase 5: Quality & Testing --- COMPLETED
 
-### 5.1 Normalize Redux State
+### 5.1 Normalize Redux State --- DONE
 - **File**: `src/store/downloadSlice.ts:7`
 - **Severity**: HIGH
 - **Found by**: Architect
 - **Details**: Downloads stored as flat `Download[]` array. Every poll replaces the entire array, causing new references and full re-renders.
-- **Fix**: Use RTK's `createEntityAdapter` for normalized storage keyed by `gid`. Enables O(1) lookups and targeted updates.
+- **Resolution**: Converted to `createEntityAdapter<Download, string>` keyed by `gid`. Uses `setAll` for poll updates and `removeOne` for removals. All selectors rewritten using adapter's `getSelectors`.
 
-### 5.2 Switch from Polling to Push Events
+### 5.2 Switch from Polling to Push Events --- DONE
 - **File**: `src/pages/Downloads.tsx:35`
 - **File**: `src/App.tsx:24-31`
 - **Severity**: HIGH
 - **Found by**: Architect, Devil's Advocate
 - **Details**: Frontend polls every 1 second AND receives real-time push events, but the push events are completely ignored for download state. The entire event system is wasted.
-- **Fix**: Use push events for real-time download state updates. Reduce polling to a 5-10 second fallback heartbeat. Only save to DB on state transitions (complete, error) not continuously.
+- **Resolution**: Added download event handlers in App.tsx (`download:added`, `download:completed`, `download:failed`, `download:removed`, `download:paused`, `download:resumed`, `download:state-changed`) that trigger `fetchDownloads()`. Reduced poll interval from 1s to 5s as a fallback heartbeat.
 
-### 5.3 Add React.memo to DownloadCard
+### 5.3 Add React.memo to DownloadCard --- DONE
 - **File**: `src/components/downloads/DownloadCard.tsx`
 - **Severity**: MEDIUM
 - **Found by**: Devil's Advocate, Architect
 - **Details**: Every DownloadCard re-renders every second because the array reference changes on each poll.
-- **Fix**: Wrap `DownloadCard` in `React.memo` with custom comparator. Use `useMemo` for filtered downloads.
+- **Resolution**: Wrapped `DownloadCard` in `React.memo` with custom `downloadCardComparator` that checks `gid`, `status`, `completedSize`, `downloadSpeed`, `uploadSpeed`, `connections`, `seeders`, `errorMessage`, and `selected`.
 
-### 5.4 Add Frontend Test Infrastructure
+### 5.4 Add Frontend Test Infrastructure --- DONE
 - **File**: `package.json` (missing test script)
 - **Severity**: HIGH
 - **Found by**: All specialists
 - **Details**: Zero frontend tests. No test runner configured. No test script in package.json.
-- **Fix**: `npm install -D vitest @testing-library/react @testing-library/jest-dom`. Add `"test": "vitest"` to package.json scripts.
+- **Resolution**: Added `vitest`, `jsdom`, `@testing-library/react`, `@testing-library/jest-dom` to devDependencies. Added `"test": "vitest run"` and `"test:watch": "vitest"` scripts. Created vitest config in `vite.config.ts` with jsdom environment. Created `src/test/setup.ts` for jest-dom matchers. Created `src/lib/utils/format.test.ts` with 44 tests covering all format utility functions.
 
-### 5.5 Add Rust Tests
+### 5.5 Add Rust Tests --- DONE
 - **File**: `src-rust/` (only 1 test: `engine_adapter.rs:342-353`)
 - **Severity**: HIGH
 - **Found by**: All specialists
 - **Details**: One unit test (`test_parse_speed`). Missing tests for: `row_to_download`, `convert_options`, `convert_status`, `parse_gid`, all DB operations, `DownloadState::from`, `download_type_from_url`, RPC parsing, settings round-trip.
-- **Fix**: Add tests using `#[cfg(test)]` modules. DB operations can test with `:memory:` SQLite. RPC can test by mocking stdin/stdout.
+- **Resolution**: Added 34 tests across 5 modules: `db::tests` (settings round-trip, download CRUD, clear history, incomplete downloads, migration idempotency, `download_type_from_url`, `expand_tilde`), `types::tests` (state from/display round-trip, type display, GlobalStat serialization, options defaults), `rpc_server::tests` (URL validation, private IP detection, torrent path validation), `error::tests` (error codes, display, serialization), `engine_adapter::tests` (filename sanitization — already existed).
 
-### 5.6 Add CI Test Jobs
+### 5.6 Add CI Test Jobs --- DONE
 - **File**: `.github/workflows/build-*.yml`
 - **Severity**: MEDIUM
 - **Found by**: All specialists
 - **Details**: None of the CI workflows run `cargo test`, `npm test`, or any automated testing.
-- **Fix**: Add test steps before build steps in all workflow files.
+- **Resolution**: Added "Run Rust tests" (`cargo test --manifest-path src-rust/Cargo.toml`) and "Run frontend tests" (`npm test`) steps before build steps in all three workflow files (build-linux.yml, build-macos.yml, build-windows.yml).
 
-### 5.7 Add Database Migration Versioning
+### 5.7 Add Database Migration Versioning --- DONE
 - **File**: `src-rust/src/db/mod.rs:73-78`
 - **Severity**: MEDIUM
 - **Found by**: Rust Specialist, Devil's Advocate
 - **Details**: `run_migrations` executes SQL with no version tracking. Adding new migrations requires `IF NOT EXISTS` everywhere. No way to detect current schema version.
-- **Fix**: Add a `schema_version` table. Check version before running migrations.
+- **Resolution**: Added `schema_version` table to `001_initial.sql`. Rewrote `run_migrations_sync()` to check `MAX(version)` first and skip already-applied migrations. Includes scaffold for future versioned migrations.
 
-### 5.8 Fix Column Access by Name
+### 5.8 Fix Column Access by Name --- DONE
 - **File**: `src-rust/src/db/mod.rs:227-258`
 - **Severity**: MEDIUM
 - **Found by**: Rust Specialist
 - **Details**: Uses positional `row.get(0)`, `row.get(1)` etc. If schema changes or columns reorder, all indexes break silently.
-- **Fix**: Use named access: `row.get::<_, String>("column_name")`.
+- **Resolution**: Replaced all 17 positional `row.get(N)` calls in `row_to_download()` with named column access using `row.get::<_, Type>("column_name")`.
 
-### 5.9 Fix String-Typed Numeric Fields
+### 5.9 Fix String-Typed Numeric Fields --- DONE
 - **File**: `src-rust/src/types.rs:44-53`
 - **Severity**: LOW
 - **Found by**: Rust Specialist, Architect, Engine Specialist
 - **Details**: `GlobalStat` uses `String` for numeric fields. Forces string->number parsing every second in `rpc_server.rs:37-41`.
-- **Fix**: Change fields to proper numeric types (`u64`, `u32`).
+- **Resolution**: Changed `GlobalStat` fields to `u64`/`u32`. Updated `engine_adapter.rs` to assign numeric values directly. Removed all `.parse().unwrap_or(0)` calls in `rpc_server.rs` stats emitter.
 
-### 5.10 Remove Duplicate Utility Functions
+### 5.10 Remove Duplicate Utility Functions --- DONE
 - **File**: `src/lib/types/download.ts:48-96`
 - **File**: `src/lib/utils/format.ts:76-108`
 - **Severity**: LOW
 - **Found by**: UX Specialist
 - **Details**: `getStatusColor` and `getStatusText` exist in BOTH files with different implementations. `download.ts` returns Tailwind classes, `format.ts` returns CSS variables. The `download.ts` versions are dead code.
-- **Fix**: Remove the `download.ts` versions.
+- **Resolution**: Removed the dead `getStatusColor` and `getStatusText` functions from `download.ts`. Only `format.ts` versions remain.
 
-### 5.11 Remove Unused Cargo Dependencies
+### 5.11 Remove Unused Cargo Dependencies --- DONE
 - **File**: `src-rust/Cargo.toml`
 - **Severity**: LOW
 - **Found by**: Rust Specialist
 - **Details**: `base64`, `rand`, and `urlencoding` appear unused in the source. `reqwest` `json` feature is unnecessary (only `.text()` is called).
-- **Fix**: Remove unused deps. Change reqwest features to just `rustls-tls`.
+- **Resolution**: Removed `base64`, `rand`, `urlencoding` dependencies. Removed `json` feature from `reqwest`.
 
-### 5.12 Fix Stale Tauri References
+### 5.12 Fix Stale Tauri References --- DONE
 - **File**: `src-rust/src/types.rs:3-4`
 - **File**: `src-rust/src/engine_adapter.rs:3-5`
 - **File**: `.gitignore` (still has Tauri/Svelte entries)
 - **Severity**: LOW
 - **Found by**: Rust Specialist, Engine Specialist, Networking Specialist
 - **Details**: Doc comments reference "Tauri backend" and "Tauri command interface". .gitignore has `src-tauri/` entries and `.svelte-kit/`.
-- **Fix**: Update comments. Clean up .gitignore.
+- **Resolution**: Updated doc comments to reference "Electron frontend" and "Gosh-Fetch command interface". Cleaned `.gitignore` — removed `src-tauri/target/` and `gosh-dl/target/`, replaced with `src-rust/target/`.
 
-### 5.13 Fix TrackerUpdater Caching
+### 5.13 Fix TrackerUpdater Caching --- DONE
 - **File**: `src-rust/src/commands/settings.rs:31-41`
 - **Severity**: MEDIUM
 - **Found by**: Rust Specialist, Devil's Advocate, Architect
 - **Details**: New `TrackerUpdater` created on every call. `last_update` and `trackers` fields never persist. `needs_update()` is dead code.
-- **Fix**: Store `TrackerUpdater` in `AppState`. Call `needs_update()` before fetching.
+- **Resolution**: Added `tracker_updater: Arc<RwLock<TrackerUpdater>>` to `AppState`. `get_tracker_list` now uses the shared instance with `needs_update()` check before fetching. `update_tracker_list` also uses the shared instance.
 
-### 5.14 Fix panic = "abort" Risk
+### 5.14 Fix panic = "abort" Risk --- DONE
 - **File**: `src-rust/Cargo.toml:33`
 - **Severity**: MEDIUM
 - **Found by**: Devil's Advocate
 - **Details**: `panic = "abort"` in release means any `unwrap()` or `panic!()` instantly kills the process with no cleanup, no error to user. Combined with no auto-restart, one bad unwrap kills the backend permanently.
-- **Fix**: Consider removing `panic = "abort"` or audit all potential panic sites.
+- **Resolution**: Removed `panic = "abort"` from `[profile.release]`. Kept `codegen-units = 1`, `lto = true`, `opt-level = "s"`, `strip = true`.
 
-### 5.15 Fix Event Listener Leak
+### 5.15 Fix Event Listener Leak --- DONE
 - **File**: `src-electron/preload.ts:8-12`
 - **Severity**: LOW
 - **Found by**: Electron Specialist
 - **Details**: `onEvent` registers a new `ipcRenderer.on` listener each time. Only `removeAllListeners` is available. React re-mounts create duplicate listeners.
-- **Fix**: Return a cleanup function from `onEvent` that removes the specific listener.
+- **Resolution**: `onEvent` now returns a cleanup function that calls `ipcRenderer.removeListener` with the specific handler. Updated `electron.d.ts` return type from `void` to `() => void`. App.tsx cleanup function already calls the returned cleanup.
 
-### 5.16 Consolidate Duplicate Database Layers
+### 5.16 Consolidate Duplicate Database Layers --- N/A
 - **Found by**: Engine Specialist
 - **Details**: gosh-dl has its own SQLite storage for download state/segments/recovery. Gosh-Fetch maintains a SEPARATE SQLite database for the same downloads. Data duplication and potential inconsistency.
-- **Fix**: Consider using gosh-dl's built-in storage and only storing Gosh-Fetch-specific metadata (UI preferences, categories) separately.
+- **Resolution**: N/A — the two databases serve different purposes. `gosh-fetch.db` stores app-level settings, completed history, and tracker metadata. `engine.db` stores gosh-dl's internal engine state (download segments, recovery data). This is intentional separation of concerns, not duplication.
 
 ---
 

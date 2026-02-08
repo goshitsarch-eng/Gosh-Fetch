@@ -75,3 +75,10 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
 -- Initialize tracker metadata
 INSERT OR IGNORE INTO tracker_meta (id, source_url) VALUES
     (1, 'https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt');
+
+-- Schema version tracking for future migrations
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+INSERT OR IGNORE INTO schema_version (version) VALUES (1);

@@ -7,8 +7,7 @@ dist/
 dist-ssr/
 build/
 out/
-src-tauri/target/
-gosh-dl/target/
+src-rust/target/
 
 # IDE
 .idea/

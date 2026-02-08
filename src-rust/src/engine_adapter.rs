@@ -1,8 +1,8 @@
 //! Engine Adapter
 //!
-//! This module adapts the gosh-dl download engine to the existing
+//! This module adapts the gosh-dl download engine to the Gosh-Fetch
 //! command interface, maintaining backwards compatibility
-//! with the frontend.
+//! with the Electron frontend.
 
 use crate::types::{Download, DownloadOptions as FrontendOptions, DownloadState, DownloadType, GlobalStat};
 use gosh_dl::{
@@ -137,12 +137,12 @@ impl EngineAdapter {
     pub fn get_global_stats(&self) -> GlobalStat {
         let stats = self.engine.global_stats();
         GlobalStat {
-            download_speed: stats.download_speed.to_string(),
-            upload_speed: stats.upload_speed.to_string(),
-            num_active: stats.num_active.to_string(),
-            num_waiting: stats.num_waiting.to_string(),
-            num_stopped: stats.num_stopped.to_string(),
-            num_stopped_total: stats.num_stopped.to_string(),
+            download_speed: stats.download_speed,
+            upload_speed: stats.upload_speed,
+            num_active: stats.num_active as u32,
+            num_waiting: stats.num_waiting as u32,
+            num_stopped: stats.num_stopped as u32,
+            num_stopped_total: stats.num_stopped as u32,
         }
     }
 

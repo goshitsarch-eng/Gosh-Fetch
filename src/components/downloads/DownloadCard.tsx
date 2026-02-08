@@ -67,7 +67,7 @@ function DeleteConfirmModal({ downloadName, deleteWithFiles, onDeleteWithFilesCh
   );
 }
 
-export default function DownloadCard({ download, selected, onSelect }: Props) {
+function DownloadCard({ download, selected, onSelect }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteWithFiles, setDeleteWithFiles] = useState(false);
@@ -194,3 +194,19 @@ export default function DownloadCard({ download, selected, onSelect }: Props) {
     </>
   );
 }
+
+function downloadCardComparator(prev: Props, next: Props): boolean {
+  return (
+    prev.download.gid === next.download.gid &&
+    prev.download.status === next.download.status &&
+    prev.download.completedSize === next.download.completedSize &&
+    prev.download.downloadSpeed === next.download.downloadSpeed &&
+    prev.download.uploadSpeed === next.download.uploadSpeed &&
+    prev.download.connections === next.download.connections &&
+    prev.download.seeders === next.download.seeders &&
+    prev.download.errorMessage === next.download.errorMessage &&
+    prev.selected === next.selected
+  );
+}
+
+export default React.memo(DownloadCard, downloadCardComparator);

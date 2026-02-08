@@ -1,21 +1,23 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, createEntityAdapter, PayloadAction } from '@reduxjs/toolkit';
 import type { Download, DownloadOptions } from '../lib/types/download';
 import { api } from '../lib/api';
 import type { RootState } from './store';
 
-interface DownloadState {
-  downloads: Download[];
+const downloadsAdapter = createEntityAdapter<Download, string>({
+  selectId: (d) => d.gid,
+});
+
+interface DownloadExtraState {
   completedHistory: Download[];
   isLoading: boolean;
   error: string | null;
 }
 
-const initialState: DownloadState = {
-  downloads: [],
+const initialState = downloadsAdapter.getInitialState<DownloadExtraState>({
   completedHistory: [],
   isLoading: false,
   error: null,
-};
+});
 
 export const fetchDownloads = createAsyncThunk(
   'downloads/fetchAll',
@@ -175,7 +177,7 @@ const downloadSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchDownloads.fulfilled, (state, action: PayloadAction<Download[]>) => {
-        state.downloads = action.payload;
+        downloadsAdapter.setAll(state, action.payload);
         state.isLoading = false;
       })
       .addCase(fetchDownloads.rejected, (state, action) => {
@@ -189,28 +191,31 @@ const downloadSlice = createSlice({
         state.completedHistory = [];
       })
       .addCase(removeDownload.fulfilled, (state, action: PayloadAction<string>) => {
+        downloadsAdapter.removeOne(state, action.payload);
         state.completedHistory = state.completedHistory.filter(d => d.gid !== action.payload);
       });
   },
 });
 
 // Selectors
-export const selectDownloads = (state: RootState) => state.downloads.downloads;
+const adapterSelectors = downloadsAdapter.getSelectors<RootState>((state) => state.downloads);
+
+export const selectDownloads = (state: RootState) => adapterSelectors.selectAll(state);
 export const selectCompletedHistory = (state: RootState) => state.downloads.completedHistory;
 export const selectIsLoading = (state: RootState) => state.downloads.isLoading;
 export const selectError = (state: RootState) => state.downloads.error;
 
 export const selectActiveDownloads = (state: RootState) =>
-  state.downloads.downloads.filter(d => d.status === 'active' || d.status === 'waiting');
+  adapterSelectors.selectAll(state).filter(d => d.status === 'active' || d.status === 'waiting');
 
 export const selectPausedDownloads = (state: RootState) =>
-  state.downloads.downloads.filter(d => d.status === 'paused');
+  adapterSelectors.selectAll(state).filter(d => d.status === 'paused');
 
 export const selectErrorDownloads = (state: RootState) =>
-  state.downloads.downloads.filter(d => d.status === 'error');
+  adapterSelectors.selectAll(state).filter(d => d.status === 'error');
 
 export const selectCompletedDownloads = (state: RootState) => {
-  const engineCompleted = state.downloads.downloads.filter(d => d.status === 'complete');
+  const engineCompleted = adapterSelectors.selectAll(state).filter(d => d.status === 'complete');
   const engineGids = new Set(engineCompleted.map(d => d.gid));
   const historyOnly = state.downloads.completedHistory.filter(d => !engineGids.has(d.gid));
   return [...engineCompleted, ...historyOnly];

@@ -21,17 +21,13 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 log = "0.4"
 env_logger = "0.11"
-reqwest = { version = "0.12", features = ["json"] }
-base64 = "0.22"
-rand = "0.8"
+reqwest = { version = "0.12" }
 hex = "0.4"
 dirs = "5"
 url = "2"
-urlencoding = "2"
 uuid = "1"
 
 [profile.release]
-panic = "abort"
 codegen-units = 1
 lto = true
 opt-level = "s"

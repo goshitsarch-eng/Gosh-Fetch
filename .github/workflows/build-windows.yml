@@ -53,8 +53,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-rust/Cargo.toml
+
       - name: Build Rust sidecar
         run: cargo build --release --manifest-path src-rust/Cargo.toml
+
+      - name: Run frontend tests
+        run: npm test
 
       - name: Build frontend
         run: npm run build

@@ -45,56 +45,6 @@ export interface Download {
   selectedFiles: number[] | null;
 }
 
-export function getStatusText(download: Download): string {
-  if (download.appState) {
-    switch (download.appState.state) {
-      case 'queued': return 'Queued';
-      case 'downloading': return 'Downloading';
-      case 'stalled': return 'Stalled';
-      case 'paused': return 'Paused';
-      case 'completed': return 'Completed';
-      case 'error': return download.appState.message || 'Error';
-      case 'retrying': return `Retrying (${download.appState.attempt}/${download.appState.maxAttempts})`;
-      default: return 'Unknown';
-    }
-  }
-  switch (download.status) {
-    case 'active': return download.downloadSpeed > 0 ? 'Downloading' : 'Stalled';
-    case 'waiting': return 'Queued';
-    case 'paused': return 'Paused';
-    case 'complete': return 'Completed';
-    case 'error': return download.errorMessage || 'Error';
-    case 'removed': return 'Removed';
-    default: return 'Unknown';
-  }
-}
-
-export function getStatusColor(download: Download): string {
-  const state = download.appState?.state || download.status;
-  switch (state) {
-    case 'downloading':
-    case 'active':
-      return 'text-green-500';
-    case 'queued':
-    case 'waiting':
-      return 'text-yellow-500';
-    case 'stalled':
-      return 'text-orange-500';
-    case 'paused':
-      return 'text-gray-500';
-    case 'completed':
-    case 'complete':
-      return 'text-blue-500';
-    case 'error':
-    case 'removed':
-      return 'text-red-500';
-    case 'retrying':
-      return 'text-orange-500';
-    default:
-      return 'text-gray-400';
-  }
-}
-
 export interface DownloadOptions {
   dir?: string;
   out?: string;

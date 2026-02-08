@@ -69,7 +69,8 @@ export default function Downloads() {
     dispatch(loadCompletedHistory());
     dispatch(restoreIncomplete());
     dispatch(fetchDownloads());
-    const interval = setInterval(() => dispatch(fetchDownloads()), 1000);
+    // Fallback heartbeat poll — primary refresh is push-based via App.tsx event handlers
+    const interval = setInterval(() => dispatch(fetchDownloads()), 5000);
 
     const onOpenModal = () => setShowAddModal(true);
     window.addEventListener('gosh-fetch:open-add-modal', onOpenModal);

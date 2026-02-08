@@ -1,5 +1,6 @@
 use crate::db::Database;
 use crate::engine_adapter::EngineAdapter;
+use crate::utils::TrackerUpdater;
 use crate::Result;
 use gosh_dl::{DownloadEngine, DownloadEvent, EngineConfig};
 use serde_json::Value;
@@ -16,6 +17,7 @@ pub struct AppState {
     close_to_tray: Arc<AtomicBool>,
     event_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
     data_dir: Arc<RwLock<Option<PathBuf>>>,
+    tracker_updater: Arc<RwLock<TrackerUpdater>>,
 }
 
 impl AppState {
@@ -27,6 +29,7 @@ impl AppState {
             close_to_tray: Arc::new(AtomicBool::new(true)),
             event_handle: Arc::new(RwLock::new(None)),
             data_dir: Arc::new(RwLock::new(None)),
+            tracker_updater: Arc::new(RwLock::new(TrackerUpdater::new())),
         }
     }
 
@@ -146,6 +149,10 @@ impl AppState {
             .await
             .clone()
             .ok_or(crate::Error::Database("Database not initialized".into()))
+    }
+
+    pub fn get_tracker_updater(&self) -> Arc<RwLock<TrackerUpdater>> {
+        self.tracker_updater.clone()
     }
 
     pub async fn shutdown(&self) -> Result<()> {

@@ -1,6 +1,7 @@
 //! Types module - frontend-facing types for Gosh-Fetch
 //!
 //! These types define the API contract between the backend and the frontend.
+//! Used by both the Rust engine sidecar and the Electron frontend.
 
 use serde::{Deserialize, Serialize};
 
@@ -59,12 +60,12 @@ pub struct DownloadOptions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalStat {
-    pub download_speed: String,
-    pub upload_speed: String,
-    pub num_active: String,
-    pub num_waiting: String,
-    pub num_stopped: String,
-    pub num_stopped_total: String,
+    pub download_speed: u64,
+    pub upload_speed: u64,
+    pub num_active: u32,
+    pub num_waiting: u32,
+    pub num_stopped: u32,
+    pub num_stopped_total: u32,
 }
 
 /// Torrent file information (for display before adding)
@@ -196,5 +197,78 @@ impl std::fmt::Display for DownloadState {
             DownloadState::Error => write!(f, "error"),
             DownloadState::Removed => write!(f, "removed"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_download_state_from_str() {
+        assert_eq!(DownloadState::from("active"), DownloadState::Active);
+        assert_eq!(DownloadState::from("waiting"), DownloadState::Waiting);
+        assert_eq!(DownloadState::from("paused"), DownloadState::Paused);
+        assert_eq!(DownloadState::from("complete"), DownloadState::Complete);
+        assert_eq!(DownloadState::from("error"), DownloadState::Error);
+        assert_eq!(DownloadState::from("removed"), DownloadState::Removed);
+        assert_eq!(DownloadState::from("unknown"), DownloadState::Waiting);
+    }
+
+    #[test]
+    fn test_download_state_display() {
+        assert_eq!(DownloadState::Active.to_string(), "active");
+        assert_eq!(DownloadState::Waiting.to_string(), "waiting");
+        assert_eq!(DownloadState::Paused.to_string(), "paused");
+        assert_eq!(DownloadState::Complete.to_string(), "complete");
+        assert_eq!(DownloadState::Error.to_string(), "error");
+        assert_eq!(DownloadState::Removed.to_string(), "removed");
+    }
+
+    #[test]
+    fn test_download_type_display() {
+        assert_eq!(DownloadType::Http.to_string(), "http");
+        assert_eq!(DownloadType::Torrent.to_string(), "torrent");
+        assert_eq!(DownloadType::Magnet.to_string(), "magnet");
+    }
+
+    #[test]
+    fn test_download_state_round_trip() {
+        for state in [
+            DownloadState::Active,
+            DownloadState::Waiting,
+            DownloadState::Paused,
+            DownloadState::Complete,
+            DownloadState::Error,
+            DownloadState::Removed,
+        ] {
+            let s = state.to_string();
+            assert_eq!(DownloadState::from(s.as_str()), state);
+        }
+    }
+
+    #[test]
+    fn test_global_stat_serialization() {
+        let stat = GlobalStat {
+            download_speed: 1024,
+            upload_speed: 512,
+            num_active: 3,
+            num_waiting: 1,
+            num_stopped: 0,
+            num_stopped_total: 2,
+        };
+        let json = serde_json::to_value(&stat).unwrap();
+        assert_eq!(json["downloadSpeed"], 1024);
+        assert_eq!(json["uploadSpeed"], 512);
+        assert_eq!(json["numActive"], 3);
+    }
+
+    #[test]
+    fn test_download_options_default() {
+        let opts = DownloadOptions::default();
+        assert!(opts.dir.is_none());
+        assert!(opts.out.is_none());
+        assert!(opts.split.is_none());
+        assert!(opts.priority.is_none());
     }
 }

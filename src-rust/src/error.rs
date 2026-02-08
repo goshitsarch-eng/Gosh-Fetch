@@ -71,3 +71,31 @@ impl Serialize for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_codes() {
+        assert_eq!(Error::Engine("test".into()).code(), -1);
+        assert_eq!(Error::EngineNotInitialized.code(), -2);
+        assert_eq!(Error::Database("test".into()).code(), -3);
+        assert_eq!(Error::InvalidInput("test".into()).code(), -7);
+        assert_eq!(Error::NotFound("test".into()).code(), -8);
+        assert_eq!(Error::Network("test".into()).code(), -9);
+    }
+
+    #[test]
+    fn test_error_display() {
+        let e = Error::InvalidInput("bad url".into());
+        assert_eq!(e.to_string(), "invalid input: bad url");
+    }
+
+    #[test]
+    fn test_error_serialize() {
+        let e = Error::NotFound("missing item".into());
+        let json = serde_json::to_string(&e).unwrap();
+        assert!(json.contains("not found: missing item"));
+    }
+}

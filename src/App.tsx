@@ -92,7 +92,7 @@ export default function App() {
     dispatch(setTheme(saved ?? 'dark'));
 
     // Listen for events from sidecar via Electron
-    window.electronAPI.onEvent((event: string, data: any) => {
+    const cleanupEvent = window.electronAPI.onEvent((event: string, data: any) => {
       if (event === 'global-stats') {
         dispatch(updateStats(data));
       }
@@ -104,12 +104,24 @@ export default function App() {
           dispatch(setDisconnected());
         }
       }
+      // Push-based download list refresh on state changes
+      if (
+        event === 'download:added' ||
+        event === 'download:completed' ||
+        event === 'download:failed' ||
+        event === 'download:removed' ||
+        event === 'download:paused' ||
+        event === 'download:resumed' ||
+        event === 'download:state-changed'
+      ) {
+        dispatch(fetchDownloads());
+      }
     });
 
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      window.electronAPI.removeAllListeners('rpc-event');
+      cleanupEvent();
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [dispatch, navigate, handleKeyDown]);
