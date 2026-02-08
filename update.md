@@ -118,9 +118,9 @@
 
 ---
 
-## Phase 2: Platform Parity
+## Phase 2: Platform Parity --- COMPLETED
 
-### 2.1 Fix Windows Sidecar Bundling
+### 2.1 Fix Windows Sidecar Bundling --- DONE
 - **File**: `electron-builder.yml:14-17`
 - **Severity**: CRITICAL
 - **Found by**: Cross-Platform
@@ -133,7 +133,7 @@
   ```
   Or use separate platform entries.
 
-### 2.2 Add macOS Application Menu
+### 2.2 Add macOS Application Menu --- DONE
 - **File**: `src-electron/main.ts` (missing)
 - **Severity**: CRITICAL
 - **Found by**: Cross-Platform
@@ -150,7 +150,7 @@
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
   ```
 
-### 2.3 Add macOS Intel (x86_64) Builds
+### 2.3 Add macOS Intel (x86_64) Builds --- DONE
 - **File**: `.github/workflows/build-macos.yml:37`
 - **Severity**: CRITICAL
 - **Found by**: Cross-Platform
@@ -163,21 +163,21 @@
   ```
   Or build universal binary with `lipo`.
 
-### 2.4 Fix Windows Graceful Shutdown
+### 2.4 Fix Windows Graceful Shutdown --- DONE
 - **File**: `src-electron/sidecar.ts:154`
 - **Severity**: HIGH
 - **Found by**: Cross-Platform
 - **Details**: `this.process.kill('SIGTERM')` on Windows translates to `TerminateProcess()` — an ungraceful kill. The Rust binary's stdin is closed first (line 140) which should trigger graceful exit, but SIGTERM immediately after may kill it before cleanup.
 - **Fix**: On Windows, rely solely on stdin EOF for graceful shutdown. Only send SIGTERM after a timeout if the process hasn't exited.
 
-### 2.5 Fix Data Directory Fallback
+### 2.5 Fix Data Directory Fallback --- DONE
 - **File**: `src-rust/src/main.rs:9-11`
 - **Severity**: HIGH
 - **Found by**: Cross-Platform
 - **Details**: Fallback path `.local/share` is Linux-specific. On Windows this path makes no sense.
 - **Fix**: Use a platform-aware fallback or just unwrap with a clear error if `dirs::data_dir()` returns `None`.
 
-### 2.6 Fix Download Path Windows Tilde
+### 2.6 Fix Download Path Windows Tilde --- DONE
 - **File**: `src-rust/migrations/001_initial.sql:52`
 - **File**: `src-rust/src/db/mod.rs:39`
 - **Severity**: HIGH
@@ -185,21 +185,21 @@
 - **Details**: `~/Downloads` stored as literal string in DB seed and as fallback. The `~` tilde is never expanded on Windows, which would create a literal `~` directory.
 - **Fix**: Always use `dirs::download_dir()` and handle the `None` case with a platform-appropriate fallback.
 
-### 2.7 Add Windows Filename Validation
+### 2.7 Add Windows Filename Validation --- DONE
 - **File**: `src-rust/src/engine_adapter.rs` (missing)
 - **Severity**: HIGH
 - **Found by**: Cross-Platform, Devil's Advocate
 - **Details**: No validation for Windows reserved filenames (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`) or illegal characters (`< > : " / \ | ? *`). Downloads with these names will fail on Windows.
 - **Fix**: Add a filename sanitization function that replaces illegal characters and reserved names.
 
-### 2.8 Code Signing Setup
+### 2.8 Code Signing Setup --- DONE
 - **File**: `electron-builder.yml`, CI workflows
 - **Severity**: HIGH
 - **Found by**: Cross-Platform, Electron Specialist
 - **Details**: No code signing configured for any platform. macOS Gatekeeper blocks unsigned apps. Windows SmartScreen warns. macOS CI already names the artifact `macos-dmg-unsigned`.
 - **Fix**: Set up code signing certificates for macOS (notarization) and Windows (EV certificate). Add `afterSign` hook in electron-builder config.
 
-### 2.9 Add Auto-Update Mechanism
+### 2.9 Add Auto-Update Mechanism --- DONE
 - **File**: `package.json` (missing dependency)
 - **File**: `electron-builder.yml` (missing `publish` field)
 - **Severity**: MEDIUM
@@ -214,7 +214,7 @@
   ```
   Add auto-update check in `main.ts`.
 
-### 2.10 Register Protocol Handlers
+### 2.10 Register Protocol Handlers --- DONE
 - **File**: `src-electron/main.ts` (missing)
 - **File**: `electron-builder.yml` (missing `protocols` section)
 - **Severity**: MEDIUM
@@ -235,35 +235,35 @@
       schemes: [magnet]
   ```
 
-### 2.11 Add OS Dark Mode Detection
+### 2.11 Add OS Dark Mode Detection --- DONE
 - **File**: `src-electron/main.ts` (missing)
 - **Severity**: MEDIUM
 - **Found by**: Cross-Platform
 - **Details**: Theme is stored as user preference but there's no integration with `nativeTheme.shouldUseDarkColors`. App ignores OS dark/light mode setting.
 - **Fix**: Add `nativeTheme` listener and default to system preference on first run.
 
-### 2.12 Fix Tray Click on macOS
+### 2.12 Fix Tray Click on macOS --- DONE
 - **File**: `src-electron/main.ts:142`
 - **Severity**: LOW
 - **Found by**: Cross-Platform
 - **Details**: `tray.on('click')` works on Windows/Linux but is not fired on macOS. macOS only supports right-click context menus on tray icons.
 - **Fix**: Use `tray.on('double-click')` on macOS, or rely solely on the context menu.
 
-### 2.13 Remove Tauri Dependencies from Linux CI
+### 2.13 Remove Tauri Dependencies from Linux CI --- DONE
 - **File**: `.github/workflows/build-linux.yml:40-46`
 - **Severity**: LOW
 - **Found by**: Cross-Platform
 - **Details**: CI installs `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev` — all Tauri dependencies, not needed for Electron.
 - **Fix**: Remove these packages from the CI install step.
 
-### 2.14 Add Window State Persistence
+### 2.14 Add Window State Persistence --- DONE
 - **File**: `src-electron/main.ts:48-62`
 - **Severity**: MEDIUM
 - **Found by**: Electron Specialist, Designer
 - **Details**: Window position, size, and maximized state not saved between sessions.
 - **Fix**: Use `electron-window-state` package or manually persist bounds.
 
-### 2.15 Fix Copyright Year
+### 2.15 Fix Copyright Year --- DONE
 - **File**: `electron-builder.yml:3`
 - **Severity**: LOW
 - **Found by**: Cross-Platform
@@ -272,9 +272,9 @@
 
 ---
 
-## Phase 3: Feature Exposure
+## Phase 3: Feature Exposure --- COMPLETED
 
-### 3.1 Update gosh-dl Dependency
+### 3.1 Update gosh-dl Dependency --- DONE
 - **File**: `src-rust/Cargo.toml:15`
 - **Severity**: HIGH
 - **Found by**: Engine Specialist, Networking Specialist
@@ -284,32 +284,32 @@
   gosh-dl = { git = "https://github.com/goshitsarch-eng/gosh-dl", tag = "v0.2.2" }
   ```
 
-### 3.2 Expose Download Priority Queue
+### 3.2 Expose Download Priority Queue --- DONE
 - **Found by**: Engine Specialist
 - **Details**: gosh-dl has `DownloadPriority: Critical/High/Normal/Low` with a full priority queue. Gosh-Fetch never sets priorities — all downloads use default Normal.
 - **Fix**: Add `priority` parameter to `add_download` RPC method and `DownloadOptions`. Add priority selector in AddDownloadModal UI.
 
-### 3.3 Expose Proxy Support
+### 3.3 Expose Proxy Support --- DONE
 - **Found by**: Networking Specialist, Engine Specialist
 - **Details**: gosh-dl supports HTTP, HTTPS, and SOCKS5 proxies. No proxy configuration anywhere in Gosh-Fetch settings or engine config.
 - **Fix**: Add to Settings: proxy type (none/system/http/socks5), proxy host, proxy port, proxy auth credentials. Pass through to `gosh-dl`'s `HttpConfig`.
 
-### 3.4 Expose Checksum Verification
+### 3.4 Expose Checksum Verification --- DONE
 - **Found by**: Engine Specialist
 - **Details**: gosh-dl supports MD5/SHA256 checksum verification after download. No RPC method to set expected checksums or trigger verification.
 - **Fix**: Add `checksum` field to `DownloadOptions` (format: `sha256:abc123...`). Add verification status display in DownloadCard.
 
-### 3.5 Expose Bandwidth Scheduling
+### 3.5 Expose Bandwidth Scheduling --- DONE
 - **Found by**: Engine Specialist
 - **Details**: gosh-dl has `BandwidthScheduler` with `ScheduleRule` for time-based bandwidth rules. Gosh-Fetch only exposes simple on/off speed limits.
 - **Fix**: Add a schedule configuration UI in Settings with time-of-day rules.
 
-### 3.6 Expose Mirror/Failover Support
+### 3.6 Expose Mirror/Failover Support --- DONE
 - **Found by**: Engine Specialist
 - **Details**: gosh-dl has `MirrorManager` for multiple mirror URLs per download with automatic failover. Gosh-Fetch only passes a single URL.
 - **Fix**: Add multi-URL input in AddDownloadModal. Pass as mirror list to engine.
 
-### 3.7 Wire split_count to Engine
+### 3.7 Wire split_count to Engine --- DONE
 - **File**: `src-rust/src/settings.rs:43-75`
 - **File**: `src-rust/src/db/mod.rs:43`
 - **Severity**: HIGH
@@ -317,7 +317,7 @@
 - **Details**: `split_count` is stored in settings (default 16) but NEVER passed to the engine in `apply_settings_to_engine`. Users can change this setting but it has no effect.
 - **Fix**: Add `split_count` to the engine config application in `settings.rs`.
 
-### 3.8 Remove or Implement FTP Support
+### 3.8 Remove or Implement FTP Support --- DONE
 - **File**: `src-rust/src/engine_adapter.rs:58`
 - **File**: `src-rust/src/db/mod.rs:260-271`
 - **Severity**: HIGH
@@ -325,7 +325,7 @@
 - **Details**: `DownloadType` enum includes `Ftp` and URL detection recognizes `ftp://` and `sftp://`, but `add_download` routes ALL URLs to `engine.add_http()`. FTP is a label-only fake feature.
 - **Fix**: Either implement actual FTP support or remove `Ftp` from the type enum and URL detection to avoid misleading users.
 
-### 3.9 Expose Download Options in AddDownloadModal
+### 3.9 Expose Download Options in AddDownloadModal --- DONE
 - **File**: `src/components/downloads/AddDownloadModal.tsx`
 - **File**: `src/lib/types/download.ts:98-111`
 - **Severity**: HIGH
@@ -339,62 +339,62 @@
   - Connection count per download
   - For torrents: file selection tree
 
-### 3.10 Add Retry Mechanism for Failed Downloads
+### 3.10 Add Retry Mechanism for Failed Downloads --- DONE
 - **File**: `src/components/downloads/DownloadCard.tsx:101-112`
 - **Severity**: HIGH
 - **Found by**: UX Specialist
 - **Details**: Error downloads show in the filter but DownloadCard only shows pause/resume/open-folder/delete actions. No "retry" button for error state.
 - **Fix**: Add a retry button that calls `resume_download` or re-adds the download URL. Display `ErrorKind` information (network_error, timeout, auth_required from `download.ts:7-15`).
 
-### 3.11 Expose Sequential Download Mode
+### 3.11 Expose Sequential Download Mode --- DONE
 - **Found by**: Engine Specialist
 - **Details**: gosh-dl supports sequential download for streaming media. Not exposed in Gosh-Fetch.
 - **Fix**: Add toggle in download options for sequential mode.
 
-### 3.12 Expose File Allocation Modes
+### 3.12 Expose File Allocation Modes --- DONE
 - **Found by**: Engine Specialist
 - **Details**: gosh-dl supports `AllocationMode: None/Sparse/Full`. Never configured.
 - **Fix**: Add to advanced settings.
 
-### 3.13 Add Timeout/Retry Configuration
+### 3.13 Add Timeout/Retry Configuration --- DONE
 - **Found by**: Networking Specialist
 - **Details**: No connect timeout, read timeout, retry count, or backoff strategy is configurable.
 - **Fix**: Add to Settings: connect timeout (default 30s), read timeout (default 60s), max retries (default 3), retry delay mode (exponential backoff).
 
-### 3.14 Update User-Agent Presets
+### 3.14 Update User-Agent Presets --- DONE
 - **File**: `src-rust/src/commands/settings.rs:77-87`
 - **Severity**: MEDIUM
 - **Found by**: Networking Specialist
 - **Details**: Chrome 120 and Firefox 121 presets are from late 2023 — now outdated, could trigger bot detection.
 - **Fix**: Update to current browser versions (Chrome 133+, Firefox 135+).
 
-### 3.15 Reduce Default Connections Per Server
+### 3.15 Reduce Default Connections Per Server --- DONE
 - **File**: `src-rust/src/db/mod.rs:42`
 - **Severity**: MEDIUM
 - **Found by**: Networking Specialist
 - **Details**: Default 16 connections per server is too aggressive — many servers will rate-limit or block.
 - **Fix**: Reduce default to 4-8. Keep 16 as a user-configurable maximum.
 
-### 3.16 Add Batch/Multi-URL Download Support
+### 3.16 Add Batch/Multi-URL Download Support --- DONE
 - **File**: `src/lib/api.ts:31-32`
 - **Severity**: MEDIUM
 - **Found by**: UX Specialist
 - **Details**: The API has `addUrls` for multiple URLs but the UI only supports one URL at a time. No textarea for pasting multiple URLs.
 - **Fix**: Add a multi-URL textarea mode in AddDownloadModal.
 
-### 3.17 Add Multi-Select Batch Operations
+### 3.17 Add Multi-Select Batch Operations --- DONE
 - **Severity**: MEDIUM
 - **Found by**: UX Specialist
 - **Details**: No way to select multiple downloads for batch pause/resume/delete.
 - **Fix**: Add checkboxes on download cards, select-all, and batch action toolbar.
 
-### 3.18 Add Download Queue Reordering
+### 3.18 Add Download Queue Reordering --- DONE
 - **Severity**: MEDIUM
 - **Found by**: UX Specialist
 - **Details**: Downloads displayed in order received. No drag-and-drop reordering.
 - **Fix**: Add drag-and-drop or up/down buttons. Wire to priority system from 3.2.
 
-### 3.19 Fix Torrent File Selection Post-Add
+### 3.19 Fix Torrent File Selection Post-Add --- DONE
 - **File**: `src-rust/src/commands/torrent.rs:48-56`
 - **Severity**: LOW
 - **Found by**: Engine Specialist
