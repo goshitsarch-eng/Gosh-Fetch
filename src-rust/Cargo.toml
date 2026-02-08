@@ -1,0 +1,37 @@
+[package]
+name = "gosh-fetch-engine"
+version = "1.1.1"
+description = "Gosh Fetch - a modern download manager with native Rust engine"
+authors = ["Gosh"]
+license = "AGPL-3.0"
+repository = "https://github.com/goshitsarch-eng/Gosh-Fetch"
+edition = "2021"
+
+[[bin]]
+name = "gosh-fetch-engine"
+path = "src/main.rs"
+
+[dependencies]
+gosh-dl = { git = "https://github.com/goshitsarch-eng/gosh-dl" }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+log = "0.4"
+env_logger = "0.11"
+reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22"
+rand = "0.8"
+hex = "0.4"
+dirs = "5"
+urlencoding = "2"
+uuid = "1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

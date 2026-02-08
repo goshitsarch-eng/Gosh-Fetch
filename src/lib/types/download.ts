@@ -1,9 +1,7 @@
 export type DownloadType = 'http' | 'ftp' | 'torrent' | 'magnet';
 
-// Download state from backend engine
 export type DownloadState = 'active' | 'waiting' | 'paused' | 'complete' | 'error' | 'removed';
 
-// New normalized app state with better UX
 export type AppDownloadStateType = 'queued' | 'downloading' | 'stalled' | 'paused' | 'completed' | 'error' | 'retrying';
 
 export type ErrorKind =
@@ -18,10 +16,8 @@ export type ErrorKind =
 
 export interface AppDownloadState {
   state: AppDownloadStateType;
-  // For error state
   kind?: ErrorKind;
   message?: string;
-  // For retrying state
   attempt?: number;
   maxAttempts?: number;
 }
@@ -35,7 +31,6 @@ export interface Download {
   infoHash: string | null;
   downloadType: DownloadType;
   status: DownloadState;
-  // New normalized app state (frontend can use this for better display)
   appState?: AppDownloadState;
   totalSize: number;
   completedSize: number;
@@ -50,7 +45,6 @@ export interface Download {
   selectedFiles: number[] | null;
 }
 
-// Helper to get user-friendly status text
 export function getStatusText(download: Download): string {
   if (download.appState) {
     switch (download.appState.state) {
@@ -64,7 +58,6 @@ export function getStatusText(download: Download): string {
       default: return 'Unknown';
     }
   }
-  // Fallback to legacy status
   switch (download.status) {
     case 'active': return download.downloadSpeed > 0 ? 'Downloading' : 'Stalled';
     case 'waiting': return 'Queued';
@@ -76,7 +69,6 @@ export function getStatusText(download: Download): string {
   }
 }
 
-// Helper to get status color class
 export function getStatusColor(download: Download): string {
   const state = download.appState?.state || download.status;
   switch (state) {

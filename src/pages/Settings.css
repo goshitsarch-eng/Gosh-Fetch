@@ -1,0 +1,97 @@
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-lg);
+}
+
+.settings-section {
+  margin-bottom: var(--space-xl);
+}
+
+.settings-section h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-sm);
+}
+
+.setting-info {
+  flex: 1;
+}
+
+.setting-info label {
+  display: block;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: var(--space-xs);
+}
+
+.setting-info p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.setting-control {
+  flex-shrink: 0;
+  margin-left: var(--space-lg);
+}
+
+.setting-control input[type="number"] {
+  width: 80px;
+  text-align: center;
+}
+
+.setting-control input[type="range"] {
+  width: 200px;
+}
+
+.file-control {
+  display: flex;
+  gap: var(--space-sm);
+  flex: 1;
+  max-width: 400px;
+}
+
+.file-control input {
+  flex: 1;
+  font-size: 12px;
+}
+
+.user-agent-control select {
+  width: 200px;
+}
+
+.settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border-top: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+}
+
+.save-message {
+  font-size: 13px;
+  color: var(--color-success);
+}
+
+.save-message.error {
+  color: var(--color-destructive);
+}

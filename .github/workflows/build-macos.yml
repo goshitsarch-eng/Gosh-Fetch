@@ -21,40 +21,17 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Generate icons from logo
-        if: ${{ hashFiles('src-tauri/icons/icon.icns') == '' }}
-        run: |
-          sips -z 32 32 src-tauri/icons/logo.png --out src-tauri/icons/32x32.png
-          sips -z 128 128 src-tauri/icons/logo.png --out src-tauri/icons/128x128.png
-          sips -z 256 256 src-tauri/icons/logo.png --out src-tauri/icons/128x128@2x.png
-          sips -z 256 256 src-tauri/icons/logo.png --out src-tauri/icons/icon.png
-
-          mkdir -p icon.iconset
-          sips -z 16 16 src-tauri/icons/logo.png --out icon.iconset/icon_16x16.png
-          sips -z 32 32 src-tauri/icons/logo.png --out icon.iconset/icon_16x16@2x.png
-          sips -z 32 32 src-tauri/icons/logo.png --out icon.iconset/icon_32x32.png
-          sips -z 64 64 src-tauri/icons/logo.png --out icon.iconset/icon_32x32@2x.png
-          sips -z 128 128 src-tauri/icons/logo.png --out icon.iconset/icon_128x128.png
-          sips -z 256 256 src-tauri/icons/logo.png --out icon.iconset/icon_128x128@2x.png
-          sips -z 256 256 src-tauri/icons/logo.png --out icon.iconset/icon_256x256.png
-          sips -z 512 512 src-tauri/icons/logo.png --out icon.iconset/icon_256x256@2x.png
-          sips -z 512 512 src-tauri/icons/logo.png --out icon.iconset/icon_512x512.png
-          sips -z 1024 1024 src-tauri/icons/logo.png --out icon.iconset/icon_512x512@2x.png
-          iconutil -c icns icon.iconset -o src-tauri/icons/icon.icns
-          rm -rf icon.iconset
-
-      - name: Set up Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
           cache: 'npm'
 
-      - name: Set up Rust
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
@@ -62,24 +39,35 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
-          key: aarch64-apple-darwin
+          workspaces: './src-rust -> target'
+          key: macos
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build app
-        run: npx tauri build --target aarch64-apple-darwin
+      - name: Build Rust sidecar
+        run: cargo build --release --manifest-path src-rust/Cargo.toml
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Electron main
+        run: npm run build:electron
+
+      - name: Package with electron-builder
+        run: npx electron-builder --mac dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg-arm64-unsigned
-          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          name: macos-dmg-unsigned
+          path: release/*.dmg
 
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-          fail_on_unmatched_files: true
+          files: release/*.dmg
+          fail_on_unmatched_files: false

@@ -1,0 +1,31 @@
+import { contextBridge, ipcRenderer } from 'electron';
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  invoke: (method: string, params?: any): Promise<any> => {
+    return ipcRenderer.invoke('rpc-invoke', method, params);
+  },
+
+  onEvent: (callback: (event: string, data: any) => void): void => {
+    ipcRenderer.on('rpc-event', (_event, eventName: string, data: any) => {
+      callback(eventName, data);
+    });
+  },
+
+  removeAllListeners: (channel: string): void => {
+    ipcRenderer.removeAllListeners(channel);
+  },
+
+  selectFile: (options?: { filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null> => {
+    return ipcRenderer.invoke('select-file', options);
+  },
+
+  selectDirectory: (): Promise<string | null> => {
+    return ipcRenderer.invoke('select-directory');
+  },
+
+  showNotification: (title: string, body: string): Promise<void> => {
+    return ipcRenderer.invoke('show-notification', title, body);
+  },
+
+  platform: process.platform,
+});

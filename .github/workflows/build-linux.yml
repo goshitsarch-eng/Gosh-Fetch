@@ -24,11 +24,9 @@ jobs:
           - runner: ubuntu-24.04
             arch: x64
             artifact-suffix: amd64
-            target-triple: x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04-arm
             arch: arm64
             artifact-suffix: arm64
-            target-triple: aarch64-unknown-linux-gnu
 
     runs-on: ${{ matrix.runner }}
 
@@ -41,23 +39,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf \
-            rpm \
-            libunwind-dev \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev \
-            imagemagick
-
-      - name: Generate icons from logo
-        if: ${{ hashFiles('src-tauri/icons/icon.png') == '' }}
-        run: |
-          convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
-          convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
-          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
-          convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
+            rpm
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -71,163 +57,41 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: './src-rust -> target'
           key: linux-${{ matrix.arch }}
 
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build Tauri app
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            npx tauri build --bundles appimage
-          else
-            npx tauri build --bundles deb,rpm,appimage
-          fi
+      - name: Build Rust sidecar
+        run: cargo build --release --manifest-path src-rust/Cargo.toml
 
-      - name: Upload DEB
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build Electron main
+        run: npm run build:electron
+
+      - name: Package with electron-builder
+        run: npx electron-builder --linux AppImage deb rpm
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-deb-${{ matrix.artifact-suffix }}
-          path: src-tauri/target/release/bundle/deb/*.deb
-
-      - name: Upload RPM
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-rpm-${{ matrix.artifact-suffix }}
-          path: src-tauri/target/release/bundle/rpm/*.rpm
-
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-appimage-${{ matrix.artifact-suffix }}
-          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          name: linux-${{ matrix.artifact-suffix }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
 
       - name: Upload to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-            src-tauri/target/release/bundle/appimage/*.AppImage
-          fail_on_unmatched_files: true
-
-  build-flatpak:
-    timeout-minutes: 45
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libunwind-dev \
-            libgstreamer1.0-dev \
-            libgstreamer-plugins-base1.0-dev \
-            imagemagick \
-            flatpak \
-            flatpak-builder
-
-      - name: Setup Flatpak
-        run: |
-          sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-
-      - name: Generate icons from logo
-        run: |
-          [ -f src-tauri/icons/32x32.png ] || convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
-          [ -f src-tauri/icons/128x128.png ] || convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
-          [ -f src-tauri/icons/128x128@2x.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
-          [ -f src-tauri/icons/icon.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
-          [ -f src-tauri/icons/512x512.png ] || convert src-tauri/icons/logo.png -resize 512x512 src-tauri/icons/512x512.png
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: 'npm'
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './src-tauri -> target'
-          key: flatpak
-
-      - name: Build app
-        run: |
-          npm ci
-          npm run build
-          cargo build --release --manifest-path src-tauri/Cargo.toml
-
-      - name: Build Flatpak
-        run: |
-          cd .github/flatpak
-          flatpak-builder --force-clean --repo=repo build-dir com.gosh.fetch.yml
-          flatpak build-bundle repo ../../gosh-fetch.flatpak com.gosh.fetch
-
-      - name: Upload Flatpak
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-flatpak-x64
-          path: gosh-fetch.flatpak
-
-      - name: Upload to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: gosh-fetch.flatpak
-          fail_on_unmatched_files: true
-
-  build-snap:
-    timeout-minutes: 30
-    runs-on: ubuntu-24.04
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
-
-      - name: Generate icons from logo
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y imagemagick
-          [ -f src-tauri/icons/32x32.png ] || convert src-tauri/icons/logo.png -resize 32x32 src-tauri/icons/32x32.png
-          [ -f src-tauri/icons/128x128.png ] || convert src-tauri/icons/logo.png -resize 128x128 src-tauri/icons/128x128.png
-          [ -f src-tauri/icons/128x128@2x.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/128x128@2x.png
-          [ -f src-tauri/icons/icon.png ] || convert src-tauri/icons/logo.png -resize 256x256 src-tauri/icons/icon.png
-
-      - name: Setup Snap build
-        run: |
-          mkdir -p snap
-          cp .github/snap/snapcraft.yaml snap/
-
-      - name: Build Snap
-        uses: snapcore/action-build@v1
-        id: snap-build
-
-      - name: Upload Snap
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-snap-x64
-          path: ${{ steps.snap-build.outputs.snap }}
-
-      - name: Upload to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.snap-build.outputs.snap }}
-          fail_on_unmatched_files: true
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+          fail_on_unmatched_files: false

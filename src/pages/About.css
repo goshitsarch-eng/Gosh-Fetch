@@ -1,0 +1,125 @@
+.about-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-lg);
+}
+
+.app-hero {
+  text-align: center;
+  padding: var(--space-xl) 0;
+  margin-bottom: var(--space-lg);
+}
+
+.app-icon {
+  font-size: 64px;
+  color: var(--color-primary);
+  margin-bottom: var(--space-md);
+}
+
+.app-hero h2 {
+  font-size: 24px;
+  margin: 0 0 var(--space-sm);
+}
+
+.app-version {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-md);
+}
+
+.app-description {
+  font-size: 16px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.about-section {
+  margin-bottom: var(--space-lg);
+}
+
+.about-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--space-sm);
+}
+
+.attribution-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.attribution-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.version-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+
+.status-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+.status-badge.running {
+  background: color-mix(in srgb, var(--color-success) 20%, transparent);
+  color: var(--color-success);
+}
+
+.status-badge.stopped {
+  background: color-mix(in srgb, var(--color-destructive) 20%, transparent);
+  color: var(--color-destructive);
+}
+
+.attribution-license {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.feature-list,
+.privacy-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.feature-list li,
+.privacy-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  color: var(--text-secondary);
+}
+
+.feature-list li::before {
+  content: '>';
+  color: var(--color-primary);
+  font-weight: bold;
+}
+
+.privacy-list li::before {
+  content: '\2713';
+  color: var(--color-success);
+  font-weight: bold;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-muted);
+}

@@ -1,0 +1,79 @@
+.mode-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-lg);
+  padding: var(--space-xs);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.mode-tab {
+  flex: 1;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.mode-tab:hover {
+  color: var(--text-primary);
+}
+
+.mode-tab.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.file-input {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.file-input input {
+  flex: 1;
+}
+
+.help-text {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.error-message {
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(218, 54, 51, 0.08);
+  border: 1px solid rgba(218, 54, 51, 0.19);
+  border-radius: var(--radius-md);
+  color: var(--color-destructive);
+  font-size: 13px;
+  margin-top: var(--space-md);
+}

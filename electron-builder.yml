@@ -1,0 +1,50 @@
+appId: com.gosh.fetch
+productName: Gosh-Fetch
+copyright: Copyright (C) 2024 Gosh
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+
+extraResources:
+  - from: src-rust/target/release/gosh-fetch-engine
+    to: bin/gosh-fetch-engine
+    filter:
+      - "!*.d"
+      - "!*.pdb"
+  - from: src-rust/icons/
+    to: icons/
+
+linux:
+  target:
+    - AppImage
+    - deb
+    - rpm
+  category: Network
+  icon: src-rust/icons/icon.png
+  desktop:
+    Name: Gosh-Fetch
+    Comment: Modern download manager
+    Categories: Network;FileTransfer;
+    StartupWMClass: gosh-fetch
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.utilities
+  icon: src-rust/icons/icon.icns
+
+win:
+  target:
+    - nsis
+    - portable
+  icon: src-rust/icons/icon.ico
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
