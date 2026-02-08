@@ -202,17 +202,20 @@ function saveWindowState(win: BrowserWindow): void {
   }
 }
 
-// --- macOS application menu ---
+// --- Application menu ---
 
 function createAppMenu(): void {
-  if (process.platform !== 'darwin') return;
-  const template: MenuItemConstructorOptions[] = [
-    { role: 'appMenu' },
-    { role: 'editMenu' },
-    { role: 'viewMenu' },
-    { role: 'windowMenu' },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  if (process.platform === 'darwin') {
+    const template: MenuItemConstructorOptions[] = [
+      { role: 'appMenu' },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      { role: 'windowMenu' },
+    ];
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  } else {
+    Menu.setApplicationMenu(null);
+  }
 }
 
 function createWindow(): void {
