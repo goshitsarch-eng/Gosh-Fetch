@@ -7,7 +7,18 @@ async fn main() {
     env_logger::init();
 
     let data_dir = dirs::data_dir()
-        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
+        .or_else(|| {
+            dirs::home_dir().map(|h| {
+                if cfg!(target_os = "macos") {
+                    h.join("Library/Application Support")
+                } else if cfg!(target_os = "windows") {
+                    h.join("AppData/Roaming")
+                } else {
+                    h.join(".local/share")
+                }
+            })
+        })
+        .expect("Could not determine platform data directory")
         .join("com.gosh.fetch");
 
     let (event_tx, event_rx) = broadcast::channel(256);

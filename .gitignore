@@ -41,20 +41,8 @@ lerna-debug.log*
 .env.*
 !.env.example
 
-# Tauri
-src-tauri/WixTools/
-src-tauri/gen/
-src-tauri/*.deb
-src-tauri/*.AppImage
-src-tauri/*.dmg
-src-tauri/*.msi
-src-tauri/*.exe
-src-tauri/*.iso
-src-tauri/*.meta4
-
 # Generated
 *.tsbuildinfo
-.svelte-kit/
 
 # Test coverage
 coverage/

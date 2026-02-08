@@ -234,6 +234,38 @@ fn parse_gid(gid: &str) -> Result<DownloadId, gosh_dl::EngineError> {
     })
 }
 
+/// Sanitize a filename for cross-platform compatibility.
+/// Replaces characters illegal on Windows, strips trailing dots/spaces,
+/// and prefixes Windows reserved device names.
+fn sanitize_filename(name: &str) -> String {
+    const ILLEGAL: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    const RESERVED: &[&str] = &[
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    let mut sanitized: String = name
+        .chars()
+        .map(|c| if ILLEGAL.contains(&c) || c.is_control() { '_' } else { c })
+        .collect();
+
+    // Strip trailing dots and spaces (Windows doesn't allow them)
+    sanitized = sanitized.trim_end_matches(|c: char| c == '.' || c == ' ').to_string();
+
+    // Prefix Windows reserved device names
+    let stem = sanitized.split('.').next().unwrap_or("");
+    if RESERVED.iter().any(|r| r.eq_ignore_ascii_case(stem)) {
+        sanitized = format!("_{}", sanitized);
+    }
+
+    if sanitized.is_empty() {
+        sanitized = "download".to_string();
+    }
+
+    sanitized
+}
+
 /// Convert frontend options to gosh-dl options
 fn convert_options(opts: FrontendOptions) -> DownloadOptions {
     let mut headers = Vec::new();
@@ -249,7 +281,7 @@ fn convert_options(opts: FrontendOptions) -> DownloadOptions {
 
     DownloadOptions {
         save_dir: opts.dir.map(PathBuf::from),
-        filename: opts.out,
+        filename: opts.out.map(|f| sanitize_filename(&f)),
         user_agent: opts.user_agent,
         referer: opts.referer,
         headers,
@@ -349,5 +381,39 @@ mod tests {
         assert_eq!(parse_speed("1K"), Some(1024));
         assert_eq!(parse_speed("1M"), Some(1024 * 1024));
         assert_eq!(parse_speed("2G"), Some(2 * 1024 * 1024 * 1024));
+    }
+
+    #[test]
+    fn test_sanitize_filename_illegal_chars() {
+        assert_eq!(sanitize_filename("file<>name"), "file__name");
+        assert_eq!(sanitize_filename("file:name"), "file_name");
+        assert_eq!(sanitize_filename("a|b?c*d"), "a_b_c_d");
+    }
+
+    #[test]
+    fn test_sanitize_filename_trailing_dots_spaces() {
+        assert_eq!(sanitize_filename("file..."), "file");
+        assert_eq!(sanitize_filename("file   "), "file");
+        assert_eq!(sanitize_filename("file. ."), "file");
+    }
+
+    #[test]
+    fn test_sanitize_filename_reserved_names() {
+        assert_eq!(sanitize_filename("CON"), "_CON");
+        assert_eq!(sanitize_filename("con.txt"), "_con.txt");
+        assert_eq!(sanitize_filename("NUL.tar.gz"), "_NUL.tar.gz");
+        assert_eq!(sanitize_filename("LPT1"), "_LPT1");
+    }
+
+    #[test]
+    fn test_sanitize_filename_empty() {
+        assert_eq!(sanitize_filename(""), "download");
+        assert_eq!(sanitize_filename("..."), "download");
+    }
+
+    #[test]
+    fn test_sanitize_filename_normal() {
+        assert_eq!(sanitize_filename("my-file.zip"), "my-file.zip");
+        assert_eq!(sanitize_filename("photo (1).jpg"), "photo (1).jpg");
     }
 }

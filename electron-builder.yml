@@ -1,6 +1,6 @@
 appId: com.gosh.fetch
 productName: Gosh-Fetch
-copyright: Copyright (C) 2024 Gosh
+copyright: Copyright (C) 2026 Gosh
 
 directories:
   output: release
@@ -48,3 +48,18 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+
+publish:
+  provider: github
+  owner: goshitsarch-eng
+  repo: Gosh-Fetch
+
+fileAssociations:
+  - ext: torrent
+    name: BitTorrent File
+    mimeType: application/x-bittorrent
+
+protocols:
+  - name: Magnet Link
+    schemes:
+      - magnet

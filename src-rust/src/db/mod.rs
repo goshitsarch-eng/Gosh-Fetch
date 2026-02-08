@@ -36,7 +36,11 @@ impl Default for Settings {
         Self {
             download_path: dirs::download_dir()
                 .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| "~/Downloads".to_string()),
+                .unwrap_or_else(|| {
+                    dirs::home_dir()
+                        .map(|h| h.join("Downloads").to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Downloads".to_string())
+                }),
             max_concurrent_downloads: 5,
             max_connections_per_server: 16,
             split_count: 16,
@@ -55,6 +59,16 @@ impl Default for Settings {
             delete_files_on_remove: false,
         }
     }
+}
+
+/// Expand leading `~` in a path string to the user's home directory.
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") || path == "~" {
+        if let Some(home) = dirs::home_dir() {
+            return path.replacen("~", &home.to_string_lossy(), 1);
+        }
+    }
+    path.to_string()
 }
 
 impl Database {
@@ -114,7 +128,7 @@ impl Database {
         for row in rows {
             let (key, value) = row?;
             match key.as_str() {
-                "download_path" => settings.download_path = value,
+                "download_path" => settings.download_path = expand_tilde(&value),
                 "max_concurrent_downloads" => {
                     settings.max_concurrent_downloads = value.parse().unwrap_or(5)
                 }

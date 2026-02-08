@@ -7,8 +7,12 @@ import {
   Tray,
   Menu,
   nativeImage,
+  nativeTheme,
+  MenuItemConstructorOptions,
 } from 'electron';
 import path from 'path';
+import fs from 'fs';
+import { autoUpdater } from 'electron-updater';
 import { SidecarManager } from './sidecar';
 
 let mainWindow: BrowserWindow | null = null;
@@ -22,13 +26,47 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 }
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
   }
+  // On Windows/Linux, protocol URLs and file paths arrive via argv
+  const protocolArg = argv.find((a) => a.startsWith('magnet:'));
+  if (protocolArg) handleProtocolUrl(protocolArg);
+  const torrentArg = argv.find((a) => a.endsWith('.torrent'));
+  if (torrentArg) handleTorrentFile(torrentArg);
 });
+
+// Register as handler for magnet: protocol
+app.setAsDefaultProtocolClient('magnet');
+
+// macOS: handle magnet: links via open-url
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
+
+// macOS: handle .torrent file opens
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  handleTorrentFile(filePath);
+});
+
+function handleProtocolUrl(url: string): void {
+  if (url.startsWith('magnet:') && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.webContents.send('rpc-event', 'open-magnet', { uri: url });
+  }
+}
+
+function handleTorrentFile(filePath: string): void {
+  if (filePath.endsWith('.torrent') && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.webContents.send('rpc-event', 'open-torrent-file', { path: filePath });
+  }
+}
 
 // IPC method allowlist — only these methods can be forwarded to the sidecar
 const ALLOWED_RPC_METHODS = new Set([
@@ -102,10 +140,63 @@ function getTrayIconPath(): string {
   return path.join(process.resourcesPath, 'icons', 'tray-icon.png');
 }
 
+// --- Window state persistence ---
+
+interface WindowState {
+  x?: number;
+  y?: number;
+  width: number;
+  height: number;
+  isMaximized: boolean;
+}
+
+function getWindowStateFile(): string {
+  return path.join(app.getPath('userData'), 'window-state.json');
+}
+
+function loadWindowState(): WindowState {
+  try {
+    return JSON.parse(fs.readFileSync(getWindowStateFile(), 'utf-8'));
+  } catch {
+    return { width: 1200, height: 800, isMaximized: false };
+  }
+}
+
+function saveWindowState(win: BrowserWindow): void {
+  if (win.isDestroyed()) return;
+  const bounds = win.isMaximized() ? (loadWindowState() as WindowState) : win.getBounds();
+  const state: WindowState = {
+    ...bounds,
+    isMaximized: win.isMaximized(),
+  };
+  try {
+    fs.writeFileSync(getWindowStateFile(), JSON.stringify(state));
+  } catch {
+    // Ignore write errors
+  }
+}
+
+// --- macOS application menu ---
+
+function createAppMenu(): void {
+  if (process.platform !== 'darwin') return;
+  const template: MenuItemConstructorOptions[] = [
+    { role: 'appMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow(): void {
+  const savedState = loadWindowState();
+
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: savedState.width,
+    height: savedState.height,
+    x: savedState.x,
+    y: savedState.y,
     minWidth: 900,
     minHeight: 600,
     title: 'Gosh-Fetch',
@@ -118,12 +209,21 @@ function createWindow(): void {
     show: false,
   });
 
+  if (savedState.isMaximized) {
+    mainWindow.maximize();
+  }
+
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
   });
 
+  // Save window state on resize/move
+  mainWindow.on('resize', () => { if (mainWindow) saveWindowState(mainWindow); });
+  mainWindow.on('move', () => { if (mainWindow) saveWindowState(mainWindow); });
+
   // Close-to-tray logic
   mainWindow.on('close', (event) => {
+    if (mainWindow) saveWindowState(mainWindow);
     if (!isQuitting && closeToTray) {
       event.preventDefault();
       mainWindow?.hide();
@@ -195,15 +295,20 @@ function createTray(): void {
   tray.setContextMenu(contextMenu);
   tray.setToolTip('Gosh-Fetch');
 
-  // Left-click toggles window
-  tray.on('click', () => {
+  // Left-click toggles window (macOS only fires double-click, not click)
+  const toggleWindow = () => {
     if (mainWindow?.isVisible()) {
       mainWindow.hide();
     } else {
       mainWindow?.show();
       mainWindow?.focus();
     }
-  });
+  };
+  if (process.platform === 'darwin') {
+    tray.on('double-click', toggleWindow);
+  } else {
+    tray.on('click', toggleWindow);
+  }
 }
 
 function setupSidecar(): void {
@@ -316,14 +421,53 @@ function setupIPC(): void {
   ipcMain.handle('show-notification', (_event, title: string, body: string) => {
     new Notification({ title, body }).show();
   });
+
+  // Native theme (dark mode detection)
+  ipcMain.handle('get-native-theme', () => nativeTheme.shouldUseDarkColors);
+
+  // Auto-updater controls
+  ipcMain.handle('updater-download', () => autoUpdater.downloadUpdate());
+  ipcMain.handle('updater-install', () => autoUpdater.quitAndInstall());
+}
+
+function setupAutoUpdater(): void {
+  autoUpdater.autoDownload = false;
+  autoUpdater.checkForUpdates().catch(() => {});
+
+  autoUpdater.on('update-available', (info) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('rpc-event', 'update-available', {
+        version: info.version,
+      });
+    }
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('rpc-event', 'update-downloaded', {});
+    }
+  });
+}
+
+function setupNativeThemeListener(): void {
+  nativeTheme.on('updated', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('rpc-event', 'native-theme-changed', {
+        shouldUseDarkColors: nativeTheme.shouldUseDarkColors,
+      });
+    }
+  });
 }
 
 // App lifecycle
 app.whenReady().then(() => {
+  createAppMenu();
   setupSidecar();
   createWindow();
   createTray();
   setupIPC();
+  setupNativeThemeListener();
+  setupAutoUpdater();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

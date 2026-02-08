@@ -27,5 +27,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('show-notification', title, body);
   },
 
+  getNativeTheme: (): Promise<boolean> => {
+    return ipcRenderer.invoke('get-native-theme');
+  },
+
+  updaterDownload: (): Promise<void> => {
+    return ipcRenderer.invoke('updater-download');
+  },
+
+  updaterInstall: (): Promise<void> => {
+    return ipcRenderer.invoke('updater-install');
+  },
+
   platform: process.platform,
 });
