@@ -1,6 +1,6 @@
 # Gosh-Fetch
 
-A cross-platform download manager for Windows, Linux, and macOS. Built with Tauri v2 (Rust) and Svelte/TypeScript.
+A cross-platform download manager for Linux, Windows, and macOS. Built with Electron, React, and a native Rust download engine.
 
 ## Philosophy
 
@@ -15,44 +15,64 @@ We also provide Windows and macOS builds not as a compromise, but as an on-ramp.
 
 ## Features
 
-- Download HTTP/HTTPS and BitTorrent files
+- HTTP/HTTPS and BitTorrent downloads with a native Rust engine
 - Magnet link support with metadata retrieval
 - Multi-segment downloads for faster speeds
-- Native Rust download engine - no external dependencies
-- Cross-platform: Windows, Linux, macOS
-- Light/Dark/System theme support
-- System tray integration with minimize-to-tray
+- Cross-platform: Linux, Windows, macOS
+- Dark and light themes with system theme detection
+- System tray with live speed display
+- Auto-updates via GitHub Releases
 - No telemetry, accounts, or cloud features
 
 ### Download Management
-- Real-time progress tracking with speed metrics
-- Pause, resume, and cancel downloads
-- Batch operations (Pause All, Resume All)
-- Download queue management
-- Download history and persistence
-- Custom output filename per download
-- Per-download speed limiting
 
-### BitTorrent Support
+- Real-time progress, speed, ETA, and connection metrics
+- Pause, resume, retry, and cancel individual downloads
+- Batch operations: pause all, resume all, select multiple and act
+- Drag-and-drop queue reordering with automatic priority sync
+- Download history with completed file access
+- Per-download advanced options: custom filename, save directory, speed limit, headers, connection count
+- Priority levels: critical, high, normal, low
+- Checksum verification (SHA-256, MD5)
+- Mirror/failover URLs for redundancy
+- Sequential download mode for streaming media
+
+### BitTorrent
+
 - Torrent file and magnet link support
 - DHT, PEX, and Local Peer Discovery
-- Seeder/peer count monitoring
+- Seeder/peer count and client info
 - Configurable seed ratio
-- Auto-update tracker lists from community sources
-- Selective file download from torrents
+- Auto-updating tracker lists from community sources
+- Selective file download from multi-file torrents
 
-### Connection Settings
-- Concurrent downloads limit (1-20)
+### Network & Reliability
+
+- Configurable concurrent downloads (1-20)
 - Connections per server (1-16)
 - Segments per download (1-64)
-- Global download/upload speed limits
-- Custom user agent support
+- Global and per-download speed limits
+- HTTP/SOCKS proxy support
+- Connection and read timeout configuration
+- Automatic retry with configurable attempts
+- Custom user agent with browser presets
+- File allocation modes: none, sparse, full
+
+### Desktop Integration
+
+- System tray with live download/upload speeds
+- Minimize to tray on close
+- Window size and position persistence
+- `.torrent` file association
+- `magnet:` protocol handler
+- Drag and drop URLs and `.torrent` files onto the window
+- Desktop notifications on download completion
+- Keyboard shortcuts: `Ctrl+N` (add download), `Ctrl+,` (settings), `Ctrl+A` (select all)
+- First-run onboarding with download path setup
 
 ## Download Engine
 
 Gosh-Fetch uses [gosh-dl](https://github.com/goshitsarch-eng/gosh-dl), a native Rust download engine built specifically for this project.
-
-### Why a Native Engine?
 
 | Feature | gosh-dl | External Tools |
 |---------|---------|----------------|
@@ -60,39 +80,68 @@ Gosh-Fetch uses [gosh-dl](https://github.com/goshitsarch-eng/gosh-dl), a native 
 | Memory safe | Yes (Rust) | Varies |
 | Single binary distribution | Yes | No |
 | Integrated error handling | Yes | Limited |
-| Custom protocol support | Easy to add | Depends |
 
-### gosh-dl Features
+### gosh-dl Capabilities
 
 - **HTTP/HTTPS**: Segmented downloads with automatic resume
 - **BitTorrent**: Full protocol support with DHT, PEX, LPD
 - **Async I/O**: Built on Tokio for efficient concurrent downloads
-- **Progress Events**: Real-time download status via event channels
+- **Progress Events**: Real-time status pushed to the frontend
 
-gosh-dl is licensed under MIT. See [gosh-dl repository](https://github.com/goshitsarch-eng/gosh-dl) for more details.
+gosh-dl is licensed under MIT. See the [gosh-dl repository](https://github.com/goshitsarch-eng/gosh-dl) for details.
+
+## Architecture
+
+```
+┌─────────────────────────────────┐
+│  React + Redux Toolkit (UI)     │
+│  Vite dev server / built bundle │
+├─────────────────────────────────┤
+│  Electron Main Process          │
+│  IPC bridge, tray, auto-update  │
+├─────────────────────────────────┤
+│  gosh-fetch-engine (Rust)       │
+│  JSON-RPC over stdin/stdout     │
+│  SQLite for settings & history  │
+├─────────────────────────────────┤
+│  gosh-dl (Rust download engine) │
+│  HTTP, BitTorrent, async I/O    │
+└─────────────────────────────────┘
+```
+
+The Rust sidecar (`gosh-fetch-engine`) runs as a child process. Electron communicates with it via JSON-RPC over stdin/stdout. The frontend receives real-time push events for download state changes, with a 5-second heartbeat poll as fallback.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 19, Redux Toolkit, React Router, TypeScript |
+| Build | Vite 6, electron-builder |
+| Desktop | Electron 33 |
+| Backend | Rust, Tokio, SQLite (rusqlite) |
+| Engine | gosh-dl 0.2.2 |
+| Icons | Lucide React |
+| Drag & Drop | dnd-kit |
+| Testing | Vitest, React Testing Library, Rust `#[test]` |
 
 ## Requirements
 
 ### All Platforms
+
 - [Node.js](https://nodejs.org/) 20+
 - [Rust](https://rustup.rs/) 1.77+
 
 ### Linux
-- `libwebkit2gtk-4.1-dev`
-- `libappindicator3-dev`
-- `librsvg2-dev`
 
-On Debian/Ubuntu:
-```bash
-sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
-```
-
-### Windows
-- WebView2 (included in Windows 10/11)
+No additional system dependencies required beyond Node.js and Rust.
 
 ### macOS
+
 - Xcode Command Line Tools
-- Minimum macOS 10.13 (High Sierra)
+
+### Windows
+
+- No additional dependencies
 
 ## Building
 
@@ -100,27 +149,41 @@ sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
 # Install dependencies
 npm install
 
-# Development
-npm run tauri dev
+# Build the Rust engine
+cargo build --release --manifest-path src-rust/Cargo.toml
+
+# Development (frontend + Electron)
+npm run dev                # Vite dev server on port 5173
+npm run build:electron     # Compile Electron main process
+npx electron .             # Launch the app
+
+# Or use the combined dev command
+npm run electron:dev
 
 # Production build
-npm run tauri build
+npm run electron:build
+
+# Run tests
+npm test                   # Frontend tests (Vitest)
+cargo test --manifest-path src-rust/Cargo.toml  # Rust tests
 ```
+
+### Build Outputs
+
+| Platform | Formats |
+|----------|---------|
+| Linux | AppImage, .deb, .rpm |
+| macOS | .dmg |
+| Windows | NSIS installer, portable |
 
 ## Usage
 
-1. **Add Download** - Click the + button and enter a URL, magnet link, or select a torrent file
-2. **Monitor Progress** - View real-time speed, progress, and ETA for each download
-3. **Manage Downloads** - Pause, resume, or remove downloads individually or in batch
-4. **View Completed** - Access download history and open completed files
+1. **Add Download** - Click "Add Download" or press `Ctrl+N`. Enter a URL, magnet link, or browse for a `.torrent` file. Expand "Advanced Options" for filename, directory, speed limit, headers, priority, and checksum.
+2. **Monitor** - Watch real-time speed, progress, ETA, and peer info. Filter by Active, Paused, Error, or Completed.
+3. **Manage** - Pause, resume, retry, or remove downloads. Select multiple with checkboxes for batch operations. Drag to reorder priority.
+4. **History** - View completed downloads and open files or folders directly.
 
-The download list auto-refreshes in real-time. Downloads use configurable multi-segment transfers for optimal performance.
-
-## Error Handling
-
-- **Download stalled:** The download has no active connections. Check your network or try resuming.
-- **Connection failed:** Unable to reach the server. Verify the URL and your network connection.
-- **Torrent has no seeds:** No peers available to download from. The torrent may be inactive.
+You can also drag URLs, magnet links, or `.torrent` files directly onto the app window.
 
 ## Privacy
 
@@ -144,8 +207,6 @@ The gosh-dl download engine is licensed under MIT.
 Planned features for future releases:
 
 - **Browser Extension** - One-click downloads from your browser
-- **Download Scheduler** - Schedule downloads for off-peak hours
-- **Bandwidth Scheduler** - Time-based speed limit profiles
 - **RSS Feed Support** - Automatic downloads from RSS/podcast feeds
 - **Download Categories** - Organize downloads by type with custom save locations
 - **Import/Export** - Backup and restore download history and settings
