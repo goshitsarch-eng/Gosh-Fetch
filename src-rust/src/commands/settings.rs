@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 pub async fn get_settings(state: &AppState) -> Result<Settings> {
     let db = state.get_db().await?;
-    db.get_settings()
+    db.get_settings_async().await
 }
 
 pub async fn update_settings(
@@ -13,7 +13,7 @@ pub async fn update_settings(
     settings: Settings,
 ) -> Result<()> {
     let db = state.get_db().await?;
-    db.save_settings(&settings)
+    db.save_settings_async(settings).await
 }
 
 pub fn set_close_to_tray(state: &AppState, value: bool) {

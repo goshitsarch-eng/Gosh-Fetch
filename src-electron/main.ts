@@ -17,6 +17,63 @@ let sidecar: SidecarManager | null = null;
 let closeToTray = true;
 let isQuitting = false;
 
+// Single-instance lock
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+}
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+// IPC method allowlist — only these methods can be forwarded to the sidecar
+const ALLOWED_RPC_METHODS = new Set([
+  'add_download',
+  'add_urls',
+  'pause_download',
+  'pause_all',
+  'resume_download',
+  'resume_all',
+  'remove_download',
+  'get_download_status',
+  'get_all_downloads',
+  'get_active_downloads',
+  'get_global_stats',
+  'set_speed_limit',
+  'add_torrent_file',
+  'add_magnet',
+  'get_torrent_files',
+  'select_torrent_files',
+  'parse_torrent_file',
+  'parse_magnet_uri',
+  'get_peers',
+  'get_settings',
+  'update_settings',
+  'set_close_to_tray',
+  'set_user_agent',
+  'get_tracker_list',
+  'update_tracker_list',
+  'apply_settings_to_engine',
+  'get_user_agent_presets',
+  'get_engine_version',
+  'open_download_folder',
+  'open_file_location',
+  'get_default_download_path',
+  'get_app_version',
+  'get_app_info',
+  'db_get_completed_history',
+  'db_save_download',
+  'db_remove_download',
+  'db_clear_history',
+  'db_get_settings',
+  'db_save_settings',
+  'db_load_incomplete',
+]);
+
 function getSidecarPath(): string {
   const isDev = !app.isPackaged;
   const binaryName =
@@ -150,36 +207,61 @@ function createTray(): void {
 }
 
 function setupSidecar(): void {
-  sidecar = new SidecarManager();
-
   const sidecarPath = getSidecarPath();
-  console.log('Starting sidecar at:', sidecarPath);
+  let restartCount = 0;
+  const maxRestarts = 3;
 
-  try {
-    sidecar.spawn(sidecarPath);
-  } catch (err) {
-    console.error('Failed to spawn sidecar:', err);
-    return;
+  function startSidecar(): void {
+    sidecar = new SidecarManager();
+    console.log('Starting sidecar at:', sidecarPath);
+
+    try {
+      sidecar.spawn(sidecarPath);
+    } catch (err) {
+      console.error('Failed to spawn sidecar:', err);
+      notifyEngineStatus(false, false);
+      return;
+    }
+
+    // Forward sidecar events to renderer
+    sidecar.onEvent((event: string, data: any) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('rpc-event', event, data);
+      }
+
+      // Update tray tooltip with speed stats
+      if (event === 'global-stats' && tray) {
+        const dl = formatSpeed(data.downloadSpeed || 0);
+        const ul = formatSpeed(data.uploadSpeed || 0);
+        const active = data.numActive || 0;
+        tray.setToolTip(`Gosh-Fetch\n↓ ${dl}  ↑ ${ul}\n${active} active`);
+      }
+    });
+
+    sidecar.on('exit', (code: number) => {
+      console.error('Sidecar exited unexpectedly with code:', code);
+      if (!isQuitting && restartCount < maxRestarts) {
+        restartCount++;
+        const delay = Math.pow(2, restartCount - 1) * 1000; // 1s, 2s, 4s
+        console.log(`Attempting sidecar restart ${restartCount}/${maxRestarts} in ${delay}ms...`);
+        notifyEngineStatus(false, true);
+        setTimeout(() => {
+          startSidecar();
+        }, delay);
+      } else if (!isQuitting) {
+        console.error('Max sidecar restarts reached, giving up');
+        notifyEngineStatus(false, false);
+      }
+    });
   }
 
-  // Forward sidecar events to renderer
-  sidecar.onEvent((event: string, data: any) => {
+  function notifyEngineStatus(connected: boolean, restarting: boolean): void {
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('rpc-event', event, data);
+      mainWindow.webContents.send('rpc-event', 'engine-status', { connected, restarting });
     }
+  }
 
-    // Update tray tooltip with speed stats
-    if (event === 'global-stats' && tray) {
-      const dl = formatSpeed(data.downloadSpeed || 0);
-      const ul = formatSpeed(data.uploadSpeed || 0);
-      const active = data.numActive || 0;
-      tray.setToolTip(`Gosh-Fetch\n↓ ${dl}  ↑ ${ul}\n${active} active`);
-    }
-  });
-
-  sidecar.on('exit', (code: number) => {
-    console.error('Sidecar exited unexpectedly with code:', code);
-  });
+  startSidecar();
 }
 
 function formatSpeed(bytesPerSec: number): string {
@@ -196,6 +278,9 @@ function formatSpeed(bytesPerSec: number): string {
 function setupIPC(): void {
   // Forward RPC calls to sidecar
   ipcMain.handle('rpc-invoke', async (_event, method: string, params?: any) => {
+    if (!ALLOWED_RPC_METHODS.has(method)) {
+      throw new Error(`Unauthorized RPC method: ${method}`);
+    }
     if (!sidecar) throw new Error('Sidecar not running');
 
     const result = await sidecar.invoke(method, params);

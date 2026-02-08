@@ -1,4 +1,4 @@
-use crate::db::{Database, Settings};
+use crate::db::Database;
 use crate::engine_adapter::EngineAdapter;
 use crate::Result;
 use gosh_dl::{DownloadEngine, DownloadEvent, EngineConfig};
@@ -47,9 +47,10 @@ impl AppState {
 
         // Initialize database
         let db = Database::new(&data_dir)?;
-        *self.db.write().await = Some(db);
+        *self.db.write().await = Some(db.clone());
 
-        let settings = Settings::default();
+        // Load saved settings from DB, falling back to defaults for a fresh install
+        let settings = db.get_settings().unwrap_or_default();
 
         let mut config = EngineConfig::default();
         config.download_dir = PathBuf::from(&settings.download_path);

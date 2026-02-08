@@ -66,19 +66,44 @@ impl Database {
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
-        db.run_migrations()?;
+        db.run_migrations_sync()?;
         Ok(db)
     }
 
-    fn run_migrations(&self) -> Result<()> {
+    /// Run a closure with the database connection on a blocking thread.
+    /// This moves all blocking mutex + SQLite I/O off the Tokio runtime threads.
+    async fn with_conn<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(&Connection) -> Result<R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let conn = self.conn.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| Error::Database(e.to_string()))?;
+            f(&conn)
+        })
+        .await
+        .map_err(|e| Error::Database(e.to_string()))?
+    }
+
+    /// Synchronous migration — called only once during Database::new() (not on Tokio runtime yet)
+    fn run_migrations_sync(&self) -> Result<()> {
         let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
-        let migration_sql = include_str!("../migrations/001_initial.sql");
+        let migration_sql = include_str!("../../migrations/001_initial.sql");
         conn.execute_batch(migration_sql)?;
         Ok(())
     }
 
     pub fn get_settings(&self) -> Result<Settings> {
         let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
+        Self::get_settings_inner(&conn)
+    }
+
+    pub async fn get_settings_async(&self) -> Result<Settings> {
+        self.with_conn(|conn| Self::get_settings_inner(conn)).await
+    }
+
+    fn get_settings_inner(conn: &Connection) -> Result<Settings> {
         let mut settings = Settings::default();
 
         let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
@@ -121,106 +146,114 @@ impl Database {
         Ok(settings)
     }
 
-    pub fn save_settings(&self, settings: &Settings) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
-        let pairs: Vec<(&str, String)> = vec![
-            ("download_path", settings.download_path.clone()),
-            ("max_concurrent_downloads", settings.max_concurrent_downloads.to_string()),
-            ("max_connections_per_server", settings.max_connections_per_server.to_string()),
-            ("split_count", settings.split_count.to_string()),
-            ("download_speed_limit", settings.download_speed_limit.to_string()),
-            ("upload_speed_limit", settings.upload_speed_limit.to_string()),
-            ("user_agent", settings.user_agent.clone()),
-            ("enable_notifications", settings.enable_notifications.to_string()),
-            ("close_to_tray", settings.close_to_tray.to_string()),
-            ("theme", settings.theme.clone()),
-            ("bt_enable_dht", settings.bt_enable_dht.to_string()),
-            ("bt_enable_pex", settings.bt_enable_pex.to_string()),
-            ("bt_enable_lpd", settings.bt_enable_lpd.to_string()),
-            ("bt_max_peers", settings.bt_max_peers.to_string()),
-            ("bt_seed_ratio", settings.bt_seed_ratio.to_string()),
-            ("auto_update_trackers", settings.auto_update_trackers.to_string()),
-            ("delete_files_on_remove", settings.delete_files_on_remove.to_string()),
-        ];
+    pub async fn save_settings_async(&self, settings: Settings) -> Result<()> {
+        self.with_conn(move |conn| {
+            let pairs: Vec<(&str, String)> = vec![
+                ("download_path", settings.download_path.clone()),
+                ("max_concurrent_downloads", settings.max_concurrent_downloads.to_string()),
+                ("max_connections_per_server", settings.max_connections_per_server.to_string()),
+                ("split_count", settings.split_count.to_string()),
+                ("download_speed_limit", settings.download_speed_limit.to_string()),
+                ("upload_speed_limit", settings.upload_speed_limit.to_string()),
+                ("user_agent", settings.user_agent.clone()),
+                ("enable_notifications", settings.enable_notifications.to_string()),
+                ("close_to_tray", settings.close_to_tray.to_string()),
+                ("theme", settings.theme.clone()),
+                ("bt_enable_dht", settings.bt_enable_dht.to_string()),
+                ("bt_enable_pex", settings.bt_enable_pex.to_string()),
+                ("bt_enable_lpd", settings.bt_enable_lpd.to_string()),
+                ("bt_max_peers", settings.bt_max_peers.to_string()),
+                ("bt_seed_ratio", settings.bt_seed_ratio.to_string()),
+                ("auto_update_trackers", settings.auto_update_trackers.to_string()),
+                ("delete_files_on_remove", settings.delete_files_on_remove.to_string()),
+            ];
 
-        for (key, value) in pairs {
-            conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, datetime('now'))",
-                params![key, value],
+            let tx = conn.unchecked_transaction()?;
+            for (key, value) in pairs {
+                tx.execute(
+                    "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?1, ?2, datetime('now'))",
+                    params![key, value],
+                )?;
+            }
+            tx.commit()?;
+
+            Ok(())
+        }).await
+    }
+
+    pub async fn get_completed_downloads_async(&self) -> Result<Vec<Download>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT * FROM downloads WHERE status = 'complete' ORDER BY completed_at DESC LIMIT 100",
             )?;
-        }
-
-        Ok(())
+            let downloads = stmt
+                .query_map([], |row| Ok(row_to_download(row)))?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(downloads)
+        }).await
     }
 
-    pub fn get_completed_downloads(&self) -> Result<Vec<Download>> {
-        let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT * FROM downloads WHERE status = 'complete' ORDER BY completed_at DESC LIMIT 100",
-        )?;
-        let downloads = stmt
-            .query_map([], |row| Ok(row_to_download(row)))?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(downloads)
+    pub async fn save_download_async(&self, download: Download) -> Result<()> {
+        self.with_conn(move |conn| {
+            let selected_files_json = download
+                .selected_files
+                .as_ref()
+                .map(|f| serde_json::to_string(f).unwrap_or_default());
+
+            conn.execute(
+                "INSERT OR REPLACE INTO downloads
+                 (gid, name, url, magnet_uri, info_hash, download_type, status, total_size, completed_size,
+                  download_speed, upload_speed, save_path, created_at, completed_at, error_message, selected_files)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                params![
+                    download.gid,
+                    download.name,
+                    download.url,
+                    download.magnet_uri,
+                    download.info_hash,
+                    download.download_type.to_string(),
+                    download.status.to_string(),
+                    download.total_size,
+                    download.completed_size,
+                    download.download_speed,
+                    download.upload_speed,
+                    download.save_path,
+                    download.created_at,
+                    download.completed_at,
+                    download.error_message,
+                    selected_files_json,
+                ],
+            )?;
+            Ok(())
+        }).await
     }
 
-    pub fn save_download(&self, download: &Download) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
-        let selected_files_json = download
-            .selected_files
-            .as_ref()
-            .map(|f| serde_json::to_string(f).unwrap_or_default());
-
-        conn.execute(
-            "INSERT OR REPLACE INTO downloads
-             (gid, name, url, magnet_uri, info_hash, download_type, status, total_size, completed_size,
-              download_speed, upload_speed, save_path, created_at, completed_at, error_message, selected_files)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
-            params![
-                download.gid,
-                download.name,
-                download.url,
-                download.magnet_uri,
-                download.info_hash,
-                download.download_type.to_string(),
-                download.status.to_string(),
-                download.total_size,
-                download.completed_size,
-                download.download_speed,
-                download.upload_speed,
-                download.save_path,
-                download.created_at,
-                download.completed_at,
-                download.error_message,
-                selected_files_json,
-            ],
-        )?;
-        Ok(())
+    pub async fn remove_download_async(&self, gid: String) -> Result<()> {
+        self.with_conn(move |conn| {
+            conn.execute("DELETE FROM downloads WHERE gid = ?1", params![gid])?;
+            Ok(())
+        }).await
     }
 
-    pub fn remove_download(&self, gid: &str) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
-        conn.execute("DELETE FROM downloads WHERE gid = ?1", params![gid])?;
-        Ok(())
+    pub async fn clear_history_async(&self) -> Result<()> {
+        self.with_conn(|conn| {
+            conn.execute("DELETE FROM downloads WHERE status = 'complete'", [])?;
+            Ok(())
+        }).await
     }
 
-    pub fn clear_history(&self) -> Result<()> {
-        let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
-        conn.execute("DELETE FROM downloads WHERE status = 'complete'", [])?;
-        Ok(())
-    }
-
-    pub fn get_incomplete_downloads(&self) -> Result<Vec<Download>> {
-        let conn = self.conn.lock().map_err(|e| Error::Database(e.to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT * FROM downloads WHERE status NOT IN ('complete', 'error') ORDER BY created_at ASC",
-        )?;
-        let downloads = stmt
-            .query_map([], |row| Ok(row_to_download(row)))?
-            .filter_map(|r| r.ok())
-            .collect();
-        Ok(downloads)
+    pub async fn get_incomplete_downloads_async(&self) -> Result<Vec<Download>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT * FROM downloads WHERE status NOT IN ('complete', 'error') ORDER BY created_at ASC",
+            )?;
+            let downloads = stmt
+                .query_map([], |row| Ok(row_to_download(row)))?
+                .filter_map(|r| r.ok())
+                .collect();
+            Ok(downloads)
+        }).await
     }
 }
 

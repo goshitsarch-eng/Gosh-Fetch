@@ -1,4 +1,21 @@
-use crate::{AppState, Result};
+use crate::{AppState, Error, Result};
+use std::path::PathBuf;
+
+/// Validate and canonicalize a filesystem path.
+/// Rejects empty paths, URL schemes, and paths that don't exist on disk.
+fn validate_path(path: &str) -> Result<PathBuf> {
+    if path.is_empty() {
+        return Err(Error::InvalidInput("Path cannot be empty".into()));
+    }
+    if path.contains("://") {
+        return Err(Error::InvalidInput("URL schemes are not allowed in file paths".into()));
+    }
+    let p = PathBuf::from(path);
+    let canonical = p.canonicalize().map_err(|_| {
+        Error::InvalidInput(format!("Path does not exist or is inaccessible: {}", path))
+    })?;
+    Ok(canonical)
+}
 
 pub async fn get_engine_version(state: &AppState) -> Result<serde_json::Value> {
     let is_running = state.is_engine_running().await;
@@ -10,24 +27,27 @@ pub async fn get_engine_version(state: &AppState) -> Result<serde_json::Value> {
 }
 
 pub fn open_download_folder(path: String) -> Result<()> {
+    let validated = validate_path(&path)?;
+    let path_str = validated.to_string_lossy();
+
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
-            .arg(&path)
+            .arg(path_str.as_ref())
             .spawn()?;
     }
 
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .arg(&path)
+            .arg(path_str.as_ref())
             .spawn()?;
     }
 
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
-            .arg(&path)
+            .arg(path_str.as_ref())
             .spawn()?;
     }
 
@@ -35,44 +55,44 @@ pub fn open_download_folder(path: String) -> Result<()> {
 }
 
 pub fn open_file_location(file_path: String) -> Result<()> {
-    let path = std::path::Path::new(&file_path);
-    let folder = if path.is_dir() {
-        path
+    let validated = validate_path(&file_path)?;
+    let folder = if validated.is_dir() {
+        validated.clone()
     } else {
-        path.parent().unwrap_or(path)
+        validated.parent().unwrap_or(&validated).to_path_buf()
     };
 
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
-            .arg(folder)
+            .arg(&folder)
             .spawn()?;
     }
 
     #[cfg(target_os = "macos")]
     {
-        if path.exists() && !path.is_dir() {
+        if validated.exists() && !validated.is_dir() {
             std::process::Command::new("open")
                 .arg("-R")
-                .arg(&file_path)
+                .arg(&validated)
                 .spawn()?;
         } else {
             std::process::Command::new("open")
-                .arg(folder)
+                .arg(&folder)
                 .spawn()?;
         }
     }
 
     #[cfg(target_os = "windows")]
     {
-        if path.exists() && !path.is_dir() {
+        if validated.exists() && !validated.is_dir() {
             std::process::Command::new("explorer")
                 .arg("/select,")
-                .arg(&file_path)
+                .arg(&validated)
                 .spawn()?;
         } else {
             std::process::Command::new("explorer")
-                .arg(folder)
+                .arg(&folder)
                 .spawn()?;
         }
     }

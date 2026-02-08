@@ -135,24 +135,37 @@ export class SidecarManager extends EventEmitter {
     }
 
     if (this.process) {
-      // Try graceful shutdown first
-      if (this.process.stdin) {
-        this.process.stdin.end();
+      const proc = this.process;
+
+      // Try graceful shutdown first — close stdin so the engine sees EOF
+      if (proc.stdin) {
+        proc.stdin.end();
       }
 
       // Force kill after timeout
       const killTimeout = setTimeout(() => {
-        if (this.process) {
-          this.process.kill('SIGKILL');
+        if (this.process === proc) {
+          proc.kill('SIGKILL');
         }
       }, 5000);
 
-      this.process.on('exit', () => {
+      proc.on('exit', () => {
         clearTimeout(killTimeout);
+        if (this.process === proc) {
+          this.process = null;
+        }
       });
 
-      this.process.kill('SIGTERM');
-      this.process = null;
+      // On Linux/macOS, send SIGTERM after a brief delay if stdin EOF
+      // hasn't caused the process to exit yet.
+      // On Windows, skip SIGTERM — rely on stdin EOF + SIGKILL timeout.
+      if (process.platform !== 'win32') {
+        setTimeout(() => {
+          if (this.process === proc) {
+            proc.kill('SIGTERM');
+          }
+        }, 500);
+      }
     }
 
     this.rejectAllPending('Sidecar shutting down');

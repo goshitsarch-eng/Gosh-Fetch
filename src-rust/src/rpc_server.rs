@@ -1,23 +1,113 @@
 use crate::commands;
 use crate::db::Settings;
 use crate::types::{Download, DownloadOptions};
-use crate::AppState;
+use crate::{AppState, Error};
 use serde_json::Value;
-use std::io::{self, BufRead, Write};
-use tokio::sync::broadcast;
+use std::io::{self, Write};
+use std::net::IpAddr;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::{broadcast, mpsc};
+
+const MAX_URL_LENGTH: usize = 8192;
+
+/// Validate a download URL: must be http://, https://, or magnet:
+/// Rejects file:// scheme, empty URLs, overly long URLs, and private IP addresses.
+fn validate_download_url(url: &str) -> crate::Result<()> {
+    if url.is_empty() {
+        return Err(Error::InvalidInput("URL cannot be empty".into()));
+    }
+    if url.len() > MAX_URL_LENGTH {
+        return Err(Error::InvalidInput(format!(
+            "URL exceeds maximum length of {} characters",
+            MAX_URL_LENGTH
+        )));
+    }
+
+    let lower = url.to_lowercase();
+    if lower.starts_with("magnet:") {
+        return Ok(());
+    }
+    if !lower.starts_with("http://") && !lower.starts_with("https://") {
+        return Err(Error::InvalidInput(format!(
+            "URL must use http://, https://, or magnet: scheme, got: {}",
+            url.split("://").next().unwrap_or("unknown")
+        )));
+    }
+
+    // Parse URL and check for private/loopback IPs
+    if let Ok(parsed) = url::Url::parse(url) {
+        if let Some(host) = parsed.host_str() {
+            if let Ok(ip) = host.parse::<IpAddr>() {
+                if is_private_ip(&ip) {
+                    return Err(Error::InvalidInput(
+                        "URLs targeting private/loopback IP addresses are not allowed".into(),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn is_private_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()             // 127.0.0.0/8
+                || v4.is_private()       // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                || v4.is_link_local()    // 169.254.0.0/16
+                || v4.is_unspecified()   // 0.0.0.0
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()             // ::1
+                || v6.is_unspecified()   // ::
+                // fc00::/7 (unique local)
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+        }
+    }
+}
+
+/// Validate a torrent file path: must end with .torrent and exist on disk.
+fn validate_torrent_path(file_path: &str) -> crate::Result<()> {
+    if file_path.is_empty() {
+        return Err(Error::InvalidInput("Torrent file path cannot be empty".into()));
+    }
+    if !file_path.to_lowercase().ends_with(".torrent") {
+        return Err(Error::InvalidInput(
+            "File must have a .torrent extension".into(),
+        ));
+    }
+    if !std::path::Path::new(file_path).exists() {
+        return Err(Error::InvalidInput(format!(
+            "Torrent file does not exist: {}",
+            file_path
+        )));
+    }
+    Ok(())
+}
 
 pub async fn run_rpc_server(state: AppState, mut event_rx: broadcast::Receiver<Value>) {
-    // Spawn event forwarder: reads events from broadcast channel and writes to stdout
-    let state_for_stats = state.clone();
+    // Create a unified stdout channel to eliminate contention between writers
+    let (stdout_tx, mut stdout_rx) = mpsc::unbounded_channel::<String>();
+
+    // Dedicated stdout writer task
+    tokio::spawn(async move {
+        while let Some(line) = stdout_rx.recv().await {
+            let stdout = io::stdout();
+            let mut handle = stdout.lock();
+            let _ = writeln!(handle, "{}", line);
+            let _ = handle.flush();
+        }
+    });
+
+    // Spawn event forwarder: reads events from broadcast channel and sends to stdout channel
+    let event_tx = stdout_tx.clone();
     tokio::spawn(async move {
         loop {
             match event_rx.recv().await {
                 Ok(event) => {
                     let line = serde_json::to_string(&event).unwrap_or_default();
-                    let stdout = io::stdout();
-                    let mut handle = stdout.lock();
-                    let _ = writeln!(handle, "{}", line);
-                    let _ = handle.flush();
+                    let _ = event_tx.send(line);
                 }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     log::warn!("Event receiver lagged by {} messages", n);
@@ -28,11 +118,12 @@ pub async fn run_rpc_server(state: AppState, mut event_rx: broadcast::Receiver<V
     });
 
     // Spawn global stats emitter (every 1 second)
-    let state_for_stats2 = state_for_stats.clone();
+    let stats_state = state.clone();
+    let stats_tx = stdout_tx.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            if let Ok(adapter) = state_for_stats2.get_adapter().await {
+            if let Ok(adapter) = stats_state.get_adapter().await {
                 let stats = adapter.get_global_stats();
                 let download_speed: u64 = stats.download_speed.parse().unwrap_or(0);
                 let upload_speed: u64 = stats.upload_speed.parse().unwrap_or(0);
@@ -52,24 +143,17 @@ pub async fn run_rpc_server(state: AppState, mut event_rx: broadcast::Receiver<V
                 });
 
                 let line = serde_json::to_string(&event).unwrap_or_default();
-                let stdout = io::stdout();
-                let mut handle = stdout.lock();
-                let _ = writeln!(handle, "{}", line);
-                let _ = handle.flush();
+                let _ = stats_tx.send(line);
             }
         }
     });
 
-    // Main RPC loop: read lines from stdin
-    let stdin = io::stdin();
-    let reader = stdin.lock();
+    // Main RPC loop: read lines from async stdin
+    let stdin = tokio::io::stdin();
+    let reader = BufReader::new(stdin);
+    let mut lines = reader.lines();
 
-    for line in reader.lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
-
+    while let Ok(Some(line)) = lines.next_line().await {
         if line.trim().is_empty() {
             continue;
         }
@@ -77,21 +161,29 @@ pub async fn run_rpc_server(state: AppState, mut event_rx: broadcast::Receiver<V
         let request: Value = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {
-                write_error_response(None, -32700, &format!("Parse error: {}", e));
+                send_error_response(&stdout_tx, None, -32700, &format!("Parse error: {}", e));
                 continue;
             }
         };
 
         let id = request.get("id").cloned();
-        let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
+        let method = request
+            .get("method")
+            .and_then(|m| m.as_str())
+            .unwrap_or("")
+            .to_string();
         let params = request.get("params").cloned().unwrap_or(Value::Null);
 
-        let result = handle_method(&state, method, params).await;
-
-        match result {
-            Ok(value) => write_success_response(id, value),
-            Err(e) => write_error_response(id, e.code(), &e.to_string()),
-        }
+        // Spawn each request handler as a separate task for concurrent processing
+        let req_state = state.clone();
+        let req_tx = stdout_tx.clone();
+        tokio::spawn(async move {
+            let result = handle_method(&req_state, &method, params).await;
+            match result {
+                Ok(value) => send_success_response(&req_tx, id, value),
+                Err(e) => send_error_response(&req_tx, id, e.code(), &e.to_string()),
+            }
+        });
     }
 }
 
@@ -104,12 +196,16 @@ async fn handle_method(
         // Download commands
         "add_download" => {
             let url = params.get("url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            validate_download_url(&url)?;
             let options: Option<DownloadOptions> = params.get("options").and_then(|v| serde_json::from_value(v.clone()).ok());
             let gid = commands::add_download(state, url, options).await?;
             Ok(Value::String(gid))
         }
         "add_urls" => {
             let urls: Vec<String> = params.get("urls").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default();
+            for url in &urls {
+                validate_download_url(url)?;
+            }
             let options: Option<DownloadOptions> = params.get("options").and_then(|v| serde_json::from_value(v.clone()).ok());
             let gids = commands::add_urls(state, urls, options).await?;
             Ok(serde_json::to_value(gids)?)
@@ -165,6 +261,7 @@ async fn handle_method(
         // Torrent commands
         "add_torrent_file" => {
             let file_path = params.get("filePath").or(params.get("file_path")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            validate_torrent_path(&file_path)?;
             let options: Option<DownloadOptions> = params.get("options").and_then(|v| serde_json::from_value(v.clone()).ok());
             let gid = commands::add_torrent_file(state, file_path, options).await?;
             Ok(Value::String(gid))
@@ -188,6 +285,7 @@ async fn handle_method(
         }
         "parse_torrent_file" => {
             let file_path = params.get("filePath").or(params.get("file_path")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            validate_torrent_path(&file_path)?;
             let info = commands::parse_torrent_file(file_path)?;
             Ok(serde_json::to_value(info)?)
         }
@@ -307,19 +405,16 @@ async fn handle_method(
     }
 }
 
-fn write_success_response(id: Option<Value>, result: Value) {
+fn send_success_response(tx: &mpsc::UnboundedSender<String>, id: Option<Value>, result: Value) {
     let response = serde_json::json!({
         "id": id,
         "result": result,
     });
     let line = serde_json::to_string(&response).unwrap_or_default();
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-    let _ = writeln!(handle, "{}", line);
-    let _ = handle.flush();
+    let _ = tx.send(line);
 }
 
-fn write_error_response(id: Option<Value>, code: i32, message: &str) {
+fn send_error_response(tx: &mpsc::UnboundedSender<String>, id: Option<Value>, code: i32, message: &str) {
     let response = serde_json::json!({
         "id": id,
         "error": {
@@ -328,8 +423,5 @@ fn write_error_response(id: Option<Value>, code: i32, message: &str) {
         },
     });
     let line = serde_json::to_string(&response).unwrap_or_default();
-    let stdout = io::stdout();
-    let mut handle = stdout.lock();
-    let _ = writeln!(handle, "{}", line);
-    let _ = handle.flush();
+    let _ = tx.send(line);
 }
