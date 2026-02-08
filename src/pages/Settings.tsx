@@ -15,6 +15,11 @@ export default function Settings() {
   const [closeToTray, setCloseToTray] = useState(true);
   const [autoUpdateTrackers, setAutoUpdateTrackers] = useState(true);
   const [deleteFilesOnRemove, setDeleteFilesOnRemove] = useState(false);
+  const [proxyUrl, setProxyUrl] = useState('');
+  const [connectTimeout, setConnectTimeout] = useState(30);
+  const [readTimeout, setReadTimeout] = useState(60);
+  const [maxRetries, setMaxRetries] = useState(3);
+  const [allocationMode, setAllocationMode] = useState('sparse');
   const [userAgentPresets, setUserAgentPresets] = useState<[string, string][]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -41,6 +46,11 @@ export default function Settings() {
         setCloseToTray(settings.close_to_tray);
         setAutoUpdateTrackers(settings.auto_update_trackers);
         setDeleteFilesOnRemove(settings.delete_files_on_remove);
+        setProxyUrl(settings.proxy_url);
+        setConnectTimeout(settings.connect_timeout);
+        setReadTimeout(settings.read_timeout);
+        setMaxRetries(settings.max_retries);
+        setAllocationMode(settings.allocation_mode);
 
         await api.setCloseToTray(settings.close_to_tray);
       } catch (e) {
@@ -78,6 +88,11 @@ export default function Settings() {
         bt_seed_ratio: 1.0,
         auto_update_trackers: autoUpdateTrackers,
         delete_files_on_remove: deleteFilesOnRemove,
+        proxy_url: proxyUrl,
+        connect_timeout: connectTimeout,
+        read_timeout: readTimeout,
+        max_retries: maxRetries,
+        allocation_mode: allocationMode,
       };
 
       await api.dbSaveSettings(settings);
@@ -154,6 +169,36 @@ export default function Settings() {
           <div className="setting-item">
             <div className="setting-info"><label>Upload Speed Limit</label><p>{formatSpeedLimit(uploadSpeedLimit)} (0 = unlimited)</p></div>
             <div className="setting-control"><input type="range" min={0} max={104857600} step={1048576} value={uploadSpeedLimit} onChange={(e) => setUploadSpeedLimit(Number(e.target.value))} /></div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h2>Network</h2>
+          <div className="setting-item">
+            <div className="setting-info"><label>Proxy URL</label><p>HTTP/SOCKS proxy (leave empty for direct connection)</p></div>
+            <div className="setting-control"><input type="text" value={proxyUrl} onChange={(e) => setProxyUrl(e.target.value)} placeholder="socks5://127.0.0.1:1080" /></div>
+          </div>
+          <div className="setting-item">
+            <div className="setting-info"><label>Connect Timeout</label><p>{connectTimeout} seconds</p></div>
+            <div className="setting-control"><input type="range" min={5} max={120} value={connectTimeout} onChange={(e) => setConnectTimeout(Number(e.target.value))} /></div>
+          </div>
+          <div className="setting-item">
+            <div className="setting-info"><label>Read Timeout</label><p>{readTimeout} seconds</p></div>
+            <div className="setting-control"><input type="range" min={10} max={300} value={readTimeout} onChange={(e) => setReadTimeout(Number(e.target.value))} /></div>
+          </div>
+          <div className="setting-item">
+            <div className="setting-info"><label>Max Retries</label><p>{maxRetries} retry attempts on failure</p></div>
+            <div className="setting-control"><input type="range" min={0} max={10} value={maxRetries} onChange={(e) => setMaxRetries(Number(e.target.value))} /></div>
+          </div>
+          <div className="setting-item">
+            <div className="setting-info"><label>File Allocation</label><p>How disk space is allocated for downloads</p></div>
+            <div className="setting-control">
+              <select value={allocationMode} onChange={(e) => setAllocationMode(e.target.value)}>
+                <option value="none">None</option>
+                <option value="sparse">Sparse</option>
+                <option value="full">Full (pre-allocate)</option>
+              </select>
+            </div>
           </div>
         </section>
 

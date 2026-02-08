@@ -1,7 +1,7 @@
 //! Engine Adapter
 //!
 //! This module adapts the gosh-dl download engine to the existing
-//! Tauri command interface, maintaining backwards compatibility
+//! command interface, maintaining backwards compatibility
 //! with the frontend.
 
 use crate::types::{Download, DownloadOptions as FrontendOptions, DownloadState, DownloadType, GlobalStat};
@@ -221,6 +221,11 @@ impl EngineAdapter {
 
 }
 
+/// Public wrapper for parse_gid, used by RPC handlers
+pub fn parse_gid_public(gid: &str) -> crate::Result<DownloadId> {
+    parse_gid(gid).map_err(crate::Error::from)
+}
+
 /// Parse a GID string to a DownloadId
 /// Supports both full UUID format and legacy 16-char GID format
 fn parse_gid(gid: &str) -> Result<DownloadId, gosh_dl::EngineError> {
@@ -268,6 +273,9 @@ fn sanitize_filename(name: &str) -> String {
 
 /// Convert frontend options to gosh-dl options
 fn convert_options(opts: FrontendOptions) -> DownloadOptions {
+    use gosh_dl::DownloadPriority;
+    use gosh_dl::http::ExpectedChecksum;
+
     let mut headers = Vec::new();
 
     // Parse header strings like "Key: Value"
@@ -279,15 +287,31 @@ fn convert_options(opts: FrontendOptions) -> DownloadOptions {
         }
     }
 
+    // Priority: parse from string
+    let priority = opts.priority
+        .as_deref()
+        .and_then(|s| s.parse::<DownloadPriority>().ok())
+        .unwrap_or_default();
+
+    // Checksum: parse "sha256:hex" or "md5:hex" format
+    let checksum = opts.checksum
+        .as_deref()
+        .and_then(ExpectedChecksum::parse);
+
+    // Mirrors
+    let mirrors = opts.mirrors.unwrap_or_default();
+
     DownloadOptions {
+        priority,
         save_dir: opts.dir.map(PathBuf::from),
         filename: opts.out.map(|f| sanitize_filename(&f)),
         user_agent: opts.user_agent,
         referer: opts.referer,
         headers,
-        max_connections: opts
-            .max_connection_per_server
-            .and_then(|s| s.parse().ok()),
+        max_connections: opts.split
+            .as_ref()
+            .and_then(|s| s.parse().ok())
+            .or(opts.max_connection_per_server.and_then(|s| s.parse().ok())),
         max_download_speed: opts.max_download_limit.and_then(|s| parse_speed(&s)),
         max_upload_speed: opts.max_upload_limit.and_then(|s| parse_speed(&s)),
         seed_ratio: opts.seed_ratio.and_then(|s| s.parse().ok()),
@@ -296,6 +320,9 @@ fn convert_options(opts: FrontendOptions) -> DownloadOptions {
                 .filter_map(|n| n.parse().ok())
                 .collect()
         }),
+        checksum,
+        mirrors,
+        sequential: opts.sequential,
         ..Default::default()
     }
 }

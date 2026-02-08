@@ -66,8 +66,6 @@ export function getDownloadTypeIcon(type: string): string {
     case 'torrent':
     case 'magnet':
       return 'magnet';
-    case 'ftp':
-      return 'folder';
     default:
       return 'download';
   }

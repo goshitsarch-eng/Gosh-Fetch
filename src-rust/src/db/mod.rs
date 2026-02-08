@@ -29,7 +29,22 @@ pub struct Settings {
     pub bt_seed_ratio: f64,
     pub auto_update_trackers: bool,
     pub delete_files_on_remove: bool,
+    #[serde(default)]
+    pub proxy_url: String,
+    #[serde(default = "default_connect_timeout")]
+    pub connect_timeout: u64,
+    #[serde(default = "default_read_timeout")]
+    pub read_timeout: u64,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default = "default_allocation_mode")]
+    pub allocation_mode: String,
 }
+
+fn default_connect_timeout() -> u64 { 30 }
+fn default_read_timeout() -> u64 { 60 }
+fn default_max_retries() -> u32 { 3 }
+fn default_allocation_mode() -> String { "sparse".to_string() }
 
 impl Default for Settings {
     fn default() -> Self {
@@ -42,8 +57,8 @@ impl Default for Settings {
                         .unwrap_or_else(|| "Downloads".to_string())
                 }),
             max_concurrent_downloads: 5,
-            max_connections_per_server: 16,
-            split_count: 16,
+            max_connections_per_server: 8,
+            split_count: 8,
             download_speed_limit: 0,
             upload_speed_limit: 0,
             user_agent: "gosh-dl/0.1.0".to_string(),
@@ -57,6 +72,11 @@ impl Default for Settings {
             bt_seed_ratio: 1.0,
             auto_update_trackers: true,
             delete_files_on_remove: false,
+            proxy_url: String::new(),
+            connect_timeout: 30,
+            read_timeout: 60,
+            max_retries: 3,
+            allocation_mode: "sparse".to_string(),
         }
     }
 }
@@ -133,9 +153,9 @@ impl Database {
                     settings.max_concurrent_downloads = value.parse().unwrap_or(5)
                 }
                 "max_connections_per_server" => {
-                    settings.max_connections_per_server = value.parse().unwrap_or(16)
+                    settings.max_connections_per_server = value.parse().unwrap_or(8)
                 }
-                "split_count" => settings.split_count = value.parse().unwrap_or(16),
+                "split_count" => settings.split_count = value.parse().unwrap_or(8),
                 "download_speed_limit" => {
                     settings.download_speed_limit = value.parse().unwrap_or(0)
                 }
@@ -153,6 +173,11 @@ impl Database {
                 "bt_seed_ratio" => settings.bt_seed_ratio = value.parse().unwrap_or(1.0),
                 "auto_update_trackers" => settings.auto_update_trackers = value == "true",
                 "delete_files_on_remove" => settings.delete_files_on_remove = value == "true",
+                "proxy_url" => settings.proxy_url = value,
+                "connect_timeout" => settings.connect_timeout = value.parse().unwrap_or(30),
+                "read_timeout" => settings.read_timeout = value.parse().unwrap_or(60),
+                "max_retries" => settings.max_retries = value.parse().unwrap_or(3),
+                "allocation_mode" => settings.allocation_mode = value,
                 _ => {}
             }
         }
@@ -180,6 +205,11 @@ impl Database {
                 ("bt_seed_ratio", settings.bt_seed_ratio.to_string()),
                 ("auto_update_trackers", settings.auto_update_trackers.to_string()),
                 ("delete_files_on_remove", settings.delete_files_on_remove.to_string()),
+                ("proxy_url", settings.proxy_url.clone()),
+                ("connect_timeout", settings.connect_timeout.to_string()),
+                ("read_timeout", settings.read_timeout.to_string()),
+                ("max_retries", settings.max_retries.to_string()),
+                ("allocation_mode", settings.allocation_mode.clone()),
             ];
 
             let tx = conn.unchecked_transaction()?;
@@ -228,10 +258,10 @@ impl Database {
                     download.info_hash,
                     download.download_type.to_string(),
                     download.status.to_string(),
-                    download.total_size,
-                    download.completed_size,
-                    download.download_speed,
-                    download.upload_speed,
+                    download.total_size as i64,
+                    download.completed_size as i64,
+                    download.download_speed as i64,
+                    download.upload_speed as i64,
                     download.save_path,
                     download.created_at,
                     download.completed_at,
@@ -284,7 +314,6 @@ fn row_to_download(row: &rusqlite::Row) -> Download {
         magnet_uri: row.get(4).unwrap_or(None),
         info_hash: row.get(5).unwrap_or(None),
         download_type: match dl_type_str.as_str() {
-            "ftp" => DownloadType::Ftp,
             "torrent" => DownloadType::Torrent,
             "magnet" => DownloadType::Magnet,
             _ => DownloadType::Http,
@@ -310,8 +339,6 @@ pub fn download_type_from_url(url: &str) -> DownloadType {
         DownloadType::Magnet
     } else if lower.ends_with(".torrent") || lower.contains("torrent") {
         DownloadType::Torrent
-    } else if lower.starts_with("ftp://") || lower.starts_with("sftp://") {
-        DownloadType::Ftp
     } else {
         DownloadType::Http
     }

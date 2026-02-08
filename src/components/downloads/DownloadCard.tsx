@@ -9,9 +9,11 @@ import './DownloadCard.css';
 
 interface Props {
   download: Download;
+  selected?: boolean;
+  onSelect?: (gid: string, selected: boolean) => void;
 }
 
-export default function DownloadCard({ download }: Props) {
+export default function DownloadCard({ download, selected, onSelect }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteWithFiles, setDeleteWithFiles] = useState(false);
@@ -27,8 +29,6 @@ export default function DownloadCard({ download }: Props) {
       case 'torrent':
       case 'magnet':
         return '\uD83E\uDDF2';
-      case 'ftp':
-        return '\uD83D\uDCC1';
       default:
         return '\uD83D\uDD17';
     }
@@ -59,7 +59,16 @@ export default function DownloadCard({ download }: Props) {
 
   return (
     <>
-      <div className="download-card">
+      <div className={`download-card${selected ? ' selected' : ''}`}>
+        {onSelect && (
+          <label className="card-checkbox" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={selected || false}
+              onChange={(e) => onSelect(download.gid, e.target.checked)}
+            />
+          </label>
+        )}
         <div className="card-main">
           <div className="card-icon">{getTypeIcon(download.downloadType)}</div>
           <div className="card-content">
@@ -95,6 +104,9 @@ export default function DownloadCard({ download }: Props) {
                   {download.seeders} seeders {'\u00B7'} {download.connections} peers
                 </span>
               )}
+              {download.status === 'error' && download.errorMessage && (
+                <span className="info-error">{download.errorMessage}</span>
+              )}
             </div>
           </div>
         </div>
@@ -104,6 +116,9 @@ export default function DownloadCard({ download }: Props) {
           )}
           {download.status === 'paused' && (
             <button className="btn btn-ghost btn-icon" onClick={handleResume} title="Resume">{'\u25B6'}</button>
+          )}
+          {download.status === 'error' && (
+            <button className="btn btn-ghost btn-icon" onClick={handleResume} title="Retry">{'\u21BB'}</button>
           )}
           {download.status === 'complete' && (
             <button className="btn btn-ghost btn-icon" onClick={handleOpenFolder} title="Open folder">{'\uD83D\uDCC2'}</button>

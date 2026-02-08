@@ -81,6 +81,35 @@
   color: var(--text-primary);
 }
 
+.select-all-checkbox {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  margin-right: var(--space-sm);
+}
+
+.select-all-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.batch-action-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.batch-count {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-right: var(--space-sm);
+}
+
 .downloads-list {
   flex: 1;
   overflow-y: auto;

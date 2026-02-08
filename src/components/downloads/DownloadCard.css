@@ -100,6 +100,28 @@
   margin-left: var(--space-md);
 }
 
+.download-card.selected {
+  border-color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb, 59, 130, 246), 0.05);
+}
+
+.card-checkbox {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.card-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.info-error {
+  color: var(--color-destructive);
+}
+
 .checkbox-label {
   display: flex;
   align-items: center;

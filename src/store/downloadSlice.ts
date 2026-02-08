@@ -54,6 +54,13 @@ export const addMagnet = createAsyncThunk(
   }
 );
 
+export const addUrls = createAsyncThunk(
+  'downloads/addUrls',
+  async ({ urls, options }: { urls: string[]; options?: DownloadOptions }) => {
+    return await api.addUrls(urls, options);
+  }
+);
+
 export const addTorrentFile = createAsyncThunk(
   'downloads/addTorrent',
   async ({ filePath, options }: { filePath: string; options?: DownloadOptions }) => {

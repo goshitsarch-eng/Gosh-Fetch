@@ -110,6 +110,9 @@ const ALLOWED_RPC_METHODS = new Set([
   'db_get_settings',
   'db_save_settings',
   'db_load_incomplete',
+  'set_priority',
+  'get_schedule_rules',
+  'set_schedule_rules',
 ]);
 
 function getSidecarPath(): string {

@@ -338,6 +338,32 @@ async fn handle_method(
             Ok(serde_json::to_value(presets)?)
         }
 
+        // Priority and scheduling
+        "set_priority" => {
+            let gid = params.get("gid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let priority_str = params.get("priority").and_then(|v| v.as_str()).unwrap_or("normal").to_string();
+            let engine = state.get_engine().await?;
+            let id = crate::engine_adapter::parse_gid_public(&gid)?;
+            let priority: gosh_dl::DownloadPriority = priority_str.parse().map_err(|_| {
+                Error::InvalidInput(format!("Invalid priority: {}. Use low, normal, high, or critical.", priority_str))
+            })?;
+            engine.set_priority(id, priority)?;
+            Ok(Value::Null)
+        }
+        "get_schedule_rules" => {
+            let engine = state.get_engine().await?;
+            let rules = engine.get_schedule_rules();
+            Ok(serde_json::to_value(rules)?)
+        }
+        "set_schedule_rules" => {
+            let rules: Vec<gosh_dl::ScheduleRule> = serde_json::from_value(
+                params.get("rules").cloned().unwrap_or(Value::Array(vec![]))
+            )?;
+            let engine = state.get_engine().await?;
+            engine.set_schedule_rules(rules);
+            Ok(Value::Null)
+        }
+
         // System commands
         "get_engine_version" => {
             let info = commands::get_engine_version(state).await?;

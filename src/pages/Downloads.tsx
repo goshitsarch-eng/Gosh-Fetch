@@ -12,6 +12,9 @@ import {
   restoreIncomplete,
   pauseAll,
   resumeAll,
+  pauseDownload,
+  resumeDownload,
+  removeDownload,
 } from '../store/downloadSlice';
 import { selectStats } from '../store/statsSlice';
 import { formatSpeed } from '../lib/utils/format';
@@ -27,6 +30,7 @@ export default function Downloads() {
   const stats = useSelector(selectStats);
   const [showAddModal, setShowAddModal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all');
+  const [selectedGids, setSelectedGids] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     dispatch(loadCompletedHistory());
@@ -44,6 +48,47 @@ export default function Downloads() {
       default: return true;
     }
   });
+
+  const hasSelection = selectedGids.size > 0;
+  const allSelected = filteredDownloads.length > 0 && filteredDownloads.every(d => selectedGids.has(d.gid));
+
+  function handleSelect(gid: string, selected: boolean) {
+    setSelectedGids(prev => {
+      const next = new Set(prev);
+      if (selected) next.add(gid);
+      else next.delete(gid);
+      return next;
+    });
+  }
+
+  function handleSelectAll() {
+    if (allSelected) {
+      setSelectedGids(new Set());
+    } else {
+      setSelectedGids(new Set(filteredDownloads.map(d => d.gid)));
+    }
+  }
+
+  async function handleBatchPause() {
+    for (const gid of selectedGids) {
+      try { await dispatch(pauseDownload(gid)); } catch { /* ignore */ }
+    }
+    setSelectedGids(new Set());
+  }
+
+  async function handleBatchResume() {
+    for (const gid of selectedGids) {
+      try { await dispatch(resumeDownload(gid)); } catch { /* ignore */ }
+    }
+    setSelectedGids(new Set());
+  }
+
+  async function handleBatchRemove() {
+    for (const gid of selectedGids) {
+      try { await dispatch(removeDownload({ gid, deleteFiles: false })); } catch { /* ignore */ }
+    }
+    setSelectedGids(new Set());
+  }
 
   return (
     <div className="page">
@@ -65,11 +110,24 @@ export default function Downloads() {
       </header>
 
       <div className="filter-bar">
+        <label className="select-all-checkbox">
+          <input type="checkbox" checked={allSelected} onChange={handleSelectAll} disabled={filteredDownloads.length === 0} />
+        </label>
         <button className={`filter-btn${filter === 'all' ? ' active' : ''}`} onClick={() => setFilter('all')}>All</button>
         <button className={`filter-btn${filter === 'active' ? ' active' : ''}`} onClick={() => setFilter('active')}>Active ({activeDownloads.length})</button>
         <button className={`filter-btn${filter === 'paused' ? ' active' : ''}`} onClick={() => setFilter('paused')}>Paused ({pausedDownloads.length})</button>
         <button className={`filter-btn${filter === 'error' ? ' active' : ''}`} onClick={() => setFilter('error')}>Errors ({errorDownloads.length})</button>
       </div>
+
+      {hasSelection && (
+        <div className="batch-action-bar">
+          <span className="batch-count">{selectedGids.size} selected</span>
+          <button className="btn btn-secondary btn-sm" onClick={handleBatchPause}>{'\u23F8'} Pause</button>
+          <button className="btn btn-secondary btn-sm" onClick={handleBatchResume}>{'\u25B6'} Resume</button>
+          <button className="btn btn-destructive btn-sm" onClick={handleBatchRemove}>{'\uD83D\uDDD1'} Remove</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setSelectedGids(new Set())}>Clear</button>
+        </div>
+      )}
 
       <div className="downloads-list">
         {filteredDownloads.length === 0 ? (
@@ -79,7 +137,14 @@ export default function Downloads() {
             <p>Click &quot;Add Download&quot; to get started</p>
           </div>
         ) : (
-          filteredDownloads.map(download => <DownloadCard key={download.gid} download={download} />)
+          filteredDownloads.map(download => (
+            <DownloadCard
+              key={download.gid}
+              download={download}
+              selected={selectedGids.has(download.gid)}
+              onSelect={handleSelect}
+            />
+          ))
         )}
       </div>
 

@@ -51,8 +51,8 @@ CREATE INDEX IF NOT EXISTS idx_downloads_gid ON downloads(gid);
 INSERT OR IGNORE INTO settings (key, value) VALUES
     ('download_path', '~/Downloads'),
     ('max_concurrent_downloads', '5'),
-    ('max_connections_per_server', '16'),
-    ('split_count', '16'),
+    ('max_connections_per_server', '8'),
+    ('split_count', '8'),
     ('download_speed_limit', '0'),
     ('upload_speed_limit', '0'),
     ('user_agent', 'gosh-dl/0.1.0'),
@@ -65,7 +65,12 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('bt_max_peers', '55'),
     ('bt_seed_ratio', '1.0'),
     ('auto_update_trackers', 'true'),
-    ('delete_files_on_remove', 'false');
+    ('delete_files_on_remove', 'false'),
+    ('proxy_url', ''),
+    ('connect_timeout', '30'),
+    ('read_timeout', '60'),
+    ('max_retries', '3'),
+    ('allocation_mode', 'sparse');
 
 -- Initialize tracker metadata
 INSERT OR IGNORE INTO tracker_meta (id, source_url) VALUES

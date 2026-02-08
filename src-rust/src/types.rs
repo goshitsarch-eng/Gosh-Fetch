@@ -1,6 +1,6 @@
 //! Types module - frontend-facing types for Gosh-Fetch
 //!
-//! These types define the API contract between the Tauri backend and the frontend.
+//! These types define the API contract between the backend and the frontend.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +14,9 @@ pub struct DownloadOptions {
     /// Output filename
     #[serde(skip_serializing_if = "Option::is_none")]
     pub out: Option<String>,
+    /// Number of connections/splits for this download
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split: Option<String>,
     /// Number of connections per server
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_connection_per_server: Option<String>,
@@ -38,6 +41,18 @@ pub struct DownloadOptions {
     /// Max upload speed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_upload_limit: Option<String>,
+    /// Download priority (low, normal, high, critical)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<String>,
+    /// Checksum for verification (format: "sha256:hex" or "md5:hex")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
+    /// Mirror/failover URLs
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mirrors: Option<Vec<String>>,
+    /// Sequential download mode (for torrents)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequential: Option<bool>,
 }
 
 /// Global download statistics
@@ -131,7 +146,6 @@ pub struct Download {
 #[serde(rename_all = "lowercase")]
 pub enum DownloadType {
     Http,
-    Ftp,
     Torrent,
     Magnet,
 }
@@ -140,7 +154,6 @@ impl std::fmt::Display for DownloadType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DownloadType::Http => write!(f, "http"),
-            DownloadType::Ftp => write!(f, "ftp"),
             DownloadType::Torrent => write!(f, "torrent"),
             DownloadType::Magnet => write!(f, "magnet"),
         }

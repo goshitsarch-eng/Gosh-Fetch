@@ -1,4 +1,4 @@
-export type DownloadType = 'http' | 'ftp' | 'torrent' | 'magnet';
+export type DownloadType = 'http' | 'torrent' | 'magnet';
 
 export type DownloadState = 'active' | 'waiting' | 'paused' | 'complete' | 'error' | 'removed';
 
@@ -108,6 +108,10 @@ export interface DownloadOptions {
   seedRatio?: string;
   maxDownloadLimit?: string;
   maxUploadLimit?: string;
+  priority?: string;
+  checksum?: string;
+  mirrors?: string[];
+  sequential?: boolean;
 }
 
 export interface TorrentFile {

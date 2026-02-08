@@ -18,6 +18,11 @@ interface Settings {
   bt_seed_ratio: number;
   auto_update_trackers: boolean;
   delete_files_on_remove: boolean;
+  proxy_url: string;
+  connect_timeout: number;
+  read_timeout: number;
+  max_retries: number;
+  allocation_mode: string;
 }
 
 function invoke<T = any>(method: string, params?: any): Promise<T> {
@@ -84,6 +89,14 @@ export const api = {
     invoke<void>('apply_settings_to_engine', { settings }),
   getUserAgentPresets: () =>
     invoke<[string, string][]>('get_user_agent_presets'),
+
+  // Priority and scheduling
+  setPriority: (gid: string, priority: string) =>
+    invoke<void>('set_priority', { gid, priority }),
+  getScheduleRules: () =>
+    invoke<any[]>('get_schedule_rules'),
+  setScheduleRules: (rules: any[]) =>
+    invoke<void>('set_schedule_rules', { rules }),
 
   // System commands
   getEngineVersion: () =>

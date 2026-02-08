@@ -71,6 +71,23 @@ impl AppState {
             config.global_upload_limit = Some(settings.upload_speed_limit);
         }
 
+        // Proxy
+        if !settings.proxy_url.is_empty() {
+            config.http.proxy_url = Some(settings.proxy_url.clone());
+        }
+
+        // Timeouts and retries
+        config.http.connect_timeout = settings.connect_timeout;
+        config.http.read_timeout = settings.read_timeout;
+        config.http.max_retries = settings.max_retries as usize;
+
+        // File allocation mode
+        config.torrent.allocation_mode = match settings.allocation_mode.as_str() {
+            "full" => gosh_dl::AllocationMode::Full,
+            "sparse" => gosh_dl::AllocationMode::Sparse,
+            _ => gosh_dl::AllocationMode::None,
+        };
+
         let engine = DownloadEngine::new(config).await?;
         let adapter = EngineAdapter::new(engine.clone());
 

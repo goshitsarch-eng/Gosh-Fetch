@@ -50,8 +50,12 @@ pub async fn select_torrent_files(
     _gid: String,
     _file_indices: Vec<u32>,
 ) -> Result<()> {
+    // TODO: Implement post-add file selection when engine support is available.
     Err(Error::InvalidInput(
-        "File selection must be specified when adding the torrent. Use the select_file option in DownloadOptions.".to_string()
+        "Post-add file selection is not supported by the download engine. \
+         File selection must be specified when adding the torrent using the \
+         select_file option in DownloadOptions. To change file selection, \
+         remove the torrent and re-add it with the desired files selected.".to_string()
     ))
 }
 

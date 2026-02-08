@@ -44,6 +44,8 @@ pub async fn apply_settings_to_engine(
     state: &AppState,
     settings: Settings,
 ) -> Result<()> {
+    use gosh_dl::AllocationMode;
+
     let engine = state.get_engine().await?;
     let mut config = engine.get_config();
 
@@ -70,6 +72,25 @@ pub async fn apply_settings_to_engine(
     config.max_peers = settings.bt_max_peers as usize;
     config.seed_ratio = settings.bt_seed_ratio;
 
+    // Proxy
+    config.http.proxy_url = if settings.proxy_url.is_empty() {
+        None
+    } else {
+        Some(settings.proxy_url)
+    };
+
+    // Timeouts and retries
+    config.http.connect_timeout = settings.connect_timeout;
+    config.http.read_timeout = settings.read_timeout;
+    config.http.max_retries = settings.max_retries as usize;
+
+    // File allocation mode
+    config.torrent.allocation_mode = match settings.allocation_mode.as_str() {
+        "full" => AllocationMode::Full,
+        "sparse" => AllocationMode::Sparse,
+        _ => AllocationMode::None,
+    };
+
     engine.set_config(config)?;
     Ok(())
 }
@@ -77,11 +98,11 @@ pub async fn apply_settings_to_engine(
 pub fn get_user_agent_presets() -> Vec<(String, String)> {
     vec![
         ("gosh-dl".to_string(), "gosh-dl/0.1.0".to_string()),
-        ("Chrome (Windows)".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string()),
-        ("Chrome (macOS)".to_string(), "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".to_string()),
-        ("Firefox (Windows)".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0".to_string()),
-        ("Firefox (Linux)".to_string(), "Mozilla/5.0 (X11; Linux x86_64; rv:121.0) Gecko/20100101 Firefox/121.0".to_string()),
-        ("Wget".to_string(), "Wget/1.21.4".to_string()),
-        ("Curl".to_string(), "curl/8.5.0".to_string()),
+        ("Chrome (Windows)".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36".to_string()),
+        ("Chrome (macOS)".to_string(), "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36".to_string()),
+        ("Firefox (Windows)".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0".to_string()),
+        ("Firefox (Linux)".to_string(), "Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0".to_string()),
+        ("Wget".to_string(), "Wget/1.25.0".to_string()),
+        ("Curl".to_string(), "curl/8.12.1".to_string()),
     ]
 }
