@@ -75,3 +75,6 @@ pids/
 *.bak
 *.tmp
 *.temp
+
+# Internal development docs
+update.md
