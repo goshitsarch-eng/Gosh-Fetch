@@ -1,6 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragStartEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
 import DownloadCard from '../components/downloads/DownloadCard';
+import SortableDownloadCard from '../components/downloads/SortableDownloadCard';
 import AddDownloadModal from '../components/downloads/AddDownloadModal';
 import {
   selectDownloads,
@@ -15,7 +32,9 @@ import {
   pauseDownload,
   resumeDownload,
   removeDownload,
+  syncPriorities,
 } from '../store/downloadSlice';
+import { selectGidOrder, setOrder, setDragging } from '../store/orderSlice';
 import { selectStats } from '../store/statsSlice';
 import { formatSpeed } from '../lib/utils/format';
 import type { AppDispatch } from '../store/store';
@@ -28,9 +47,16 @@ export default function Downloads() {
   const pausedDownloads = useSelector(selectPausedDownloads);
   const errorDownloads = useSelector(selectErrorDownloads);
   const stats = useSelector(selectStats);
+  const gidOrder = useSelector(selectGidOrder);
   const [showAddModal, setShowAddModal] = useState(false);
   const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'error'>('all');
   const [selectedGids, setSelectedGids] = useState<Set<string>>(new Set());
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
 
   useEffect(() => {
     dispatch(loadCompletedHistory());
@@ -49,8 +75,20 @@ export default function Downloads() {
     }
   });
 
+  // Sort filtered downloads by gidOrder index
+  const sortedFilteredDownloads = useMemo(() => {
+    const orderMap = new Map(gidOrder.map((gid, i) => [gid, i]));
+    return [...filteredDownloads].sort((a, b) => {
+      const ai = orderMap.get(a.gid) ?? Infinity;
+      const bi = orderMap.get(b.gid) ?? Infinity;
+      return ai - bi;
+    });
+  }, [filteredDownloads, gidOrder]);
+
+  const activeDownload = activeId ? allDownloads.find(d => d.gid === activeId) : null;
+
   const hasSelection = selectedGids.size > 0;
-  const allSelected = filteredDownloads.length > 0 && filteredDownloads.every(d => selectedGids.has(d.gid));
+  const allSelected = sortedFilteredDownloads.length > 0 && sortedFilteredDownloads.every(d => selectedGids.has(d.gid));
 
   function handleSelect(gid: string, selected: boolean) {
     setSelectedGids(prev => {
@@ -65,7 +103,7 @@ export default function Downloads() {
     if (allSelected) {
       setSelectedGids(new Set());
     } else {
-      setSelectedGids(new Set(filteredDownloads.map(d => d.gid)));
+      setSelectedGids(new Set(sortedFilteredDownloads.map(d => d.gid)));
     }
   }
 
@@ -90,6 +128,32 @@ export default function Downloads() {
     setSelectedGids(new Set());
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(event.active.id as string);
+    dispatch(setDragging(true));
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveId(null);
+    dispatch(setDragging(false));
+
+    if (over && active.id !== over.id) {
+      const oldIndex = gidOrder.indexOf(active.id as string);
+      const newIndex = gidOrder.indexOf(over.id as string);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newOrder = arrayMove(gidOrder, oldIndex, newIndex);
+        dispatch(setOrder(newOrder));
+        dispatch(syncPriorities(newOrder));
+      }
+    }
+  }
+
+  function handleDragCancel() {
+    setActiveId(null);
+    dispatch(setDragging(false));
+  }
+
   return (
     <div className="page">
       <header className="page-header">
@@ -111,7 +175,7 @@ export default function Downloads() {
 
       <div className="filter-bar">
         <label className="select-all-checkbox">
-          <input type="checkbox" checked={allSelected} onChange={handleSelectAll} disabled={filteredDownloads.length === 0} />
+          <input type="checkbox" checked={allSelected} onChange={handleSelectAll} disabled={sortedFilteredDownloads.length === 0} />
         </label>
         <button className={`filter-btn${filter === 'all' ? ' active' : ''}`} onClick={() => setFilter('all')}>All</button>
         <button className={`filter-btn${filter === 'active' ? ' active' : ''}`} onClick={() => setFilter('active')}>Active ({activeDownloads.length})</button>
@@ -129,24 +193,45 @@ export default function Downloads() {
         </div>
       )}
 
-      <div className="downloads-list">
-        {filteredDownloads.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">{'\uD83D\uDCE5'}</div>
-            <h3>No downloads</h3>
-            <p>Click &quot;Add Download&quot; to get started</p>
-          </div>
-        ) : (
-          filteredDownloads.map(download => (
-            <DownloadCard
-              key={download.gid}
-              download={download}
-              selected={selectedGids.has(download.gid)}
-              onSelect={handleSelect}
-            />
-          ))
-        )}
-      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="downloads-list">
+          {sortedFilteredDownloads.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">{'\uD83D\uDCE5'}</div>
+              <h3>No downloads</h3>
+              <p>Click &quot;Add Download&quot; to get started</p>
+            </div>
+          ) : (
+            <SortableContext items={sortedFilteredDownloads.map(d => d.gid)} strategy={verticalListSortingStrategy}>
+              {sortedFilteredDownloads.map(download => (
+                <SortableDownloadCard
+                  key={download.gid}
+                  download={download}
+                  selected={selectedGids.has(download.gid)}
+                  onSelect={handleSelect}
+                />
+              ))}
+            </SortableContext>
+          )}
+        </div>
+
+        <DragOverlay>
+          {activeDownload ? (
+            <div className="drag-overlay-card">
+              <div className="sortable-card-wrapper">
+                <div className="drag-handle">{'\u2807'}</div>
+                <DownloadCard download={activeDownload} />
+              </div>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       {showAddModal && <AddDownloadModal onClose={() => setShowAddModal(false)} />}
     </div>

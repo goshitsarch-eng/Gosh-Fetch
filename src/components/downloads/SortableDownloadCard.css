@@ -1,0 +1,48 @@
+.sortable-card-wrapper {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  flex-shrink: 0;
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 18px;
+  user-select: none;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.drag-handle:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.sortable-card-wrapper .download-card {
+  flex: 1;
+  min-width: 0;
+}
+
+.sortable-card-wrapper.is-dragging {
+  opacity: 0.4;
+}
+
+.drag-overlay-card {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.drag-overlay-card .sortable-card-wrapper {
+  opacity: 1;
+}

@@ -116,6 +116,33 @@ export const clearHistory = createAsyncThunk(
   }
 );
 
+// Maps position in queue to a priority bucket, then calls setPriority only for changed items
+export const syncPriorities = createAsyncThunk(
+  'downloads/syncPriorities',
+  async (gidOrder: string[], { getState }) => {
+    const total = gidOrder.length;
+    if (total === 0) return;
+
+    function getBucket(index: number): string {
+      const ratio = total === 1 ? 0 : index / (total - 1);
+      if (ratio <= 0.10) return 'critical';
+      if (ratio <= 0.35) return 'high';
+      if (ratio <= 0.75) return 'normal';
+      return 'low';
+    }
+
+    for (let i = 0; i < total; i++) {
+      const gid = gidOrder[i];
+      const bucket = getBucket(i);
+      try {
+        await api.setPriority(gid, bucket);
+      } catch {
+        // Download may have been removed between reorder and sync
+      }
+    }
+  }
+);
+
 export const restoreIncomplete = createAsyncThunk(
   'downloads/restoreIncomplete',
   async () => {
