@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { Save } from 'lucide-react';
+import { Save, Sun, Moon, ChevronDown, ChevronRight } from 'lucide-react';
 import { selectTheme, setTheme } from '../store/themeSlice';
 import { api } from '../lib/api';
 import type { Settings as SettingsType } from '../lib/api';
@@ -31,6 +31,16 @@ export default function Settings() {
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const savedSnapshot = useRef<string>('');
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+
+  function toggleSection(section: string) {
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
+  }
 
   function getSnapshot() {
     return JSON.stringify({
@@ -181,122 +191,217 @@ export default function Settings() {
     dispatch(setTheme(newTheme));
   }
 
+  const isSectionOpen = (s: string) => !collapsedSections.has(s);
+
   return (
     <div className="page">
       <header className="page-header"><h1>Settings</h1></header>
       <div className="settings-content">
+        {/* Appearance */}
         <section className="settings-section">
-          <h2>Appearance</h2>
-          <div className="setting-item">
-            <div className="setting-info"><label>Theme</label><p>Choose between dark and light mode</p></div>
-            <div className="setting-control">
-              <select value={theme} onChange={(e) => handleThemeChange(e.target.value as 'dark' | 'light')}>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-              </select>
+          <button className="section-header" onClick={() => toggleSection('appearance')}>
+            <h2>Appearance</h2>
+            {isSectionOpen('appearance') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {isSectionOpen('appearance') && (
+            <div className="section-body">
+              <div className="theme-cards">
+                <button className={`theme-card${theme === 'dark' ? ' selected' : ''}`} onClick={() => handleThemeChange('dark')}>
+                  <Moon size={24} />
+                  <span>Dark</span>
+                </button>
+                <button className={`theme-card${theme === 'light' ? ' selected' : ''}`} onClick={() => handleThemeChange('light')}>
+                  <Sun size={24} />
+                  <span>Light</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
+        {/* General */}
         <section className="settings-section">
-          <h2>General</h2>
-          <div className="setting-item">
-            <div className="setting-info"><label>Download Location</label><p>Where downloaded files will be saved</p></div>
-            <div className="setting-control file-control">
-              <input type="text" value={downloadPath} readOnly />
-              <button className="btn btn-secondary" onClick={handleBrowseDownloadPath}>Browse</button>
+          <button className="section-header" onClick={() => toggleSection('general')}>
+            <h2>General</h2>
+            {isSectionOpen('general') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {isSectionOpen('general') && (
+            <div className="section-body">
+              <div className="setting-item">
+                <div className="setting-info"><label>Download Location</label><p>Where downloaded files will be saved</p></div>
+                <div className="setting-control file-control">
+                  <input type="text" value={downloadPath} readOnly />
+                  <button className="btn btn-secondary" onClick={handleBrowseDownloadPath}>Browse</button>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Notifications</label><p>Show notification when downloads complete</p></div>
+                <div className="setting-control">
+                  <label className="toggle-switch">
+                    <input type="checkbox" checked={enableNotifications} onChange={(e) => setEnableNotifications(e.target.checked)} />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Close to Tray</label><p>Minimize to system tray instead of quitting</p></div>
+                <div className="setting-control">
+                  <label className="toggle-switch">
+                    <input type="checkbox" checked={closeToTray} onChange={(e) => setCloseToTray(e.target.checked)} />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Delete Files on Remove</label><p>Delete downloaded files when removing a task (default)</p></div>
+                <div className="setting-control">
+                  <label className="toggle-switch">
+                    <input type="checkbox" checked={deleteFilesOnRemove} onChange={(e) => setDeleteFilesOnRemove(e.target.checked)} />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Notifications</label><p>Show notification when downloads complete</p></div>
-            <div className="setting-control"><input type="checkbox" checked={enableNotifications} onChange={(e) => setEnableNotifications(e.target.checked)} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Close to Tray</label><p>Minimize to system tray instead of quitting</p></div>
-            <div className="setting-control"><input type="checkbox" checked={closeToTray} onChange={(e) => setCloseToTray(e.target.checked)} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Delete Files on Remove</label><p>Delete downloaded files when removing a task (default)</p></div>
-            <div className="setting-control"><input type="checkbox" checked={deleteFilesOnRemove} onChange={(e) => setDeleteFilesOnRemove(e.target.checked)} /></div>
-          </div>
+          )}
         </section>
 
+        {/* Connection */}
         <section className="settings-section">
-          <h2>Connection</h2>
-          <div className="setting-item">
-            <div className="setting-info"><label>Concurrent Downloads</label><p>{maxConcurrent} simultaneous downloads</p></div>
-            <div className="setting-control"><input type="range" min={1} max={20} value={maxConcurrent} onChange={(e) => setMaxConcurrent(Number(e.target.value))} aria-label="Concurrent downloads" aria-valuemin={1} aria-valuemax={20} aria-valuenow={maxConcurrent} aria-valuetext={`${maxConcurrent} downloads`} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Connections per Server</label><p>{maxConnections} connections per download</p></div>
-            <div className="setting-control"><input type="range" min={1} max={16} value={maxConnections} onChange={(e) => setMaxConnections(Number(e.target.value))} aria-label="Connections per server" aria-valuemin={1} aria-valuemax={16} aria-valuenow={maxConnections} aria-valuetext={`${maxConnections} connections`} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Split Count</label><p>{splitCount} segments per file</p></div>
-            <div className="setting-control"><input type="range" min={1} max={64} value={splitCount} onChange={(e) => setSplitCount(Number(e.target.value))} aria-label="Split count" aria-valuemin={1} aria-valuemax={64} aria-valuenow={splitCount} aria-valuetext={`${splitCount} segments`} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Download Speed Limit</label><p>{formatSpeedLimit(downloadSpeedLimit)} (0 = unlimited)</p></div>
-            <div className="setting-control"><input type="range" min={0} max={104857600} step={1048576} value={downloadSpeedLimit} onChange={(e) => setDownloadSpeedLimit(Number(e.target.value))} aria-label="Download speed limit" aria-valuemin={0} aria-valuemax={104857600} aria-valuenow={downloadSpeedLimit} aria-valuetext={formatSpeedLimit(downloadSpeedLimit)} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Upload Speed Limit</label><p>{formatSpeedLimit(uploadSpeedLimit)} (0 = unlimited)</p></div>
-            <div className="setting-control"><input type="range" min={0} max={104857600} step={1048576} value={uploadSpeedLimit} onChange={(e) => setUploadSpeedLimit(Number(e.target.value))} aria-label="Upload speed limit" aria-valuemin={0} aria-valuemax={104857600} aria-valuenow={uploadSpeedLimit} aria-valuetext={formatSpeedLimit(uploadSpeedLimit)} /></div>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h2>Network</h2>
-          <div className="setting-item">
-            <div className="setting-info"><label>Proxy URL</label><p>HTTP/SOCKS proxy (leave empty for direct connection)</p></div>
-            <div className="setting-control"><input type="text" value={proxyUrl} onChange={(e) => setProxyUrl(e.target.value)} placeholder="socks5://127.0.0.1:1080" /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Connect Timeout</label><p>{connectTimeout} seconds</p></div>
-            <div className="setting-control"><input type="range" min={5} max={120} value={connectTimeout} onChange={(e) => setConnectTimeout(Number(e.target.value))} aria-label="Connect timeout" aria-valuemin={5} aria-valuemax={120} aria-valuenow={connectTimeout} aria-valuetext={`${connectTimeout} seconds`} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Read Timeout</label><p>{readTimeout} seconds</p></div>
-            <div className="setting-control"><input type="range" min={10} max={300} value={readTimeout} onChange={(e) => setReadTimeout(Number(e.target.value))} aria-label="Read timeout" aria-valuemin={10} aria-valuemax={300} aria-valuenow={readTimeout} aria-valuetext={`${readTimeout} seconds`} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Max Retries</label><p>{maxRetries} retry attempts on failure</p></div>
-            <div className="setting-control"><input type="range" min={0} max={10} value={maxRetries} onChange={(e) => setMaxRetries(Number(e.target.value))} aria-label="Max retries" aria-valuemin={0} aria-valuemax={10} aria-valuenow={maxRetries} aria-valuetext={`${maxRetries} retries`} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>File Allocation</label><p>How disk space is allocated for downloads</p></div>
-            <div className="setting-control">
-              <select value={allocationMode} onChange={(e) => setAllocationMode(e.target.value)}>
-                <option value="none">None</option>
-                <option value="sparse">Sparse</option>
-                <option value="full">Full (pre-allocate)</option>
-              </select>
+          <button className="section-header" onClick={() => toggleSection('connection')}>
+            <h2>Connection</h2>
+            {isSectionOpen('connection') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {isSectionOpen('connection') && (
+            <div className="section-body">
+              <div className="setting-item">
+                <div className="setting-info"><label>Concurrent Downloads</label><p>Maximum simultaneous downloads</p></div>
+                <div className="setting-control range-control">
+                  <input type="range" min={1} max={20} value={maxConcurrent} onChange={(e) => setMaxConcurrent(Number(e.target.value))} aria-label="Concurrent downloads" />
+                  <span className="range-value">{maxConcurrent}</span>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Connections per Server</label><p>Per-download connection count</p></div>
+                <div className="setting-control range-control">
+                  <input type="range" min={1} max={16} value={maxConnections} onChange={(e) => setMaxConnections(Number(e.target.value))} aria-label="Connections per server" />
+                  <span className="range-value">{maxConnections}</span>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Split Count</label><p>Segments per file</p></div>
+                <div className="setting-control range-control">
+                  <input type="range" min={1} max={64} value={splitCount} onChange={(e) => setSplitCount(Number(e.target.value))} aria-label="Split count" />
+                  <span className="range-value">{splitCount}</span>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Download Speed Limit</label><p>{formatSpeedLimit(downloadSpeedLimit)}</p></div>
+                <div className="setting-control range-control">
+                  <input type="range" min={0} max={104857600} step={1048576} value={downloadSpeedLimit} onChange={(e) => setDownloadSpeedLimit(Number(e.target.value))} aria-label="Download speed limit" />
+                  <span className="range-value">{downloadSpeedLimit === 0 ? '\u221E' : formatSpeedLimit(downloadSpeedLimit)}</span>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Upload Speed Limit</label><p>{formatSpeedLimit(uploadSpeedLimit)}</p></div>
+                <div className="setting-control range-control">
+                  <input type="range" min={0} max={104857600} step={1048576} value={uploadSpeedLimit} onChange={(e) => setUploadSpeedLimit(Number(e.target.value))} aria-label="Upload speed limit" />
+                  <span className="range-value">{uploadSpeedLimit === 0 ? '\u221E' : formatSpeedLimit(uploadSpeedLimit)}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
+        {/* Network */}
         <section className="settings-section">
-          <h2>User Agent</h2>
-          <div className="setting-item">
-            <div className="setting-info"><label>User Agent</label><p>Identify as a different client</p></div>
-            <div className="setting-control user-agent-control">
-              <select value={userAgent} onChange={(e) => setUserAgent(e.target.value)}>
-                {userAgentPresets.map(([name, value]) => <option key={value} value={value}>{name}</option>)}
-              </select>
+          <button className="section-header" onClick={() => toggleSection('network')}>
+            <h2>Network</h2>
+            {isSectionOpen('network') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {isSectionOpen('network') && (
+            <div className="section-body">
+              <div className="setting-item">
+                <div className="setting-info"><label>Proxy URL</label><p>HTTP/SOCKS proxy (leave empty for direct connection)</p></div>
+                <div className="setting-control"><input type="text" value={proxyUrl} onChange={(e) => setProxyUrl(e.target.value)} placeholder="socks5://127.0.0.1:1080" /></div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Connect Timeout</label><p>Seconds to wait for connection</p></div>
+                <div className="setting-control range-control">
+                  <input type="range" min={5} max={120} value={connectTimeout} onChange={(e) => setConnectTimeout(Number(e.target.value))} aria-label="Connect timeout" />
+                  <span className="range-value">{connectTimeout}s</span>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Read Timeout</label><p>Seconds to wait for data</p></div>
+                <div className="setting-control range-control">
+                  <input type="range" min={10} max={300} value={readTimeout} onChange={(e) => setReadTimeout(Number(e.target.value))} aria-label="Read timeout" />
+                  <span className="range-value">{readTimeout}s</span>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Max Retries</label><p>Retry attempts on failure</p></div>
+                <div className="setting-control range-control">
+                  <input type="range" min={0} max={10} value={maxRetries} onChange={(e) => setMaxRetries(Number(e.target.value))} aria-label="Max retries" />
+                  <span className="range-value">{maxRetries}</span>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>File Allocation</label><p>How disk space is allocated for downloads</p></div>
+                <div className="setting-control">
+                  <select value={allocationMode} onChange={(e) => setAllocationMode(e.target.value)}>
+                    <option value="none">None</option>
+                    <option value="sparse">Sparse</option>
+                    <option value="full">Full (pre-allocate)</option>
+                  </select>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </section>
 
+        {/* User Agent */}
         <section className="settings-section">
-          <h2>BitTorrent</h2>
-          <div className="setting-item">
-            <div className="setting-info"><label>Auto-Update Tracker List</label><p>Automatically fetch updated trackers daily</p></div>
-            <div className="setting-control"><input type="checkbox" checked={autoUpdateTrackers} onChange={(e) => setAutoUpdateTrackers(e.target.checked)} /></div>
-          </div>
-          <div className="setting-item">
-            <div className="setting-info"><label>Update Trackers Now</label><p>Fetch the latest tracker list from ngosang/trackerslist</p></div>
-            <div className="setting-control"><button className="btn btn-secondary" onClick={handleUpdateTrackers}>Update Trackers</button></div>
-          </div>
+          <button className="section-header" onClick={() => toggleSection('useragent')}>
+            <h2>User Agent</h2>
+            {isSectionOpen('useragent') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {isSectionOpen('useragent') && (
+            <div className="section-body">
+              <div className="setting-item">
+                <div className="setting-info"><label>User Agent</label><p>Identify as a different client</p></div>
+                <div className="setting-control user-agent-control">
+                  <select value={userAgent} onChange={(e) => setUserAgent(e.target.value)}>
+                    {userAgentPresets.map(([name, value]) => <option key={value} value={value}>{name}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* BitTorrent */}
+        <section className="settings-section">
+          <button className="section-header" onClick={() => toggleSection('bittorrent')}>
+            <h2>BitTorrent</h2>
+            {isSectionOpen('bittorrent') ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </button>
+          {isSectionOpen('bittorrent') && (
+            <div className="section-body">
+              <div className="setting-item">
+                <div className="setting-info"><label>Auto-Update Tracker List</label><p>Automatically fetch updated trackers daily</p></div>
+                <div className="setting-control">
+                  <label className="toggle-switch">
+                    <input type="checkbox" checked={autoUpdateTrackers} onChange={(e) => setAutoUpdateTrackers(e.target.checked)} />
+                    <span className="toggle-slider" />
+                  </label>
+                </div>
+              </div>
+              <div className="setting-item">
+                <div className="setting-info"><label>Update Trackers Now</label><p>Fetch the latest tracker list from ngosang/trackerslist</p></div>
+                <div className="setting-control"><button className="btn btn-secondary" onClick={handleUpdateTrackers}>Update Trackers</button></div>
+              </div>
+            </div>
+          )}
         </section>
 
         <div className="settings-footer">

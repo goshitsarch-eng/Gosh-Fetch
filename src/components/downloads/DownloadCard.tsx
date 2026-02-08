@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Download } from '../../lib/types/download';
-import { Magnet, Link, Pause, Play, RotateCcw, FolderOpen, Trash2, X, ArrowDown, ArrowUp } from 'lucide-react';
-import { formatBytes, formatSpeed, formatProgress, formatEta, getStatusColor, getStatusText } from '../../lib/utils/format';
+import { Magnet, Link, FileDown, Pause, Play, RotateCcw, FolderOpen, Trash2, X, ArrowDown, ArrowUp } from 'lucide-react';
+import { formatBytes, formatSpeed, formatProgress, formatEta, getFileExtension, getStatusColor, getStatusText } from '../../lib/utils/format';
 import { useDispatch } from 'react-redux';
 import { pauseDownload, resumeDownload, removeDownload } from '../../store/downloadSlice';
 import { api } from '../../lib/api';
@@ -46,7 +46,7 @@ function DeleteConfirmModal({ downloadName, deleteWithFiles, onDeleteWithFilesCh
 
   return (
     <div className="modal-backdrop" onClick={onCancel} role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title">
-      <div className="modal" onClick={(e) => e.stopPropagation()} ref={modalRef}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} ref={modalRef} style={{ maxWidth: '440px' }}>
         <div className="modal-header">
           <h3 className="modal-title" id="delete-confirm-title">Remove Download</h3>
           <button className="btn btn-ghost btn-icon" onClick={onCancel} aria-label="Close"><X size={16} /></button>
@@ -67,6 +67,24 @@ function DeleteConfirmModal({ downloadName, deleteWithFiles, onDeleteWithFilesCh
   );
 }
 
+function getTypeBadge(download: Download): { label: string; className: string } | null {
+  if (download.status === 'paused') return { label: 'PAUSED', className: 'tag tag-orange' };
+  if (download.status === 'error') return { label: 'ERROR', className: 'tag tag-red' };
+  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return { label: 'TORRENT', className: 'tag tag-purple' };
+  const ext = getFileExtension(download.name);
+  if (ext === 'iso') return { label: 'ISO', className: 'tag tag-blue' };
+  if (ext === 'zip' || ext === 'tar' || ext === 'gz' || ext === '7z' || ext === 'rar') return { label: ext.toUpperCase(), className: 'tag tag-blue' };
+  if (ext === 'deb' || ext === 'rpm' || ext === 'appimage') return { label: ext.toUpperCase(), className: 'tag tag-green' };
+  return null;
+}
+
+function getIconBg(download: Download): string {
+  if (download.status === 'paused') return 'card-type-icon orange';
+  if (download.status === 'error') return 'card-type-icon red';
+  if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return 'card-type-icon purple';
+  return 'card-type-icon blue';
+}
+
 function DownloadCard({ download, selected, onSelect }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -77,14 +95,16 @@ function DownloadCard({ download, selected, onSelect }: Props) {
     download.status === 'active' && download.downloadSpeed > 0
       ? formatEta(download.totalSize - download.completedSize, download.downloadSpeed)
       : null;
+  const isPaused = download.status === 'paused';
+  const typeBadge = getTypeBadge(download);
 
   function getTypeIcon(type: string) {
     switch (type) {
       case 'torrent':
       case 'magnet':
-        return <Magnet size={18} />;
+        return <Magnet size={16} />;
       default:
-        return <Link size={18} />;
+        return <FileDown size={16} />;
     }
   }
 
@@ -113,7 +133,7 @@ function DownloadCard({ download, selected, onSelect }: Props) {
 
   return (
     <>
-      <div className={`download-card${selected ? ' selected' : ''}`}>
+      <div className={`download-card${selected ? ' selected' : ''}${isPaused ? ' paused' : ''}`}>
         {onSelect && (
           <label className="card-checkbox" onClick={(e) => e.stopPropagation()}>
             <input
@@ -124,46 +144,52 @@ function DownloadCard({ download, selected, onSelect }: Props) {
             />
           </label>
         )}
-        <div className="card-main">
-          <div className="card-icon">{getTypeIcon(download.downloadType)}</div>
-          <div className="card-content">
-            <div className="card-header">
-              <span className="card-name" title={download.name}>{download.name}</span>
-              <span className="card-status" style={{ color: getStatusColor(download.status) }}>
-                {getStatusText(download.status, download.downloadSpeed)}
-              </span>
+        <div className={getIconBg(download)}>
+          {getTypeIcon(download.downloadType)}
+        </div>
+        <div className="card-content">
+          <div className="card-name-row">
+            <span className="card-name" title={download.name}>{download.name}</span>
+            {typeBadge && <span className={typeBadge.className}>{typeBadge.label}</span>}
+          </div>
+          <div className="progress-container">
+            <div className="progress">
+              <div className="progress-bar" style={{ width: `${progress}%` }} />
             </div>
-            <div className="progress-container">
-              <div className="progress">
-                <div className="progress-bar" style={{ width: `${progress}%` }} />
-              </div>
-              <span className="progress-text">{progress}%</span>
-            </div>
-            <div className="card-info">
-              <span className="info-size">
-                {formatBytes(download.completedSize)} / {formatBytes(download.totalSize)}
+            <span className="progress-text">{progress}%</span>
+          </div>
+        </div>
+        <div className="card-col card-col-size">
+          <span className="col-value">{formatBytes(download.completedSize)}</span>
+          <span className="col-label">of {formatBytes(download.totalSize)}</span>
+        </div>
+        <div className="card-col card-col-speed">
+          {download.status === 'active' ? (
+            <>
+              <span className="col-value speed-down">
+                <ArrowDown size={10} /> {formatSpeed(download.downloadSpeed)}
               </span>
-              {download.status === 'active' && (
-                <>
-                  <span className="info-speed">
-                    <ArrowDown size={12} /> {formatSpeed(download.downloadSpeed)}
-                    {(download.downloadType === 'torrent' || download.downloadType === 'magnet') && (
-                      <span className="upload-speed"><ArrowUp size={12} /> {formatSpeed(download.uploadSpeed)}</span>
-                    )}
-                  </span>
-                  {eta && <span className="info-eta">ETA: {eta}</span>}
-                </>
-              )}
-              {(download.downloadType === 'torrent' || download.downloadType === 'magnet') && download.status === 'active' && (
-                <span className="info-peers">
-                  {download.seeders} seeders {'\u00B7'} {download.connections} peers
+              {(download.downloadType === 'torrent' || download.downloadType === 'magnet') && (
+                <span className="col-label speed-up">
+                  <ArrowUp size={10} /> {formatSpeed(download.uploadSpeed)}
                 </span>
               )}
-              {download.status === 'error' && download.errorMessage && (
-                <span className="info-error">{download.errorMessage}</span>
-              )}
-            </div>
-          </div>
+            </>
+          ) : (
+            <span className="col-value" style={{ color: getStatusColor(download.status) }}>
+              {getStatusText(download.status, download.downloadSpeed)}
+            </span>
+          )}
+        </div>
+        <div className="card-col card-col-eta">
+          {download.status === 'active' && eta ? (
+            <>
+              <span className="col-value">{eta}</span>
+              <span className="col-label">remaining</span>
+            </>
+          ) : download.status === 'active' && (download.downloadType === 'torrent' || download.downloadType === 'magnet') ? (
+            <span className="col-label">{download.seeders}S / {download.connections}P</span>
+          ) : null}
         </div>
         <div className="card-actions">
           {(download.status === 'active' || download.status === 'waiting') && (

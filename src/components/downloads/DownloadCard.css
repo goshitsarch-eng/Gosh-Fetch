@@ -1,12 +1,13 @@
 .download-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto 1fr 100px 120px 80px auto;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--space-md);
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg);
-  transition: border-color var(--transition-fast);
+  transition: border-color var(--transition-fast), opacity var(--transition-normal);
 }
 
 .download-card:hover {
@@ -14,103 +15,27 @@
   background: color-mix(in srgb, var(--bg-tertiary) 90%, var(--bg-hover));
 }
 
-.card-main {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-md);
-  flex: 1;
-  min-width: 0;
+.download-card.paused {
+  opacity: 0.65;
 }
 
-.card-icon {
-  font-size: 24px;
-  flex-shrink: 0;
+.download-card.paused:hover {
+  opacity: 1;
 }
 
-.card-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.download-card .card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-md);
-  margin-bottom: var(--space-sm);
-}
-
-.card-name {
-  font-weight: 500;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.card-status {
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-
-.progress-container {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-sm);
-}
-
-.progress-container .progress {
-  flex: 1;
-}
-
-.progress-text {
-  font-size: 12px;
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-  min-width: 40px;
-  text-align: right;
-}
-
-.card-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-md);
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.info-speed {
-  color: var(--color-success);
-}
-
-.upload-speed {
-  margin-left: var(--space-sm);
-  color: var(--color-info);
-}
-
-.info-eta {
-  color: var(--text-secondary);
-}
-
-.card-actions {
-  display: flex;
-  gap: var(--space-xs);
-  margin-left: var(--space-md);
-}
-
-.download-card.selected {
-  border-color: var(--color-primary);
-  background: rgba(var(--color-primary-rgb, 59, 130, 246), 0.05);
-}
-
+/* Checkbox: visible on hover or when selected */
 .card-checkbox {
   display: flex;
   align-items: center;
   flex-shrink: 0;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.download-card:hover .card-checkbox,
+.download-card.selected .card-checkbox {
+  opacity: 1;
 }
 
 .card-checkbox input[type="checkbox"] {
@@ -119,8 +44,140 @@
   cursor: pointer;
 }
 
+/* File type icon with colored background */
+.card-type-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.card-type-icon.blue {
+  background: var(--icon-bg-blue);
+  color: var(--icon-color-blue);
+}
+
+.card-type-icon.purple {
+  background: var(--icon-bg-purple);
+  color: var(--icon-color-purple);
+}
+
+.card-type-icon.orange {
+  background: var(--icon-bg-orange);
+  color: var(--icon-color-orange);
+}
+
+.card-type-icon.green {
+  background: var(--icon-bg-green);
+  color: var(--icon-color-green);
+}
+
+.card-type-icon.red {
+  background: var(--icon-bg-red);
+  color: var(--icon-color-red);
+}
+
+/* Content column */
+.card-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: 4px;
+}
+
+.card-name {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-container {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.progress-container .progress {
+  flex: 1;
+}
+
+.progress-text {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Data columns */
+.card-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+}
+
+.col-value {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.col-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.speed-down {
+  color: var(--color-primary);
+}
+
+.speed-up {
+  color: var(--color-info);
+}
+
+/* Actions: visible on hover */
+.card-actions {
+  display: flex;
+  gap: var(--space-xs);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.download-card:hover .card-actions {
+  opacity: 1;
+}
+
+/* Selected state */
+.download-card.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 5%, var(--bg-tertiary));
+}
+
+/* Error message */
 .info-error {
   color: var(--color-destructive);
+  font-size: 12px;
 }
 
 .checkbox-label {
@@ -134,4 +191,16 @@
 .checkbox-label span {
   font-size: 14px;
   color: var(--text-secondary);
+}
+
+/* Responsive: collapse columns on narrow screens */
+@media (max-width: 700px) {
+  .download-card {
+    grid-template-columns: auto auto 1fr auto;
+  }
+  .card-col-size,
+  .card-col-speed,
+  .card-col-eta {
+    display: none;
+  }
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, Zap, Lock, Download, ArrowRight } from 'lucide-react';
 import { api } from '../lib/api';
 import './Onboarding.css';
 
@@ -62,33 +62,46 @@ export default function Onboarding({ onComplete }: Props) {
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
       <div className="modal onboarding-modal" ref={modalRef}>
         <div className="onboarding-content">
-          <img src="/logo.png" alt="Gosh-Fetch" className="onboarding-logo" />
+          <div className="onboarding-icon-ring">
+            <Download size={40} />
+          </div>
           <h2 id="onboarding-title">Welcome to Gosh-Fetch</h2>
-          <p className="onboarding-subtitle">A fast, modern download manager</p>
+          <p className="onboarding-subtitle">A blazing fast, private download manager built with Rust</p>
 
           <div className="onboarding-section">
             <label>Download Location</label>
             <div className="onboarding-path">
               <input type="text" value={downloadPath} readOnly />
               <button className="btn btn-secondary" onClick={handleBrowse}>
-                <FolderOpen size={14} /> Browse
+                <FolderOpen size={14} />
               </button>
             </div>
             <p className="onboarding-hint">You can change this later in Settings</p>
           </div>
 
-          <div className="onboarding-tips">
-            <p><strong>Quick tips:</strong></p>
-            <ul>
-              <li>Drag and drop URLs or .torrent files to start downloads</li>
-              <li>Press <kbd>Ctrl+N</kbd> to add a new download</li>
-              <li>Drag downloads to reorder priority</li>
-            </ul>
+          <div className="onboarding-features">
+            <div className="onboarding-feature">
+              <div className="feature-icon-bg"><Zap size={20} /></div>
+              <strong>Lightning Fast</strong>
+              <span>Multi-threaded engine for maximum speed</span>
+            </div>
+            <div className="onboarding-feature">
+              <div className="feature-icon-bg"><Lock size={20} /></div>
+              <strong>Private</strong>
+              <span>No telemetry, no tracking, fully local</span>
+            </div>
+            <div className="onboarding-feature">
+              <div className="feature-icon-bg"><Download size={20} /></div>
+              <strong>Torrents</strong>
+              <span>Built-in BitTorrent with DHT & PEX</span>
+            </div>
           </div>
         </div>
 
-        <div className="modal-footer">
-          <button className="btn btn-primary btn-lg" onClick={handleFinish}>Get Started</button>
+        <div className="modal-footer onboarding-footer">
+          <button className="btn btn-primary btn-lg onboarding-cta" onClick={handleFinish}>
+            Get Started <ArrowRight size={16} />
+          </button>
         </div>
       </div>
     </div>

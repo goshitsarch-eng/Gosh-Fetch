@@ -1,10 +1,48 @@
 import React, { useEffect, useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { CheckCircle } from 'lucide-react';
-import DownloadCard from '../components/downloads/DownloadCard';
+import { CheckCircle, FolderOpen, FileDown, Magnet } from 'lucide-react';
 import { selectCompletedDownloads, clearHistory, fetchDownloads, loadCompletedHistory } from '../store/downloadSlice';
-import { formatBytes } from '../lib/utils/format';
+import { formatBytes, formatDate, getFileExtension } from '../lib/utils/format';
+import { api } from '../lib/api';
+import type { Download } from '../lib/types/download';
 import type { AppDispatch } from '../store/store';
+import './Downloads.css';
+
+function CompletedCard({ download }: { download: Download }) {
+  const ext = getFileExtension(download.name);
+
+  function getIconBg() {
+    if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return 'card-type-icon purple';
+    return 'card-type-icon green';
+  }
+
+  function getIcon() {
+    if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return <Magnet size={16} />;
+    return <FileDown size={16} />;
+  }
+
+  async function handleOpenFolder() {
+    try { await api.openFileLocation(download.savePath); } catch (e) { console.error('Failed to open folder:', e); }
+  }
+
+  return (
+    <div className="completed-card">
+      <div className={getIconBg()}>{getIcon()}</div>
+      <div className="completed-info">
+        <span className="completed-name" title={download.name}>{download.name}</span>
+        <span className="completed-meta">
+          <CheckCircle size={12} className="verified-icon" />
+          {formatBytes(download.totalSize)}
+          {ext && <span className="tag tag-green">{ext.toUpperCase()}</span>}
+          {download.completedAt && <span className="completed-time">{formatDate(download.completedAt)}</span>}
+        </span>
+      </div>
+      <button className="btn btn-ghost btn-sm" onClick={handleOpenFolder} title="Open folder">
+        <FolderOpen size={14} /> Open
+      </button>
+    </div>
+  );
+}
 
 export default function Completed() {
   const dispatch = useDispatch<AppDispatch>();
@@ -32,7 +70,7 @@ export default function Completed() {
     <div className="page">
       <header className="page-header">
         <div className="header-left">
-          <h1>Completed</h1>
+          <h1><CheckCircle size={20} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--color-success)' }} />Completed</h1>
           <div className="header-stats">
             <span className="stat">{completedDownloads.length} downloads</span>
             <span className="stat-divider">{'\u00B7'}</span>
@@ -54,13 +92,13 @@ export default function Completed() {
             <p>Downloads will appear here once they finish</p>
           </div>
         ) : (
-          completedDownloads.map(download => <DownloadCard key={download.gid} download={download} />)
+          completedDownloads.map(download => <CompletedCard key={download.gid} download={download} />)
         )}
       </div>
 
       {showClearConfirm && (
         <div className="modal-backdrop" onClick={() => setShowClearConfirm(false)} role="dialog" aria-modal="true" aria-labelledby="clear-history-title">
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '440px' }}>
             <div className="modal-header">
               <h3 className="modal-title" id="clear-history-title">Clear History</h3>
             </div>

@@ -50,6 +50,7 @@
   width: 100%;
   text-align: left;
   text-decoration: none;
+  border-left: 3px solid transparent;
 }
 
 .nav-item:hover {
@@ -61,12 +62,16 @@
 .nav-item.active {
   background: var(--bg-tertiary);
   color: var(--text-primary);
+  border-left-color: var(--color-primary);
 }
 
 .nav-icon {
   font-size: 16px;
   width: 20px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .nav-label {
@@ -75,8 +80,6 @@
 }
 
 .nav-badge {
-  background: var(--color-primary);
-  color: white;
   font-size: 11px;
   font-weight: 600;
   padding: 2px 6px;
@@ -85,18 +88,28 @@
   text-align: center;
 }
 
+.nav-badge-active {
+  background: var(--color-primary);
+  color: var(--color-primary-text);
+}
+
+.nav-badge-muted {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
 .sidebar-footer {
   padding: var(--space-md);
   border-top: 1px solid var(--border-primary);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: var(--space-sm);
 }
 
 .speed-display {
   display: flex;
   flex-direction: column;
-  gap: var(--space-xs);
+  gap: 6px;
 }
 
 .speed-row {
@@ -107,12 +120,52 @@
 }
 
 .speed-icon {
+  flex-shrink: 0;
+}
+
+.speed-icon.download {
   color: var(--color-primary);
-  font-weight: bold;
+}
+
+.speed-icon.upload {
+  color: var(--color-info);
 }
 
 .speed-value {
   color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 65px;
+}
+
+.speed-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.speed-bar-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 2px;
+  transition: width 300ms ease;
+}
+
+.speed-row .speed-icon.upload ~ .speed-bar .speed-bar-fill {
+  background: var(--color-info);
+}
+
+.sidebar-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sidebar-version {
+  font-size: 11px;
+  color: var(--text-muted);
   font-family: var(--font-mono);
 }
 

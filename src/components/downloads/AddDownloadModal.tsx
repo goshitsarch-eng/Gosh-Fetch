@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useDispatch } from 'react-redux';
-import { X, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, ChevronDown, ChevronRight, Link, Magnet, File, Download, Shield, Clipboard } from 'lucide-react';
 import { addDownload, addMagnet, addTorrentFile, addUrls, fetchDownloads } from '../../store/downloadSlice';
 import type { AppDispatch } from '../../store/store';
 import type { DownloadOptions } from '../../lib/types/download';
@@ -118,6 +118,13 @@ export default function AddDownloadModal({ onClose }: Props) {
     }
   }
 
+  async function handlePaste() {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) setUrl(text);
+    } catch {}
+  }
+
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -155,18 +162,25 @@ export default function AddDownloadModal({ onClose }: Props) {
 
         <div className="modal-body">
           <div className="mode-tabs" role="tablist" aria-label="Download type">
-            <button className={`mode-tab${mode === 'url' ? ' active' : ''}`} role="tab" aria-selected={mode === 'url'} onClick={() => setMode('url')}>URL</button>
-            <button className={`mode-tab${mode === 'magnet' ? ' active' : ''}`} role="tab" aria-selected={mode === 'magnet'} onClick={() => setMode('magnet')}>Magnet</button>
-            <button className={`mode-tab${mode === 'torrent' ? ' active' : ''}`} role="tab" aria-selected={mode === 'torrent'} onClick={() => setMode('torrent')}>Torrent File</button>
+            <button className={`mode-tab${mode === 'url' ? ' active' : ''}`} role="tab" aria-selected={mode === 'url'} onClick={() => setMode('url')}>
+              <Link size={14} /> URL
+            </button>
+            <button className={`mode-tab${mode === 'magnet' ? ' active' : ''}`} role="tab" aria-selected={mode === 'magnet'} onClick={() => setMode('magnet')}>
+              <Magnet size={14} /> Magnet
+            </button>
+            <button className={`mode-tab${mode === 'torrent' ? ' active' : ''}`} role="tab" aria-selected={mode === 'torrent'} onClick={() => setMode('torrent')}>
+              <File size={14} /> Torrent File
+            </button>
           </div>
 
           {mode === 'url' && (
             <div className="form-group">
               <div className="form-group-header">
                 <label htmlFor="url">Download URL</label>
-                <label className="toggle-label">
+                <label className="toggle-switch">
                   <input type="checkbox" checked={multiUrlMode} onChange={(e) => setMultiUrlMode(e.target.checked)} />
-                  <span>Multiple URLs</span>
+                  <span className="toggle-slider" />
+                  <span className="toggle-text">Multiple URLs</span>
                 </label>
               </div>
               {multiUrlMode ? (
@@ -179,7 +193,12 @@ export default function AddDownloadModal({ onClose }: Props) {
                   autoFocus
                 />
               ) : (
-                <input id="url" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/file.zip" autoFocus />
+                <div className="input-with-button">
+                  <input id="url" type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/file.zip" autoFocus />
+                  <button className="btn btn-ghost btn-sm paste-btn" onClick={handlePaste} title="Paste from clipboard">
+                    <Clipboard size={14} />
+                  </button>
+                </div>
               )}
               <p className="help-text">Supports HTTP, HTTPS, and magnet links</p>
             </div>
@@ -212,7 +231,7 @@ export default function AddDownloadModal({ onClose }: Props) {
 
           {showAdvanced && (
             <div className="advanced-options">
-              <div className="form-row">
+              <div className="form-row form-row-2col">
                 <div className="form-group">
                   <label htmlFor="save-dir">Save location</label>
                   <div className="file-input">
@@ -220,16 +239,13 @@ export default function AddDownloadModal({ onClose }: Props) {
                     <button className="btn btn-secondary" onClick={handleBrowseDir}>Browse</button>
                   </div>
                 </div>
-              </div>
-
-              <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="out-filename">Output filename</label>
                   <input id="out-filename" type="text" value={outFilename} onChange={(e) => setOutFilename(e.target.value)} placeholder="Auto-detect from URL" />
                 </div>
               </div>
 
-              <div className="form-row form-row-2col">
+              <div className="form-row form-row-3col">
                 <div className="form-group">
                   <label htmlFor="speed-limit">Speed limit (MB/s)</label>
                   <input id="speed-limit" type="number" min="0" value={speedLimit} onChange={(e) => setSpeedLimit(e.target.value)} placeholder="0 = unlimited" />
@@ -238,9 +254,6 @@ export default function AddDownloadModal({ onClose }: Props) {
                   <label htmlFor="connections">Connections</label>
                   <input id="connections" type="number" min="1" max="32" value={connections} onChange={(e) => setConnections(e.target.value)} placeholder="Default" />
                 </div>
-              </div>
-
-              <div className="form-row form-row-2col">
                 <div className="form-group">
                   <label htmlFor="priority">Priority</label>
                   <select id="priority" value={priority} onChange={(e) => setPriority(e.target.value)}>
@@ -250,8 +263,11 @@ export default function AddDownloadModal({ onClose }: Props) {
                     <option value="critical">Critical</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="form-row">
                 <div className="form-group">
-                  <label htmlFor="checksum">Checksum</label>
+                  <label htmlFor="checksum"><Shield size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Checksum</label>
                   <input id="checksum" type="text" value={checksum} onChange={(e) => setChecksum(e.target.value)} placeholder="sha256:... or md5:..." />
                 </div>
               </div>
@@ -265,9 +281,12 @@ export default function AddDownloadModal({ onClose }: Props) {
 
               {(mode === 'torrent' || mode === 'magnet') && (
                 <div className="form-row">
-                  <label className="checkbox-label">
-                    <input type="checkbox" checked={sequential} onChange={(e) => setSequential(e.target.checked)} />
+                  <label className="toggle-row">
                     <span>Sequential download</span>
+                    <label className="toggle-switch">
+                      <input type="checkbox" checked={sequential} onChange={(e) => setSequential(e.target.checked)} />
+                      <span className="toggle-slider" />
+                    </label>
                   </label>
                 </div>
               )}
@@ -280,7 +299,8 @@ export default function AddDownloadModal({ onClose }: Props) {
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? 'Adding...' : 'Add Download'}
+            <Download size={14} />
+            {isSubmitting ? 'Adding...' : 'Start Download'}
           </button>
         </div>
       </div>

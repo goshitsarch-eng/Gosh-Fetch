@@ -178,7 +178,7 @@ export default function Downloads() {
             <span className="stat"><ArrowDown size={12} className="stat-icon" /> {formatSpeed(stats.downloadSpeed)}</span>
             <span className="stat"><ArrowUp size={12} className="stat-icon" /> {formatSpeed(stats.uploadSpeed)}</span>
             <span className="stat-divider">|</span>
-            <span className="stat">{stats.numActive} active</span>
+            <span className="stat"><span className="pulse-dot" /> {stats.numActive} Active</span>
           </div>
         </div>
         <div className="header-actions">
@@ -217,6 +217,16 @@ export default function Downloads() {
         </div>
       )}
 
+      {/* Column header row */}
+      {sortedFilteredDownloads.length > 0 && (
+        <div className="column-headers">
+          <span className="col-h col-h-name">Name</span>
+          <span className="col-h col-h-size">Size</span>
+          <span className="col-h col-h-speed">Speed</span>
+          <span className="col-h col-h-eta">ETA</span>
+        </div>
+      )}
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -240,16 +250,22 @@ export default function Downloads() {
               </button>
             </div>
           ) : (
-            <SortableContext items={sortedFilteredDownloads.map(d => d.gid)} strategy={verticalListSortingStrategy}>
-              {sortedFilteredDownloads.map(download => (
-                <SortableDownloadCard
-                  key={download.gid}
-                  download={download}
-                  selected={selectedGids.has(download.gid)}
-                  onSelect={handleSelect}
-                />
-              ))}
-            </SortableContext>
+            <>
+              <SortableContext items={sortedFilteredDownloads.map(d => d.gid)} strategy={verticalListSortingStrategy}>
+                {sortedFilteredDownloads.map(download => (
+                  <SortableDownloadCard
+                    key={download.gid}
+                    download={download}
+                    selected={selectedGids.has(download.gid)}
+                    onSelect={handleSelect}
+                  />
+                ))}
+              </SortableContext>
+              <div className="add-more-zone" onClick={() => setShowAddModal(true)}>
+                <Plus size={16} />
+                <span>Ready for more</span>
+              </div>
+            </>
           )}
         </div>
 
