@@ -344,7 +344,7 @@ Returns:
 ```json
 {
   "name": "Gosh-Fetch",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "description": "...",
   "license": "AGPL-3.0",
   "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",

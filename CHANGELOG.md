@@ -5,6 +5,37 @@ All notable changes to Gosh-Fetch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-02-08
+
+### Added
+- Statistics page with real-time download speed charts and historical data visualization
+- Scheduler page with 168-cell weekly grid for bandwidth scheduling
+- System tray popup with active download status and quick controls
+- Auto-update notification toast and download progress modal
+- Torrent file picker with tree-based file selection
+- Drag-and-drop queue reordering for downloads
+- Reset settings confirmation modal
+- Notification dropdown system
+
+### Changed
+- Complete UI overhaul across all pages and components
+- Redesigned About page with centered hero layout and tech stack cards
+- Improved Settings layout with fixed sidebar, modal scroll, and input padding
+- Removed default menu bar on Linux and Windows
+- Rewrote all project documentation to reflect current architecture
+
+### Fixed
+- Duplicate downloads appearing in queue
+- White screen on launch
+- Dependabot security vulnerabilities
+- Settings About tab sidebar alignment
+- Modal scroll behavior and input padding overlaps
+
+### Security
+- Phase 1 security and stability improvements
+- Content Security Policy hardening
+- Dependency vulnerability patches
+
 ## [1.1.1] - 2026-01-09
 
 ### Changed
