@@ -1,425 +1,346 @@
 # Gosh-Fetch API Reference
 
-This document describes the Tauri IPC commands available for frontend-backend communication.
+This document covers the IPC methods available between the React frontend and the Rust sidecar, along with the Electron-specific IPC methods handled by the main process.
 
-## Table of Contents
+All frontend calls go through `window.electronAPI.invoke(method, params)`, which is defined in the preload script and wraps `ipcRenderer.invoke('rpc-invoke', method, params)`. The convenience wrappers in `src/lib/api.ts` provide typed access to every method.
 
-- [Download Commands](#download-commands)
-- [Torrent Commands](#torrent-commands)
-- [Settings Commands](#settings-commands)
-- [System Commands](#system-commands)
-- [Types](#types)
+## RPC Methods (Sidecar)
+
+These methods are forwarded from the Electron main process to the Rust sidecar via JSON-RPC over stdin/stdout. Each must appear in the `ALLOWED_RPC_METHODS` set in `src-electron/main.ts`.
 
 ---
 
-## Download Commands
+### Download Commands
 
-### add_download
+#### add_download
 
-Add an HTTP/HTTPS download.
+Add an HTTP/HTTPS download. URLs are validated server-side: only `http://`, `https://`, and `magnet:` schemes are accepted, private IPs are blocked, and the maximum URL length is 8192 characters.
 
 ```typescript
-invoke('add_download', { url: string, options?: DownloadOptions }): Promise<string>
+api.addDownload(url: string, options?: DownloadOptions): Promise<string>
 ```
 
-**Parameters:**
-- `url` - The URL to download
-- `options` - Optional download configuration
+Returns the download GID (a unique identifier string).
 
-**Returns:** Download GID (unique identifier)
+#### add_urls
 
----
-
-### add_urls
-
-Add multiple downloads at once.
+Add multiple downloads at once. All URLs are validated.
 
 ```typescript
-invoke('add_urls', { urls: string[], options?: DownloadOptions }): Promise<string[]>
+api.addUrls(urls: string[], options?: DownloadOptions): Promise<string[]>
 ```
 
-**Parameters:**
-- `urls` - Array of URLs to download
-- `options` - Optional download configuration (applied to all)
+Returns an array of GIDs.
 
-**Returns:** Array of download GIDs
-
----
-
-### pause_download
-
-Pause a specific download.
+#### pause_download
 
 ```typescript
-invoke('pause_download', { gid: string }): Promise<void>
+api.pauseDownload(gid: string): Promise<void>
 ```
 
----
-
-### pause_all
-
-Pause all active downloads.
+#### pause_all
 
 ```typescript
-invoke('pause_all'): Promise<void>
+api.pauseAll(): Promise<void>
 ```
 
----
-
-### resume_download
-
-Resume a paused download.
+#### resume_download
 
 ```typescript
-invoke('resume_download', { gid: string }): Promise<void>
+api.resumeDownload(gid: string): Promise<void>
 ```
 
----
-
-### resume_all
-
-Resume all paused downloads.
+#### resume_all
 
 ```typescript
-invoke('resume_all'): Promise<void>
+api.resumeAll(): Promise<void>
 ```
 
----
-
-### remove_download
-
-Remove a download from the engine.
+#### remove_download
 
 ```typescript
-invoke('remove_download', { gid: string, deleteFiles: boolean }): Promise<void>
+api.removeDownload(gid: string, deleteFiles?: boolean): Promise<void>
 ```
 
-**Parameters:**
-- `gid` - Download identifier
-- `deleteFiles` - If true, delete downloaded files from disk
+If `deleteFiles` is true, the downloaded file is deleted from disk.
 
----
-
-### get_download_status
-
-Get status of a specific download.
+#### get_download_status
 
 ```typescript
-invoke('get_download_status', { gid: string }): Promise<Download>
+api.getDownloadStatus(gid: string): Promise<Download>
 ```
 
----
-
-### get_all_downloads
-
-Get all downloads (active and stopped).
+#### get_all_downloads
 
 ```typescript
-invoke('get_all_downloads'): Promise<Download[]>
+api.getAllDownloads(): Promise<Download[]>
 ```
 
----
+Returns all downloads including active, waiting, paused, and error states.
 
-### get_active_downloads
-
-Get only active downloads.
+#### get_active_downloads
 
 ```typescript
-invoke('get_active_downloads'): Promise<Download[]>
+api.getActiveDownloads(): Promise<Download[]>
 ```
 
----
-
-### get_global_stats
-
-Get global download statistics.
+#### get_global_stats
 
 ```typescript
-invoke('get_global_stats'): Promise<GlobalStat>
+api.getGlobalStats(): Promise<GlobalStats>
 ```
 
----
-
-### set_speed_limit
-
-Set global speed limits.
+#### set_speed_limit
 
 ```typescript
-invoke('set_speed_limit', { downloadLimit?: number, uploadLimit?: number }): Promise<void>
+api.setSpeedLimit(downloadLimit?: number, uploadLimit?: number): Promise<void>
 ```
 
-**Parameters:**
-- `downloadLimit` - Download speed limit in bytes/sec (null = unlimited)
-- `uploadLimit` - Upload speed limit in bytes/sec (null = unlimited)
+Values are in bytes per second. Omit or pass `null` for unlimited.
 
 ---
 
-## Torrent Commands
+### Torrent Commands
 
-### add_torrent_file
+#### add_torrent_file
 
-Add a download from a .torrent file.
+Add a download from a `.torrent` file. The file path is validated: it must end with `.torrent` and exist on disk.
 
 ```typescript
-invoke('add_torrent_file', { filePath: string, options?: DownloadOptions }): Promise<string>
+api.addTorrentFile(filePath: string, options?: DownloadOptions): Promise<string>
 ```
 
-**Parameters:**
-- `filePath` - Absolute path to the .torrent file
-- `options` - Optional download configuration
-
-**Returns:** Download GID
-
----
-
-### add_magnet
-
-Add a download from a magnet link.
+#### add_magnet
 
 ```typescript
-invoke('add_magnet', { magnetUri: string, options?: DownloadOptions }): Promise<string>
+api.addMagnet(magnetUri: string, options?: DownloadOptions): Promise<string>
 ```
 
-**Parameters:**
-- `magnetUri` - Magnet URI (starts with `magnet:?`)
-- `options` - Optional download configuration
+#### get_torrent_files
 
-**Returns:** Download GID
-
----
-
-### get_torrent_files
-
-Get file list for a torrent download.
+Get the file list for a torrent download.
 
 ```typescript
-invoke('get_torrent_files', { gid: string }): Promise<DownloadFile[]>
+api.getTorrentFiles(gid: string): Promise<DownloadFile[]>
 ```
 
----
+#### select_torrent_files
 
-### parse_torrent_file
-
-Parse a .torrent file without adding it.
+Select which files to download from a multi-file torrent.
 
 ```typescript
-invoke('parse_torrent_file', { filePath: string }): Promise<TorrentInfo>
+api.selectTorrentFiles(gid: string, fileIndices: number[]): Promise<void>
 ```
 
-**Returns:** Torrent metadata including file list, total size, info hash
+#### parse_torrent_file
 
----
+Parse a `.torrent` file without adding it as a download. Useful for previewing contents.
 
-### parse_magnet_uri
+```typescript
+api.parseTorrentFile(filePath: string): Promise<TorrentInfo>
+```
+
+#### parse_magnet_uri
 
 Parse a magnet URI without adding it.
 
 ```typescript
-invoke('parse_magnet_uri', { magnetUri: string }): Promise<MagnetInfo>
+api.parseMagnetUri(magnetUri: string): Promise<MagnetInfo>
 ```
 
-**Returns:** Magnet metadata including name, info hash, trackers
+#### get_peers
 
----
-
-### get_peers
-
-Get peer information for a torrent download.
+Get connected peer information for a torrent download.
 
 ```typescript
-invoke('get_peers', { gid: string }): Promise<PeerInfo[]>
+api.getPeers(gid: string): Promise<PeerInfo[]>
 ```
-
-**Returns:** Array of connected peers with IP, port, client, speeds
 
 ---
 
-## Settings Commands
+### Settings Commands
 
-### get_settings
+#### get_settings
 
-Get current settings (defaults).
+Get the current runtime settings from the engine.
 
 ```typescript
-invoke('get_settings'): Promise<Settings>
+api.getSettings(): Promise<Settings>
 ```
 
-> **Note:** Settings are stored in SQLite and managed by the frontend via `@tauri-apps/plugin-sql`.
+#### update_settings
 
----
-
-### apply_settings_to_engine
-
-Apply settings to the download engine.
+Update all settings at once.
 
 ```typescript
-invoke('apply_settings_to_engine', { settings: Settings }): Promise<void>
+api.updateSettings(settings: Settings): Promise<void>
 ```
 
-Call this after changing settings in the database to apply them to the running engine.
+#### apply_settings_to_engine
 
----
-
-### set_close_to_tray
-
-Set whether closing the window minimizes to tray.
+Apply settings to the running download engine. Call this after saving settings to make them take effect immediately.
 
 ```typescript
-invoke('set_close_to_tray', { value: boolean }): void
+api.applySettingsToEngine(settings: Settings): Promise<void>
 ```
 
----
-
-### set_user_agent
-
-Set the HTTP user agent.
+#### set_close_to_tray
 
 ```typescript
-invoke('set_user_agent', { userAgent: string }): Promise<void>
+api.setCloseToTray(value: boolean): Promise<void>
 ```
 
----
-
-### get_user_agent_presets
-
-Get available user agent presets.
+#### set_user_agent
 
 ```typescript
-invoke('get_user_agent_presets'): (string, string)[]
+api.setUserAgent(userAgent: string): Promise<void>
 ```
 
-**Returns:** Array of `[name, userAgent]` tuples:
-- gosh-dl (default)
-- Chrome (Windows)
-- Chrome (macOS)
-- Firefox (Windows)
-- Firefox (Linux)
-- Wget
-- Curl
+#### get_user_agent_presets
 
----
-
-### get_tracker_list
-
-Fetch tracker list from online source.
+Returns an array of `[name, userAgentString]` tuples. Available presets: gosh-dl (default), Chrome (Windows), Chrome (macOS), Firefox (Windows), Firefox (Linux), Wget, Curl.
 
 ```typescript
-invoke('get_tracker_list'): Promise<string[]>
+api.getUserAgentPresets(): Promise<[string, string][]>
 ```
 
----
+#### get_tracker_list
 
-### update_tracker_list
-
-Fetch and update tracker list.
+Fetch the cached tracker list. If the cache is stale, fetches from the remote source.
 
 ```typescript
-invoke('update_tracker_list'): Promise<string[]>
+api.getTrackerList(): Promise<string[]>
 ```
 
----
+#### update_tracker_list
 
-## System Commands
-
-### get_engine_version
-
-Get download engine information.
+Force-fetch and update the tracker list from the remote source.
 
 ```typescript
-invoke('get_engine_version'): Promise<{ name: string, version: string, running: boolean }>
+api.updateTrackerList(): Promise<string[]>
 ```
 
 ---
 
-### restart_engine
+### Priority and Scheduling
 
-Restart the download engine.
+#### set_priority
+
+Set the download priority for a specific download.
 
 ```typescript
-invoke('restart_engine'): Promise<void>
+api.setPriority(gid: string, priority: string): Promise<void>
 ```
 
----
+Priority values: `"low"`, `"normal"`, `"high"`, `"critical"`.
 
-### show_window
-
-Show and focus the main window.
+#### get_schedule_rules
 
 ```typescript
-invoke('show_window'): void
+api.getScheduleRules(): Promise<ScheduleRule[]>
 ```
 
----
-
-### hide_window
-
-Hide the main window (minimize to tray).
+#### set_schedule_rules
 
 ```typescript
-invoke('hide_window'): void
+api.setScheduleRules(rules: ScheduleRule[]): Promise<void>
 ```
 
 ---
 
-### quit_app
+### Database Commands
 
-Exit the application.
+These methods read from and write to the SQLite database directly, bypassing the download engine.
+
+#### db_get_completed_history
 
 ```typescript
-invoke('quit_app'): void
+api.dbGetCompletedHistory(): Promise<Download[]>
 ```
 
----
-
-### open_download_folder
-
-Open a folder in the system file manager.
+#### db_save_download
 
 ```typescript
-invoke('open_download_folder', { path: string }): void
+api.dbSaveDownload(download: Download): Promise<void>
+```
+
+#### db_remove_download
+
+```typescript
+api.dbRemoveDownload(gid: string): Promise<void>
+```
+
+#### db_clear_history
+
+```typescript
+api.dbClearHistory(): Promise<void>
+```
+
+#### db_get_settings
+
+```typescript
+api.dbGetSettings(): Promise<Settings>
+```
+
+#### db_save_settings
+
+```typescript
+api.dbSaveSettings(settings: Settings): Promise<void>
+```
+
+#### db_load_incomplete
+
+Load incomplete downloads from the database for restoration on app startup.
+
+```typescript
+api.dbLoadIncomplete(): Promise<Download[]>
 ```
 
 ---
 
-### open_file_location
+### System Commands
+
+#### get_engine_version
+
+```typescript
+api.getEngineVersion(): Promise<{ name: string; version: string; running: boolean }>
+```
+
+#### open_download_folder
+
+Open a directory in the system file manager. The path is validated and canonicalized before being passed to the OS.
+
+```typescript
+api.openDownloadFolder(path: string): Promise<void>
+```
+
+#### open_file_location
 
 Open the containing folder of a file and select it.
 
 ```typescript
-invoke('open_file_location', { filePath: string }): void
+api.openFileLocation(filePath: string): Promise<void>
 ```
 
----
-
-### get_default_download_path
-
-Get the system's default download directory.
+#### get_default_download_path
 
 ```typescript
-invoke('get_default_download_path'): string
+api.getDefaultDownloadPath(): Promise<string>
 ```
 
----
-
-### get_app_version
-
-Get application version.
+#### get_app_version
 
 ```typescript
-invoke('get_app_version'): string
+api.getAppVersion(): Promise<string>
 ```
 
----
-
-### get_app_info
-
-Get detailed application information.
+#### get_app_info
 
 ```typescript
-invoke('get_app_info'): AppInfo
+api.getAppInfo(): Promise<AppInfo>
 ```
 
-**Returns:**
+Returns:
 ```json
 {
   "name": "Gosh-Fetch",
@@ -429,7 +350,7 @@ invoke('get_app_info'): AppInfo
   "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",
   "engine": {
     "name": "gosh-dl",
-    "version": "0.1.0",
+    "version": "0.2.2",
     "url": "https://github.com/goshitsarch-eng/gosh-dl",
     "license": "MIT"
   }
@@ -438,126 +359,262 @@ invoke('get_app_info'): AppInfo
 
 ---
 
+## Electron-Only IPC Methods
+
+These are handled directly by the Electron main process, not forwarded to the sidecar. They are exposed on `window.electronAPI` via the preload script.
+
+#### selectFile
+
+Open a native file picker dialog.
+
+```typescript
+window.electronAPI.selectFile(options?: { filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>
+```
+
+#### selectDirectory
+
+Open a native directory picker dialog.
+
+```typescript
+window.electronAPI.selectDirectory(): Promise<string | null>
+```
+
+#### showNotification
+
+Show a native OS notification.
+
+```typescript
+window.electronAPI.showNotification(title: string, body: string): Promise<void>
+```
+
+#### getNativeTheme
+
+Check whether the OS is using dark mode.
+
+```typescript
+window.electronAPI.getNativeTheme(): Promise<boolean>
+```
+
+Returns `true` if the OS dark mode is active.
+
+#### getDiskSpace
+
+Get total and free disk space for a given path (defaults to the system Downloads directory).
+
+```typescript
+window.electronAPI.getDiskSpace(path?: string): Promise<{ total: number; free: number }>
+```
+
+#### setLoginItemSettings / getLoginItemSettings
+
+Configure whether the app starts at OS login.
+
+```typescript
+window.electronAPI.setLoginItemSettings(openAtLogin: boolean): Promise<void>
+window.electronAPI.getLoginItemSettings(): Promise<{ openAtLogin: boolean }>
+```
+
+#### setDefaultProtocolClient / removeDefaultProtocolClient / isDefaultProtocolClient
+
+Manage protocol handler registration (e.g., `magnet:` links).
+
+```typescript
+window.electronAPI.setDefaultProtocolClient(protocol: string): Promise<boolean>
+window.electronAPI.removeDefaultProtocolClient(protocol: string): Promise<boolean>
+window.electronAPI.isDefaultProtocolClient(protocol: string): Promise<boolean>
+```
+
+#### importSettingsFile
+
+Open a file dialog for a JSON settings file and return its parsed contents.
+
+```typescript
+window.electronAPI.importSettingsFile(): Promise<any | null>
+```
+
+#### updaterDownload / updaterInstall
+
+Control the auto-update process.
+
+```typescript
+window.electronAPI.updaterDownload(): Promise<void>
+window.electronAPI.updaterInstall(): Promise<void>
+```
+
+---
+
+## Events
+
+Events flow from the sidecar and Electron main process to the renderer via `window.electronAPI.onEvent(callback)`. The callback receives `(eventName: string, data: any)`.
+
+### Sidecar Events
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `global-stats` | `GlobalStats` | Emitted every second with speed/count stats |
+| `download:added` | `{ gid, name, ... }` | A new download was added |
+| `download:started` | `{ gid, ... }` | Download started actively transferring |
+| `download:progress` | `{ gid, completedSize, totalSize, speed, ... }` | Progress update |
+| `download:state-changed` | `{ gid, state, ... }` | Generic state change |
+| `download:completed` | `{ gid, name, ... }` | Download finished successfully |
+| `download:failed` | `{ gid, name, error, ... }` | Download encountered an error |
+| `download:removed` | `{ gid, ... }` | Download was removed |
+| `download:paused` | `{ gid, ... }` | Download was paused |
+| `download:resumed` | `{ gid, ... }` | Download was resumed |
+
+### Electron Events
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `engine-status` | `{ connected: boolean, restarting: boolean }` | Engine connection state changed |
+| `native-theme-changed` | `{ shouldUseDarkColors: boolean }` | OS dark mode toggled |
+| `navigate` | `string` (path) | Navigate to a route (triggered from tray) |
+| `open-add-modal` | `{}` | Open the add download modal (triggered from tray) |
+| `open-magnet` | `{ uri: string }` | A magnet link was opened externally |
+| `open-torrent-file` | `{ path: string }` | A .torrent file was opened externally |
+| `update-available` | `{ version, releaseName, releaseNotes, releaseDate }` | An update is available |
+| `update-progress` | `{ total, transferred, percent, bytesPerSecond }` | Update download progress |
+| `update-downloaded` | `{}` | Update has been downloaded and is ready to install |
+
+---
+
 ## Types
 
 ### DownloadOptions
 
-Configuration options when adding a download.
+Configuration options when adding a download. All fields are optional.
 
 ```typescript
 interface DownloadOptions {
   dir?: string;                    // Save directory
   out?: string;                    // Output filename
+  split?: string;                  // Number of segments
   maxConnectionPerServer?: string; // Connections per server
   userAgent?: string;              // HTTP user agent
   referer?: string;                // HTTP referer header
   header?: string[];               // Custom headers ["Key: Value"]
   selectFile?: string;             // Torrent file indices "1,2,3"
+  btTracker?: string;              // Additional tracker URL
   seedRatio?: string;              // Seed ratio for torrents
-  maxDownloadLimit?: string;       // Download speed limit
-  maxUploadLimit?: string;         // Upload speed limit
+  maxDownloadLimit?: string;       // Download speed limit (bytes/sec)
+  maxUploadLimit?: string;         // Upload speed limit (bytes/sec)
+  priority?: string;               // "low" | "normal" | "high" | "critical"
+  checksum?: string;               // "sha256:hex..." or "md5:hex..."
+  mirrors?: string[];              // Mirror/failover URLs
+  sequential?: boolean;            // Sequential download mode
 }
 ```
 
 ### Download
 
-Download status information.
-
 ```typescript
 interface Download {
   id: number;                      // Database ID
-  gid: string;                     // Engine GID
+  gid: string;                     // Engine GID (unique identifier)
   name: string;                    // Display name
-  url?: string;                    // Source URL
-  magnetUri?: string;              // Magnet link
-  infoHash?: string;               // BitTorrent info hash
+  url: string | null;              // Source URL (HTTP downloads)
+  magnetUri: string | null;        // Magnet link (torrents)
+  infoHash: string | null;         // BitTorrent info hash
   downloadType: 'http' | 'torrent' | 'magnet';
   status: 'active' | 'waiting' | 'paused' | 'complete' | 'error' | 'removed';
+  appState?: AppDownloadState;     // Rich state info (retrying, stalled, etc.)
   totalSize: number;               // Total bytes
   completedSize: number;           // Downloaded bytes
-  downloadSpeed: number;           // Current download speed (bytes/sec)
-  uploadSpeed: number;             // Current upload speed (bytes/sec)
+  downloadSpeed: number;           // Bytes per second
+  uploadSpeed: number;             // Bytes per second
   savePath: string;                // Save directory
   createdAt: string;               // ISO 8601 timestamp
-  completedAt?: string;            // ISO 8601 timestamp
-  errorMessage?: string;           // Error description
+  completedAt: string | null;      // ISO 8601 timestamp
+  errorMessage: string | null;     // Error description
   connections: number;             // Active connections
   seeders: number;                 // Connected seeders (torrents)
-  selectedFiles?: number[];        // Selected file indices (torrents)
+  selectedFiles: number[] | null;  // Selected file indices (torrents)
 }
+
+interface AppDownloadState {
+  state: 'queued' | 'downloading' | 'stalled' | 'paused' | 'completed' | 'error' | 'retrying';
+  kind?: ErrorKind;
+  message?: string;
+  attempt?: number;
+  maxAttempts?: number;
+}
+
+type ErrorKind = 'network_error' | 'file_error' | 'not_found' | 'timeout'
+              | 'auth_required' | 'already_exists' | 'resume_not_supported' | 'unknown';
 ```
 
-### GlobalStat
-
-Global download statistics.
+### GlobalStats
 
 ```typescript
-interface GlobalStat {
-  downloadSpeed: string;           // Total download speed
-  uploadSpeed: string;             // Total upload speed
-  numActive: string;               // Active download count
-  numWaiting: string;              // Queued download count
-  numStopped: string;              // Stopped download count
-  numStoppedTotal: string;         // Total stopped count
+interface GlobalStats {
+  downloadSpeed: number;           // Total download speed (bytes/sec)
+  uploadSpeed: number;             // Total upload speed (bytes/sec)
+  numActive: number;               // Active download count
+  numWaiting: number;              // Queued download count
+  numStopped: number;              // Stopped download count
 }
 ```
+
+Note: The Rust backend also includes `numStoppedTotal` (total stopped count across all time), but the frontend type does not currently use it.
 
 ### TorrentInfo
 
-Parsed torrent file information.
-
 ```typescript
 interface TorrentInfo {
-  name: string;                    // Torrent name
-  infoHash: string;                // Info hash (hex)
-  totalSize: number;               // Total size in bytes
-  files: TorrentFile[];            // File list
-  comment?: string;                // Torrent comment
-  creationDate?: number;           // Unix timestamp
+  name: string;
+  infoHash: string;
+  totalSize: number;
+  files: TorrentFile[];
+  comment: string | null;
+  creationDate: number | null;     // Unix timestamp
   announceList: string[];          // Tracker URLs
 }
 
 interface TorrentFile {
-  index: number;                   // File index
-  path: string;                    // File path
+  index: number;
+  path: string;
   length: number;                  // File size in bytes
+  selected: boolean;
 }
 ```
 
 ### MagnetInfo
 
-Parsed magnet link information.
-
 ```typescript
 interface MagnetInfo {
-  name?: string;                   // Display name
-  infoHash: string;                // Info hash (hex)
-  trackers: string[];              // Tracker URLs
+  name: string | null;
+  infoHash: string;
+  trackers: string[];
 }
 ```
 
 ### Settings
 
-Application settings.
+The settings object uses snake_case keys (matching the database column naming convention).
 
 ```typescript
 interface Settings {
-  downloadPath: string;            // Default save directory
-  maxConcurrentDownloads: number;  // Max simultaneous downloads (1-20)
-  maxConnectionsPerServer: number; // Connections per host (1-16)
-  splitCount: number;              // Segments per download
-  downloadSpeedLimit: number;      // Global download limit (0=unlimited)
-  uploadSpeedLimit: number;        // Global upload limit (0=unlimited)
-  userAgent: string;               // HTTP user agent
-  enableNotifications: boolean;    // Show completion notifications
-  closeToTray: boolean;            // Minimize to tray on close
-  theme: string;                   // 'light' | 'dark' | 'system'
-  btEnableDht: boolean;            // BitTorrent DHT
-  btEnablePex: boolean;            // BitTorrent Peer Exchange
-  btEnableLpd: boolean;            // Local Peer Discovery
-  btMaxPeers: number;              // Max peers per torrent
-  btSeedRatio: number;             // Seed ratio before stopping
-  autoUpdateTrackers: boolean;     // Auto-fetch tracker lists
-  deleteFilesOnRemove: boolean;    // Delete files when removing download
+  download_path: string;            // Default save directory
+  max_concurrent_downloads: number; // 1-20, default 5
+  max_connections_per_server: number; // 1-16, default 8
+  split_count: number;              // Segments per download, default 8
+  download_speed_limit: number;     // Global download limit, 0 = unlimited
+  upload_speed_limit: number;       // Global upload limit, 0 = unlimited
+  user_agent: string;               // HTTP user agent
+  enable_notifications: boolean;    // Show completion notifications
+  close_to_tray: boolean;          // Minimize to tray on close
+  theme: string;                    // 'dark' | 'light' | 'system'
+  bt_enable_dht: boolean;          // BitTorrent DHT
+  bt_enable_pex: boolean;          // BitTorrent Peer Exchange
+  bt_enable_lpd: boolean;          // Local Peer Discovery
+  bt_max_peers: number;            // Max peers per torrent, default 55
+  bt_seed_ratio: number;           // Seed ratio, default 1.0
+  auto_update_trackers: boolean;   // Auto-fetch tracker lists
+  delete_files_on_remove: boolean; // Delete files when removing download
+  proxy_url: string;               // HTTP/SOCKS proxy URL (empty = none)
+  connect_timeout: number;         // Connection timeout in seconds, default 30
+  read_timeout: number;            // Read timeout in seconds, default 60
+  max_retries: number;             // Max retry attempts, default 3
+  allocation_mode: string;         // 'none' | 'sparse' | 'full', default 'sparse'
 }
 ```
