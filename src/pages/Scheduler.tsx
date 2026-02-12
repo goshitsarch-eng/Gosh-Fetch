@@ -177,7 +177,7 @@ export default function Scheduler() {
   async function handleSave() {
     setSaving(true);
     try {
-      const rules = gridToRules(grid, getLimitBytes());
+      const rules = scheduleEnabled ? gridToRules(grid, getLimitBytes()) : [];
       await api.setScheduleRules(rules);
       savePrefs({
         limitSpeed: parseInt(limitSpeed, 10) || 2048,
@@ -357,12 +357,13 @@ export default function Scheduler() {
                     <div className="toggle-thumb" />
                   </label>
                 </div>
-                <div className={`scheduler-toggle-row${!forcePauseManual ? ' disabled' : ''}`}>
+                <div className={`scheduler-toggle-row${!scheduleEnabled ? ' disabled' : ''}`}>
                   <span>Force pause manual downloads</span>
                   <label className="scheduler-toggle">
                     <input
                       type="checkbox"
                       checked={forcePauseManual}
+                      disabled={!scheduleEnabled}
                       onChange={(e) => { setForcePauseManual(e.target.checked); setIsDirty(true); }}
                     />
                     <div className="toggle-track" />
@@ -385,6 +386,7 @@ export default function Scheduler() {
                 <div className="scheduler-select-wrapper">
                   <select
                     value={onCompletion}
+                    disabled={!scheduleEnabled}
                     onChange={(e) => { setOnCompletion(e.target.value); setIsDirty(true); }}
                   >
                     <option value="nothing">Do nothing</option>
@@ -401,6 +403,7 @@ export default function Scheduler() {
                     type="checkbox"
                     id="force-close"
                     checked={forceCloseApps}
+                    disabled={!scheduleEnabled}
                     onChange={(e) => { setForceCloseApps(e.target.checked); setIsDirty(true); }}
                   />
                   <label htmlFor="force-close">Force close blocking apps</label>

@@ -77,8 +77,18 @@ export const resumeDownload = createAsyncThunk(
 
 export const removeDownload = createAsyncThunk(
   'downloads/remove',
-  async ({ gid, deleteFiles }: { gid: string; deleteFiles: boolean }) => {
-    await api.removeDownload(gid, deleteFiles);
+  async ({ gid, deleteFiles }: { gid: string; deleteFiles?: boolean }) => {
+    let effectiveDeleteFiles = deleteFiles;
+    if (effectiveDeleteFiles === undefined) {
+      try {
+        const settings = await api.dbGetSettings();
+        effectiveDeleteFiles = settings.delete_files_on_remove;
+      } catch {
+        effectiveDeleteFiles = false;
+      }
+    }
+
+    await api.removeDownload(gid, effectiveDeleteFiles);
     try {
       await api.dbRemoveDownload(gid);
     } catch {
@@ -109,14 +119,19 @@ export const clearHistory = createAsyncThunk(
   }
 );
 
-// Maps position in queue to a priority bucket, then calls setPriority only for changed items
+interface SyncPrioritiesPayload {
+  gidOrder: string[];
+  previousOrder: string[];
+}
+
+// Maps queue positions to priority buckets and only updates items whose bucket changed
 export const syncPriorities = createAsyncThunk(
   'downloads/syncPriorities',
-  async (gidOrder: string[], { getState }) => {
-    const total = gidOrder.length;
-    if (total === 0) return;
+  async ({ gidOrder, previousOrder }: SyncPrioritiesPayload) => {
+    const nextTotal = gidOrder.length;
+    if (nextTotal === 0) return;
 
-    function getBucket(index: number): string {
+    function getBucket(index: number, total: number): string {
       const ratio = total === 1 ? 0 : index / (total - 1);
       if (ratio <= 0.10) return 'critical';
       if (ratio <= 0.35) return 'high';
@@ -124,9 +139,18 @@ export const syncPriorities = createAsyncThunk(
       return 'low';
     }
 
-    for (let i = 0; i < total; i++) {
+    const previousBuckets = new Map<string, string>();
+    const previousTotal = previousOrder.length;
+    for (let i = 0; i < previousTotal; i++) {
+      previousBuckets.set(previousOrder[i], getBucket(i, previousTotal));
+    }
+
+    for (let i = 0; i < nextTotal; i++) {
       const gid = gidOrder[i];
-      const bucket = getBucket(i);
+      const bucket = getBucket(i, nextTotal);
+      if (previousBuckets.get(gid) === bucket) {
+        continue;
+      }
       try {
         await api.setPriority(gid, bucket);
       } catch {
@@ -144,8 +168,12 @@ export const restoreIncomplete = createAsyncThunk(
       try {
         if (download.downloadType === 'magnet' && download.magnetUri) {
           await api.addMagnet(download.magnetUri);
+        } else if (download.downloadType === 'magnet' && download.infoHash) {
+          await api.addMagnet(`magnet:?xt=urn:btih:${download.infoHash}`);
         } else if (download.downloadType === 'torrent' && download.magnetUri) {
           await api.addMagnet(download.magnetUri);
+        } else if (download.downloadType === 'torrent' && download.infoHash) {
+          await api.addMagnet(`magnet:?xt=urn:btih:${download.infoHash}`);
         } else if (download.url) {
           await api.addDownload(download.url);
         }

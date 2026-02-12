@@ -19,6 +19,10 @@ declare global {
       setDefaultProtocolClient: (protocol: string) => Promise<boolean>;
       removeDefaultProtocolClient: (protocol: string) => Promise<boolean>;
       isDefaultProtocolClient: (protocol: string) => Promise<boolean>;
+      performSystemAction: (
+        action: 'close' | 'sleep' | 'shutdown',
+        forceCloseApps?: boolean
+      ) => Promise<boolean>;
       importSettingsFile: () => Promise<any | null>;
       getDiskSpace: (path?: string) => Promise<{ total: number; free: number }>;
       platform: string;

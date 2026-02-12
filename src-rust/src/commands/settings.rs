@@ -63,7 +63,9 @@ pub async fn apply_settings_to_engine(
 
     config.download_dir = PathBuf::from(&settings.download_path);
     config.max_concurrent_downloads = settings.max_concurrent_downloads as usize;
-    config.max_connections_per_download = settings.max_connections_per_server as usize;
+    config.max_connections_per_download = settings
+        .max_connections_per_server
+        .max(settings.split_count) as usize;
 
     if settings.download_speed_limit > 0 {
         config.global_download_limit = Some(settings.download_speed_limit);

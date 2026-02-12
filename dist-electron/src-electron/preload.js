@@ -47,6 +47,9 @@ electron_1.contextBridge.exposeInMainWorld('electronAPI', {
     isDefaultProtocolClient: (protocol) => {
         return electron_1.ipcRenderer.invoke('is-default-protocol-client', protocol);
     },
+    performSystemAction: (action, forceCloseApps = false) => {
+        return electron_1.ipcRenderer.invoke('perform-system-action', action, forceCloseApps);
+    },
     importSettingsFile: () => {
         return electron_1.ipcRenderer.invoke('import-settings-file');
     },

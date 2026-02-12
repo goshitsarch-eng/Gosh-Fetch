@@ -193,7 +193,7 @@ export default function Downloads() {
 
   async function handleBatchRemove() {
     for (const gid of selectedGids) {
-      try { await dispatch(removeDownload({ gid, deleteFiles: false })); } catch { /* ignore */ }
+      try { await dispatch(removeDownload({ gid })); } catch { /* ignore */ }
     }
     setSelectedGids(new Set());
   }
@@ -214,7 +214,7 @@ export default function Downloads() {
       if (oldIndex !== -1 && newIndex !== -1) {
         const newOrder = arrayMove(gidOrder, oldIndex, newIndex);
         dispatch(setOrder(newOrder));
-        dispatch(syncPriorities(newOrder));
+        dispatch(syncPriorities({ gidOrder: newOrder, previousOrder: gidOrder }));
       }
     }
   }

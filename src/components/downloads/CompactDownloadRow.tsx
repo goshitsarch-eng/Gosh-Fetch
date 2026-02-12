@@ -47,12 +47,12 @@ function CompactDownloadRow({ download, selected, onSelect }: Props) {
   }
 
   async function handleRemove() {
-    try { await dispatch(removeDownload({ gid: download.gid, deleteFiles: false })); } catch { /* ignore */ }
+    try { await dispatch(removeDownload({ gid: download.gid })); } catch { /* ignore */ }
     setShowConfirm(false);
   }
 
   async function handleOpenFolder() {
-    try { await api.openFileLocation(download.savePath); } catch { /* ignore */ }
+    try { await api.openDownloadFolder(download.savePath); } catch { /* ignore */ }
   }
 
   return (

@@ -37,7 +37,12 @@ export default function Onboarding({ onComplete }: Props) {
       try {
         const isMagnet = await window.electronAPI.isDefaultProtocolClient('magnet');
         setMagnetLinks(isMagnet);
-        setTorrentHandler(isMagnet); // torrent handler often tied to magnet
+        const savedTorrentHandler = localStorage.getItem('gosh-fetch-handle-torrent-files');
+        if (savedTorrentHandler == null) {
+          setTorrentHandler(isMagnet);
+        } else {
+          setTorrentHandler(savedTorrentHandler === '1');
+        }
       } catch {}
       try {
         const loginSettings = await window.electronAPI.getLoginItemSettings();
@@ -111,6 +116,7 @@ export default function Onboarding({ onComplete }: Props) {
       } else {
         localStorage.removeItem('gosh-fetch-always-ask-location');
       }
+      localStorage.setItem('gosh-fetch-handle-torrent-files', torrentHandler ? '1' : '0');
 
       // Apply desktop integration settings
       try {

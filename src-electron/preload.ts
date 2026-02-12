@@ -59,6 +59,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('is-default-protocol-client', protocol);
   },
 
+  performSystemAction: (
+    action: 'close' | 'sleep' | 'shutdown',
+    forceCloseApps: boolean = false
+  ): Promise<boolean> => {
+    return ipcRenderer.invoke('perform-system-action', action, forceCloseApps);
+  },
+
   importSettingsFile: (): Promise<any | null> => {
     return ipcRenderer.invoke('import-settings-file');
   },

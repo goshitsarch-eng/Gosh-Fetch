@@ -444,6 +444,15 @@
     return name.slice(0, maxLen - 3) + '...';
   }
 
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   // --- DOM References ---
 
   const ulSpeedEl = document.getElementById('ul-speed');
@@ -477,15 +486,18 @@
       const d = displayDownloads[i];
       const total = d.totalSize || 0;
       const completed = d.completedSize || 0;
-      const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+      const percentRaw = total > 0 ? Math.round((completed / total) * 100) : 0;
+      const percent = Math.max(0, Math.min(100, Number(percentRaw) || 0));
       const speed = d.downloadSpeed || 0;
       const remaining = total - completed;
       const color = getProgressColor(percent);
       const name = truncateName(d.name, 28);
+      const safeName = escapeHtml(name);
+      const safeTitle = escapeHtml(d.name || '');
 
       html += '<div class="download-item">' +
         '<div class="download-top">' +
-          '<span class="download-name" title="' + (d.name || '').replace(/"/g, '&quot;') + '">' + name + '</span>' +
+          '<span class="download-name" title="' + safeTitle + '">' + safeName + '</span>' +
           '<span class="download-percent">' + percent + '%</span>' +
         '</div>' +
         '<div class="progress-bar">' +

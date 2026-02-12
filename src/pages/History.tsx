@@ -85,14 +85,24 @@ function getStatusBadge(download: Download): { label: string; className: string;
   return { label: 'N/A', className: 'na', icon: null };
 }
 
+function joinPath(basePath: string, fileName: string): string {
+  if (!basePath) return fileName;
+  if (basePath.endsWith('/') || basePath.endsWith('\\')) {
+    return `${basePath}${fileName}`;
+  }
+  const separator = basePath.includes('\\') ? '\\' : '/';
+  return `${basePath}${separator}${fileName}`;
+}
+
 function HistoryRow({ download, onDelete }: { download: Download; onDelete: (gid: string) => void }) {
   const { icon, colorClass } = getFileTypeIcon(download);
   const source = getSourceDomain(download);
   const status = getStatusBadge(download);
+  const filePath = joinPath(download.savePath, download.name);
 
   async function handleOpenFolder() {
     try {
-      await api.openFileLocation(download.savePath);
+      await api.openDownloadFolder(download.savePath);
     } catch (e) {
       console.error('Failed to open folder:', e);
     }
@@ -100,9 +110,13 @@ function HistoryRow({ download, onDelete }: { download: Download; onDelete: (gid
 
   async function handleOpenFile() {
     try {
-      await api.openFileLocation(download.savePath);
+      await api.openFileLocation(filePath);
     } catch (e) {
-      console.error('Failed to open file:', e);
+      try {
+        await api.openDownloadFolder(download.savePath);
+      } catch {
+        console.error('Failed to open file:', e);
+      }
     }
   }
 
@@ -155,7 +169,7 @@ export default function History() {
   useEffect(() => {
     dispatch(loadCompletedHistory());
     dispatch(fetchDownloads());
-    const interval = setInterval(() => dispatch(fetchDownloads()), 1000);
+    const interval = setInterval(() => dispatch(fetchDownloads()), 10000);
     return () => clearInterval(interval);
   }, [dispatch]);
 
@@ -185,7 +199,7 @@ export default function History() {
   }
 
   async function handleDeleteItem(gid: string) {
-    await dispatch(removeDownload({ gid, deleteFiles: false }));
+    await dispatch(removeDownload({ gid }));
     dispatch(loadCompletedHistory());
   }
 

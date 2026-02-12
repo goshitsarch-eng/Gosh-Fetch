@@ -11,7 +11,15 @@ import Scheduler from './pages/Scheduler';
 import Statistics from './pages/Statistics';
 import { updateStats, setDisconnected, selectIsConnected } from './store/statsSlice';
 import { setTheme, applySystemTheme } from './store/themeSlice';
-import { addDownload, addMagnet, fetchDownloads, loadCompletedHistory, restoreIncomplete } from './store/downloadSlice';
+import {
+  addDownload,
+  addMagnet,
+  addTorrentFile,
+  fetchDownloads,
+  loadCompletedHistory,
+  pauseDownload,
+  restoreIncomplete,
+} from './store/downloadSlice';
 import { addNotification } from './store/notificationSlice';
 import { setUpdateAvailable, setDownloadProgress, setUpdateDownloaded } from './store/updaterSlice';
 import UpdateToast from './components/updater/UpdateToast';
@@ -69,7 +77,7 @@ export default function App() {
       for (const file of Array.from(e.dataTransfer.files)) {
         if (file.name.endsWith('.torrent') && (file as any).path) {
           try {
-            await dispatch(addDownload({ url: (file as any).path }));
+            await dispatch(addTorrentFile({ filePath: (file as any).path }));
           } catch { /* ignore */ }
         }
       }
@@ -103,6 +111,9 @@ export default function App() {
     dispatch(restoreIncomplete());
     dispatch(fetchDownloads());
     dispatch(loadCompletedHistory());
+
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let onCompletionTriggered = false;
 
     const looksLikeGid = (value: string): boolean =>
       /^[0-9a-f]{16}$/i.test(value) ||
@@ -139,6 +150,18 @@ export default function App() {
       return '';
     };
 
+    const scheduleDownloadsRefresh = (delayMs: number = 100) => {
+      if (refreshTimer !== null) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        dispatch(fetchDownloads());
+      }, delayMs);
+    };
+
+    const resetOnCompletionTrigger = () => {
+      onCompletionTriggered = false;
+    };
+
     const persistDownloadSnapshot = (payload: any, refreshHistory: boolean = false) => {
       const gid = extractGid(payload);
       if (!gid) {
@@ -160,6 +183,110 @@ export default function App() {
       })();
     };
 
+    const loadSchedulerPrefs = (): {
+      scheduleEnabled: boolean;
+      forcePauseManual: boolean;
+      onCompletion: 'nothing' | 'close' | 'sleep' | 'shutdown';
+      forceCloseApps: boolean;
+    } => {
+      try {
+        const raw = localStorage.getItem('gosh-fetch-scheduler-prefs');
+        const parsed = raw ? JSON.parse(raw) : {};
+        const onCompletion =
+          parsed.onCompletion === 'close' ||
+          parsed.onCompletion === 'sleep' ||
+          parsed.onCompletion === 'shutdown'
+            ? parsed.onCompletion
+            : 'nothing';
+
+        return {
+          scheduleEnabled: parsed.scheduleEnabled !== false,
+          forcePauseManual: Boolean(parsed.forcePauseManual),
+          onCompletion,
+          forceCloseApps: Boolean(parsed.forceCloseApps),
+        };
+      } catch {
+        return {
+          scheduleEnabled: true,
+          forcePauseManual: false,
+          onCompletion: 'nothing',
+          forceCloseApps: false,
+        };
+      }
+    };
+
+    const isCurrentTimePausedBySchedule = async (): Promise<boolean> => {
+      const rules = await api.getScheduleRules();
+      if (!Array.isArray(rules) || rules.length === 0) return false;
+
+      const now = new Date();
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const currentDay = dayNames[now.getDay()];
+      const currentHour = now.getHours();
+
+      return rules.some((rule: any) => {
+        if (!rule || typeof rule !== 'object') return false;
+
+        const startHour = Number(rule.start_hour);
+        const endHour = Number(rule.end_hour);
+        if (!Number.isFinite(startHour) || !Number.isFinite(endHour)) return false;
+
+        const days = Array.isArray(rule.days) ? rule.days : [];
+        const dayMatches = days.length === 0 || days.includes(currentDay);
+        if (!dayMatches) return false;
+
+        const hourMatches =
+          startHour <= endHour
+            ? currentHour >= startHour && currentHour <= endHour
+            : currentHour >= startHour || currentHour <= endHour;
+
+        return hourMatches && rule.download_limit === 0;
+      });
+    };
+
+    const enforceManualPauseRule = (payload: any) => {
+      const gid = extractGid(payload);
+      if (!gid) return;
+
+      void (async () => {
+        const prefs = loadSchedulerPrefs();
+        if (!prefs.scheduleEnabled || !prefs.forcePauseManual) return;
+
+        try {
+          const shouldPause = await isCurrentTimePausedBySchedule();
+          if (shouldPause) {
+            await dispatch(pauseDownload(gid));
+          }
+        } catch {
+          // Ignore schedule enforcement errors
+        }
+      })();
+    };
+
+    const maybeRunOnCompletionAction = () => {
+      void (async () => {
+        const prefs = loadSchedulerPrefs();
+        if (!prefs.scheduleEnabled || prefs.onCompletion === 'nothing' || onCompletionTriggered) {
+          return;
+        }
+
+        try {
+          const active = await api.getActiveDownloads();
+          if (Array.isArray(active) && active.length > 0) return;
+
+          const performed = await window.electronAPI.performSystemAction(
+            prefs.onCompletion,
+            prefs.forceCloseApps
+          );
+          if (performed) {
+            onCompletionTriggered = true;
+          }
+        } catch {
+          // Ignore action errors so downloads continue to function normally
+        }
+      })();
+    };
+
     // Listen for events from sidecar via Electron
     const cleanupEvent = window.electronAPI.onEvent((event: string, data: any) => {
       if (event === 'global-stats') {
@@ -171,6 +298,32 @@ export default function App() {
       if (event === 'open-add-modal') {
         window.dispatchEvent(new CustomEvent('gosh-fetch:open-add-modal'));
       }
+      if (event === 'open-magnet') {
+        const magnetUri = data?.uri;
+        if (typeof magnetUri === 'string' && magnetUri.startsWith('magnet:')) {
+          navigate('/');
+          void dispatch(addMagnet({ magnetUri }))
+            .unwrap()
+            .then(() => scheduleDownloadsRefresh(0))
+            .catch(() => {
+              // Ignore malformed magnet links received from OS handlers
+            });
+        }
+      }
+      if (event === 'open-torrent-file') {
+        const filePath = data?.path;
+        const torrentHandlingEnabled = localStorage.getItem('gosh-fetch-handle-torrent-files') !== '0';
+        if (typeof filePath === 'string' && filePath.toLowerCase().endsWith('.torrent')) {
+          if (!torrentHandlingEnabled) return;
+          navigate('/');
+          void dispatch(addTorrentFile({ filePath }))
+            .unwrap()
+            .then(() => scheduleDownloadsRefresh(0))
+            .catch(() => {
+              // Ignore unreadable file paths from OS handlers
+            });
+        }
+      }
       if (event === 'native-theme-changed') {
         dispatch(applySystemTheme());
       }
@@ -181,20 +334,23 @@ export default function App() {
       }
       // Push-based download list refresh on state changes
       if (event === 'download:added') {
-        dispatch(fetchDownloads());
+        scheduleDownloadsRefresh();
+        resetOnCompletionTrigger();
+        enforceManualPauseRule(data);
         if (data?.name) {
           dispatch(addNotification({ type: 'added', downloadName: data.name }));
         }
       }
       if (event === 'download:completed') {
-        dispatch(fetchDownloads());
+        scheduleDownloadsRefresh();
         persistDownloadSnapshot(data, true);
+        maybeRunOnCompletionAction();
         if (data?.name) {
           dispatch(addNotification({ type: 'completed', downloadName: data.name }));
         }
       }
       if (event === 'download:failed') {
-        dispatch(fetchDownloads());
+        scheduleDownloadsRefresh();
         persistDownloadSnapshot(data);
         if (data?.name) {
           dispatch(addNotification({ type: 'failed', downloadName: data.name }));
@@ -206,7 +362,13 @@ export default function App() {
         event === 'download:resumed' ||
         event === 'download:state-changed'
       ) {
-        dispatch(fetchDownloads());
+        scheduleDownloadsRefresh();
+        if (event === 'download:resumed') {
+          resetOnCompletionTrigger();
+          enforceManualPauseRule(data);
+        } else if (event === 'download:state-changed' || event === 'download:paused') {
+          persistDownloadSnapshot(data);
+        }
         if (event === 'download:removed') {
           const gid = extractGid(data);
           if (gid) {
@@ -234,6 +396,9 @@ export default function App() {
     return () => {
       cleanupEvent();
       document.removeEventListener('keydown', handleKeyDown);
+      if (refreshTimer !== null) {
+        clearTimeout(refreshTimer);
+      }
     };
   }, [dispatch, navigate, handleKeyDown]);
 

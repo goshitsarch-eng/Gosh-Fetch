@@ -381,7 +381,7 @@ export default function Statistics() {
     const interval = setInterval(() => {
       dispatch(fetchDownloads());
       dispatch(loadCompletedHistory());
-    }, 10000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [dispatch]);
 

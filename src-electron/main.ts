@@ -12,6 +12,7 @@ import {
   session,
   screen,
 } from 'electron';
+import { execFile } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { autoUpdater } from 'electron-updater';
@@ -24,6 +25,8 @@ let sidecar: SidecarManager | null = null;
 let closeToTray = true;
 let isQuitting = false;
 let lastTrayData: any = null;
+const pendingMagnetUrls: string[] = [];
+const pendingTorrentFiles: string[] = [];
 
 // Single-instance lock
 const gotLock = app.requestSingleInstanceLock();
@@ -62,15 +65,32 @@ app.on('open-file', (event, filePath) => {
 });
 
 function handleProtocolUrl(url: string): void {
-  if (url.startsWith('magnet:') && mainWindow && !mainWindow.isDestroyed()) {
+  if (!url.startsWith('magnet:')) return;
+  if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.webContents.send('rpc-event', 'open-magnet', { uri: url });
+    return;
   }
+  pendingMagnetUrls.push(url);
 }
 
 function handleTorrentFile(filePath: string): void {
-  if (filePath.endsWith('.torrent') && mainWindow && !mainWindow.isDestroyed()) {
+  if (!filePath.toLowerCase().endsWith('.torrent')) return;
+  if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
+    mainWindow.webContents.send('rpc-event', 'open-torrent-file', { path: filePath });
+    return;
+  }
+  pendingTorrentFiles.push(filePath);
+}
+
+function flushPendingOpenRequests(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  for (const url of pendingMagnetUrls.splice(0)) {
+    mainWindow.webContents.send('rpc-event', 'open-magnet', { uri: url });
+  }
+  for (const filePath of pendingTorrentFiles.splice(0)) {
     mainWindow.webContents.send('rpc-event', 'open-torrent-file', { path: filePath });
   }
 }
@@ -122,20 +142,26 @@ const ALLOWED_RPC_METHODS = new Set([
   'set_schedule_rules',
 ]);
 
+const ALLOWED_PROTOCOL_CLIENTS = new Set(['magnet']);
+
+function assertAllowedProtocolClient(protocol: string): void {
+  if (!ALLOWED_PROTOCOL_CLIENTS.has(protocol)) {
+    throw new Error(`Unsupported protocol client: ${protocol}`);
+  }
+}
+
 function getSidecarPath(): string {
   const isDev = !app.isPackaged;
   const binaryName =
     process.platform === 'win32' ? 'gosh-fetch-engine.exe' : 'gosh-fetch-engine';
 
   if (isDev) {
-    // In development, look for the binary in src-rust/target/debug or release
-    return path.join(
-      app.getAppPath(),
-      'src-rust',
-      'target',
-      'debug',
-      binaryName
-    );
+    const candidates = [
+      path.join(app.getAppPath(), 'src-rust', 'target', 'debug', binaryName),
+      path.join(app.getAppPath(), 'src-rust', 'target', 'release', binaryName),
+    ];
+    const existingPath = candidates.find((candidatePath) => fs.existsSync(candidatePath));
+    return existingPath ?? candidates[0];
   }
 
   // In production, the binary is bundled alongside the app
@@ -260,6 +286,7 @@ function createWindow(): void {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
+    flushPendingOpenRequests();
   });
 
   // Save window state on resize/move
@@ -408,6 +435,12 @@ function setupSidecar(): void {
     sidecar = new SidecarManager();
     console.log('Starting sidecar at:', sidecarPath);
 
+    if (!fs.existsSync(sidecarPath)) {
+      console.error('Sidecar binary not found at:', sidecarPath);
+      notifyEngineStatus(false, false);
+      return;
+    }
+
     try {
       sidecar.spawn(sidecarPath);
     } catch (err) {
@@ -467,6 +500,53 @@ function formatSpeed(bytesPerSec: number): string {
   if (bytesPerSec >= MB) return `${(bytesPerSec / MB).toFixed(1)} MB/s`;
   if (bytesPerSec >= KB) return `${(bytesPerSec / KB).toFixed(1)} KB/s`;
   return `${bytesPerSec} B/s`;
+}
+
+function runCommand(command: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, (error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+async function performSystemAction(action: 'sleep' | 'shutdown', forceCloseApps: boolean): Promise<void> {
+  if (process.platform === 'darwin') {
+    if (action === 'sleep') {
+      await runCommand('pmset', ['sleepnow']);
+    } else {
+      await runCommand('osascript', ['-e', 'tell application "System Events" to shut down']);
+    }
+    return;
+  }
+
+  if (process.platform === 'linux') {
+    if (action === 'sleep') {
+      await runCommand('systemctl', ['suspend']);
+    } else {
+      await runCommand('systemctl', ['poweroff']);
+    }
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    if (action === 'sleep') {
+      await runCommand('rundll32.exe', ['powrprof.dll,SetSuspendState', '0,1,0']);
+    } else {
+      const args = ['/s', '/t', '0'];
+      if (forceCloseApps) {
+        args.push('/f');
+      }
+      await runCommand('shutdown', args);
+    }
+    return;
+  }
+
+  throw new Error(`Unsupported platform for system action: ${process.platform}`);
 }
 
 function setupIPC(): void {
@@ -536,15 +616,36 @@ function setupIPC(): void {
 
   // Default protocol client
   ipcMain.handle('set-default-protocol-client', (_event, protocol: string) => {
+    assertAllowedProtocolClient(protocol);
     return app.setAsDefaultProtocolClient(protocol);
   });
 
   ipcMain.handle('remove-default-protocol-client', (_event, protocol: string) => {
+    assertAllowedProtocolClient(protocol);
     return app.removeAsDefaultProtocolClient(protocol);
   });
 
   ipcMain.handle('is-default-protocol-client', (_event, protocol: string) => {
+    assertAllowedProtocolClient(protocol);
     return app.isDefaultProtocolClient(protocol);
+  });
+
+  ipcMain.handle('perform-system-action', async (_event, action: string, forceCloseApps: boolean = false) => {
+    if (action === 'close') {
+      isQuitting = true;
+      app.quit();
+      return true;
+    }
+    if (action !== 'sleep' && action !== 'shutdown') {
+      throw new Error(`Unsupported system action: ${action}`);
+    }
+    try {
+      await performSystemAction(action, forceCloseApps);
+      return true;
+    } catch (err) {
+      console.error('Failed to perform system action:', action, err);
+      return false;
+    }
   });
 
   // Import settings from file

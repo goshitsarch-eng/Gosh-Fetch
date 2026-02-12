@@ -11,11 +11,11 @@ files:
   - dist-electron/**/*
 
 extraResources:
-  - from: src-rust/target/release/gosh-fetch-engine
-    to: bin/gosh-fetch-engine
+  - from: src-rust/target/release/
+    to: bin/
     filter:
-      - "!*.d"
-      - "!*.pdb"
+      - gosh-fetch-engine
+      - gosh-fetch-engine.exe
   - from: src-rust/icons/
     to: icons/
   - from: src-electron/tray-popup.html

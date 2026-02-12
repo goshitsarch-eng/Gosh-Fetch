@@ -59,7 +59,9 @@ impl AppState {
         let mut config = EngineConfig::default();
         config.download_dir = PathBuf::from(&settings.download_path);
         config.max_concurrent_downloads = settings.max_concurrent_downloads as usize;
-        config.max_connections_per_download = settings.max_connections_per_server as usize;
+        config.max_connections_per_download = settings
+            .max_connections_per_server
+            .max(settings.split_count) as usize;
         config.user_agent = settings.user_agent.clone();
         config.enable_dht = settings.bt_enable_dht;
         config.enable_pex = settings.bt_enable_pex;

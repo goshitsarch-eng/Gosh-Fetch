@@ -156,7 +156,7 @@ function DownloadCard({ download, selected, onSelect }: Props) {
   }
 
   async function handleOpenFolder() {
-    try { await api.openFileLocation(download.savePath); } catch (e) { console.error('Failed to open folder:', e); }
+    try { await api.openDownloadFolder(download.savePath); } catch (e) { console.error('Failed to open folder:', e); }
   }
 
   return (
