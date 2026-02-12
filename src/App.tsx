@@ -11,11 +11,12 @@ import Scheduler from './pages/Scheduler';
 import Statistics from './pages/Statistics';
 import { updateStats, setDisconnected, selectIsConnected } from './store/statsSlice';
 import { setTheme, applySystemTheme } from './store/themeSlice';
-import { addDownload, addMagnet, fetchDownloads, restoreIncomplete } from './store/downloadSlice';
+import { addDownload, addMagnet, fetchDownloads, loadCompletedHistory, restoreIncomplete } from './store/downloadSlice';
 import { addNotification } from './store/notificationSlice';
 import { setUpdateAvailable, setDownloadProgress, setUpdateDownloaded } from './store/updaterSlice';
 import UpdateToast from './components/updater/UpdateToast';
 import UpdateModal from './components/updater/UpdateModal';
+import { api } from './lib/api';
 import type { AppDispatch } from './store/store';
 import './App.css';
 
@@ -100,6 +101,29 @@ export default function App() {
 
     // Restore incomplete downloads once on app startup
     dispatch(restoreIncomplete());
+    dispatch(fetchDownloads());
+    dispatch(loadCompletedHistory());
+
+    const persistDownloadSnapshot = (payload: any, refreshHistory: boolean = false) => {
+      const gid = typeof payload?.gid === 'string' ? payload.gid : '';
+      if (!gid) {
+        if (refreshHistory) dispatch(loadCompletedHistory());
+        return;
+      }
+
+      void (async () => {
+        try {
+          const download = await api.getDownloadStatus(gid);
+          await api.dbSaveDownload(download);
+        } catch {
+          // Ignore persistence races (e.g. removed before snapshot)
+        } finally {
+          if (refreshHistory) {
+            dispatch(loadCompletedHistory());
+          }
+        }
+      })();
+    };
 
     // Listen for events from sidecar via Electron
     const cleanupEvent = window.electronAPI.onEvent((event: string, data: any) => {
@@ -129,12 +153,14 @@ export default function App() {
       }
       if (event === 'download:completed') {
         dispatch(fetchDownloads());
+        persistDownloadSnapshot(data, true);
         if (data?.name) {
           dispatch(addNotification({ type: 'completed', downloadName: data.name }));
         }
       }
       if (event === 'download:failed') {
         dispatch(fetchDownloads());
+        persistDownloadSnapshot(data);
         if (data?.name) {
           dispatch(addNotification({ type: 'failed', downloadName: data.name }));
         }
@@ -146,6 +172,12 @@ export default function App() {
         event === 'download:state-changed'
       ) {
         dispatch(fetchDownloads());
+        if (event === 'download:paused') {
+          persistDownloadSnapshot(data);
+        }
+        if (event === 'download:removed') {
+          dispatch(loadCompletedHistory());
+        }
       }
       // Auto-updater events
       if (event === 'update-available') {

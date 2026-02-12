@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { selectStats, selectIsConnected } from '../store/statsSlice';
-import { selectCompletedHistory, loadCompletedHistory } from '../store/downloadSlice';
+import { selectCompletedDownloads, loadCompletedHistory, fetchDownloads } from '../store/downloadSlice';
 import { formatBytes, formatSpeed } from '../lib/utils/format';
 import type { AppDispatch } from '../store/store';
 import './Statistics.css';
@@ -357,7 +357,7 @@ export default function Statistics() {
   const dispatch = useDispatch<AppDispatch>();
   const stats = useSelector(selectStats);
   const isConnected = useSelector(selectIsConnected);
-  const completedHistory = useSelector(selectCompletedHistory);
+  const completedDownloads = useSelector(selectCompletedDownloads);
 
   const [renderTick, setRenderTick] = useState(0);
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('5m');
@@ -374,9 +374,15 @@ export default function Statistics() {
   const statsRef = useRef(stats);
   statsRef.current = stats;
 
-  // Load completed history on mount
+  // Load persisted history and sync live downloads while statistics page is open
   useEffect(() => {
     dispatch(loadCompletedHistory());
+    dispatch(fetchDownloads());
+    const interval = setInterval(() => {
+      dispatch(fetchDownloads());
+      dispatch(loadCompletedHistory());
+    }, 10000);
+    return () => clearInterval(interval);
   }, [dispatch]);
 
   // Sample speed every 3 seconds
@@ -413,8 +419,8 @@ export default function Statistics() {
 
   // Derived: total downloaded from history
   const totalDownloaded = useMemo(() => {
-    return completedHistory.reduce((sum, d) => sum + (d.completedSize || d.totalSize), 0);
-  }, [completedHistory]);
+    return completedDownloads.reduce((sum, d) => sum + (d.completedSize || d.totalSize), 0);
+  }, [completedDownloads]);
 
   // Derived: weekly comparison
   const weeklyComparison = useMemo(() => {
@@ -429,7 +435,7 @@ export default function Statistics() {
 
     let thisWeek = 0;
     let lastWeek = 0;
-    for (const d of completedHistory) {
+    for (const d of completedDownloads) {
       const completed = new Date(d.completedAt || d.createdAt);
       if (completed >= startOfThisWeek) {
         thisWeek += d.completedSize || d.totalSize;
@@ -440,12 +446,12 @@ export default function Statistics() {
 
     if (lastWeek === 0) return null;
     return Math.round(((thisWeek - lastWeek) / lastWeek) * 100);
-  }, [completedHistory]);
+  }, [completedDownloads]);
 
   // Derived: top domains
   const topDomains = useMemo((): DomainStat[] => {
     const map = new Map<string, DomainStat>();
-    for (const d of completedHistory) {
+    for (const d of completedDownloads) {
       let domain = 'unknown';
       if (d.url) {
         try { domain = new URL(d.url).hostname; } catch { /* ignore */ }
@@ -460,7 +466,7 @@ export default function Statistics() {
     return Array.from(map.values())
       .sort((a, b) => b.totalBytes - a.totalBytes)
       .slice(0, 5);
-  }, [completedHistory]);
+  }, [completedDownloads]);
 
   // Session average speed
   const avgSpeed = speedSampleCount.current > 0
