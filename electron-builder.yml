@@ -29,6 +29,7 @@ linux:
     - deb
     - rpm
   category: Network
+  maintainer: goshitsarch-eng <goshitsarch-eng@users.noreply.github.com>
   icon: src-rust/icons/icon.png
   desktop:
     entry:
