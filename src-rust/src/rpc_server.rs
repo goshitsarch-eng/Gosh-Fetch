@@ -180,6 +180,11 @@ pub async fn run_rpc_server(state: AppState, mut event_rx: broadcast::Receiver<V
             }
         });
     }
+
+    // Stdin closed (sidecar shutdown): persist final state and stop engine cleanly.
+    if let Err(e) = state.shutdown().await {
+        log::error!("Failed to shut down app state cleanly: {}", e);
+    }
 }
 
 async fn handle_method(

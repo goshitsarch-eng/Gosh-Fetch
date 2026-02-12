@@ -104,8 +104,43 @@ export default function App() {
     dispatch(fetchDownloads());
     dispatch(loadCompletedHistory());
 
+    const looksLikeGid = (value: string): boolean =>
+      /^[0-9a-f]{16}$/i.test(value) ||
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+    const extractGid = (payload: any): string => {
+      if (!payload || typeof payload !== 'object') return '';
+
+      const queue: any[] = [payload];
+      const seen = new Set<any>();
+
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (!current || typeof current !== 'object' || seen.has(current)) continue;
+        seen.add(current);
+
+        if (typeof current.gid === 'string' && looksLikeGid(current.gid)) {
+          return current.gid;
+        }
+        if (typeof current.id === 'string' && looksLikeGid(current.id)) {
+          return current.id;
+        }
+
+        for (const value of Object.values(current)) {
+          if (typeof value === 'string' && looksLikeGid(value)) {
+            return value;
+          }
+          if (value && typeof value === 'object') {
+            queue.push(value);
+          }
+        }
+      }
+
+      return '';
+    };
+
     const persistDownloadSnapshot = (payload: any, refreshHistory: boolean = false) => {
-      const gid = typeof payload?.gid === 'string' ? payload.gid : '';
+      const gid = extractGid(payload);
       if (!gid) {
         if (refreshHistory) dispatch(loadCompletedHistory());
         return;
@@ -172,10 +207,13 @@ export default function App() {
         event === 'download:state-changed'
       ) {
         dispatch(fetchDownloads());
-        if (event === 'download:paused') {
-          persistDownloadSnapshot(data);
-        }
         if (event === 'download:removed') {
+          const gid = extractGid(data);
+          if (gid) {
+            void api.dbRemoveDownload(gid).catch(() => {
+              // Ignore races (already removed from DB)
+            });
+          }
           dispatch(loadCompletedHistory());
         }
       }

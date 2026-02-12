@@ -1,5 +1,6 @@
 use crate::db::Database;
 use crate::engine_adapter::EngineAdapter;
+use crate::types::DownloadState;
 use crate::utils::TrackerUpdater;
 use crate::Result;
 use gosh_dl::{DownloadEngine, DownloadEvent, EngineConfig};
@@ -156,6 +157,24 @@ impl AppState {
     }
 
     pub async fn shutdown(&self) -> Result<()> {
+        // Persist a final history snapshot so completed items survive app restarts.
+        // We intentionally avoid writing incomplete states here because incomplete
+        // restoration is handled by the engine's own storage layer.
+        if let (Some(adapter), Some(db)) = (
+            self.adapter.read().await.clone(),
+            self.db.read().await.clone(),
+        ) {
+            let downloads = adapter.get_all();
+            for download in downloads {
+                if download.status != DownloadState::Complete {
+                    continue;
+                }
+                if let Err(e) = db.save_download_async(download).await {
+                    log::warn!("Failed to persist download snapshot during shutdown: {}", e);
+                }
+            }
+        }
+
         if let Some(handle) = self.event_handle.write().await.take() {
             handle.abort();
         }

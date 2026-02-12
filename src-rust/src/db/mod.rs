@@ -311,7 +311,10 @@ impl Database {
     pub async fn get_incomplete_downloads_async(&self) -> Result<Vec<Download>> {
         self.with_conn(|conn| {
             let mut stmt = conn.prepare(
-                "SELECT * FROM downloads WHERE status NOT IN ('complete', 'error') ORDER BY created_at ASC",
+                "SELECT * FROM downloads
+                 WHERE status NOT IN ('complete', 'error')
+                 AND (total_size <= 0 OR completed_size < total_size)
+                 ORDER BY created_at ASC",
             )?;
             let downloads = stmt
                 .query_map([], |row| Ok(row_to_download(row)))?
