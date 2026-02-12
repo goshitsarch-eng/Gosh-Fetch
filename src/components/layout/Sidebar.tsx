@@ -73,7 +73,7 @@ export default function Sidebar() {
             </div>
             <div className="logo-info">
               <span className="logo-text">Gosh-Fetch</span>
-              <span className="logo-subtitle">v2.0.0 &bull; Stable</span>
+              <span className="logo-subtitle">v2.0.1 &bull; Stable</span>
             </div>
           </div>
         </div>

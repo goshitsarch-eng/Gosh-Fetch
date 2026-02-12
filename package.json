@@ -1,6 +1,6 @@
 {
   "name": "gosh-fetch",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Gosh Fetch - a modern download manager with native Rust engine",
   "main": "dist-electron/src-electron/main.js",
   "license": "AGPL-3.0",

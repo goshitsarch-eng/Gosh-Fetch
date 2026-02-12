@@ -5,6 +5,13 @@ All notable changes to Gosh-Fetch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-02-12
+
+### Changed
+- Bumped app version to `2.0.1` across frontend and Rust package metadata
+- Updated version label shown in the main sidebar UI
+- Updated API reference example payload to reflect `2.0.1`
+
 ## [2.0.0] - 2026-02-08
 
 ### Added
