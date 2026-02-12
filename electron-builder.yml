@@ -31,10 +31,11 @@ linux:
   category: Network
   icon: src-rust/icons/icon.png
   desktop:
-    Name: Gosh-Fetch
-    Comment: Modern download manager
-    Categories: Network;FileTransfer;
-    StartupWMClass: gosh-fetch
+    entry:
+      Name: Gosh-Fetch
+      Comment: Modern download manager
+      Categories: Network;FileTransfer;
+      StartupWMClass: gosh-fetch
 
 mac:
   target:
