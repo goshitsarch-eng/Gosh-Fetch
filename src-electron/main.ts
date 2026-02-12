@@ -158,6 +158,22 @@ function getTrayPopupHtmlPath(): string {
   return path.join(process.resourcesPath, 'tray-popup.html');
 }
 
+function getRendererHtmlPath(): string {
+  const candidatePaths = [
+    path.join(app.getAppPath(), 'dist', 'index.html'),
+    path.join(process.resourcesPath, 'dist', 'index.html'),
+    path.join(__dirname, '../../dist/index.html'),
+  ];
+
+  const resolvedPath = candidatePaths.find((candidatePath) => fs.existsSync(candidatePath));
+  if (resolvedPath) {
+    return resolvedPath;
+  }
+
+  // Fallback to the canonical packaged path to keep the error message actionable.
+  return candidatePaths[0];
+}
+
 function getFontsPath(): string {
   const isDev = !app.isPackaged;
   if (isDev) {
@@ -268,7 +284,7 @@ function createWindow(): void {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(getRendererHtmlPath());
   }
 }
 

@@ -165,6 +165,19 @@ function getTrayPopupHtmlPath() {
     }
     return path_1.default.join(process.resourcesPath, 'tray-popup.html');
 }
+function getRendererHtmlPath() {
+    const candidatePaths = [
+        path_1.default.join(electron_1.app.getAppPath(), 'dist', 'index.html'),
+        path_1.default.join(process.resourcesPath, 'dist', 'index.html'),
+        path_1.default.join(__dirname, '../../dist/index.html'),
+    ];
+    const resolvedPath = candidatePaths.find((candidatePath) => fs_1.default.existsSync(candidatePath));
+    if (resolvedPath) {
+        return resolvedPath;
+    }
+    // Fallback to the canonical packaged path to keep the error message actionable.
+    return candidatePaths[0];
+}
 function getFontsPath() {
     const isDev = !electron_1.app.isPackaged;
     if (isDev) {
@@ -260,7 +273,7 @@ function createWindow() {
         mainWindow.loadURL('http://localhost:5173');
     }
     else {
-        mainWindow.loadFile(path_1.default.join(__dirname, '../dist/index.html'));
+        mainWindow.loadFile(getRendererHtmlPath());
     }
 }
 function createTrayPopup() {
