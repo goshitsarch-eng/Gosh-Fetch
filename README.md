@@ -103,10 +103,10 @@ For more detail, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Layer | Technology |
 |-------|------------|
 | Frontend | React 19, Redux Toolkit, React Router 7, TypeScript |
-| Build | Vite 6, electron-builder |
-| Desktop | Electron 35 |
+| Build | Vite 7, electron-builder |
+| Desktop | Electron 40 |
 | Backend | Rust (Tokio, rusqlite, serde) |
-| Engine | gosh-dl 0.2.2 |
+| Engine | gosh-dl 0.2.8 |
 | Icons | Material Symbols Outlined (self-hosted), lucide-react (legacy) |
 | Drag & Drop | dnd-kit |
 | Testing | Vitest, React Testing Library, Rust `#[test]` |

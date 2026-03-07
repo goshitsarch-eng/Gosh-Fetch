@@ -123,7 +123,7 @@ pub fn get_app_info() -> serde_json::Value {
         "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",
         "engine": {
             "name": "gosh-dl",
-            "version": "0.1.0",
+            "version": "0.2.8",
             "url": "https://github.com/goshitsarch-eng/gosh-dl",
             "license": "MIT",
             "description": "A fast, safe, and reliable download engine written in Rust"

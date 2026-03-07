@@ -5,6 +5,19 @@ All notable changes to Gosh-Fetch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-03-07
+
+### Changed
+- Updated gosh-dl engine from v0.2.2 to v0.2.8 — fixes large file downloads, torrent completion events, download persistence across restarts, and HTTP pause/resume
+- Updated Electron from v35 to v40 (Chromium 134)
+- Updated Vite from v6 to v7
+- Updated React from v19.0 to v19.2
+- Updated React Router from v7.1 to v7.13
+- Updated Redux Toolkit from v2.5 to v2.11
+- Updated remaining frontend and build dependencies to latest versions
+- Updated engine version reported in app info from 0.1.0 to 0.2.8
+- Updated sidebar version label and tech stack references in documentation
+
 ## [2.0.1] - 2026-02-12
 
 ### Changed
