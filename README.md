@@ -12,6 +12,8 @@ We also provide Windows and macOS builds not as a compromise, but as an on-ramp.
 
 ![Screenshot 1](screenshots/img1.png)
 ![Screenshot 2](screenshots/img2.png)
+![Screenshot 3](screenshots/img3.png)
+![Screenshot 4](screenshots/img4.png)
 
 ## Features
 
