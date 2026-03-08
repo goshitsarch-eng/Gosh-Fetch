@@ -899,8 +899,8 @@ dependencies = [
 
 [[package]]
 name = "gosh-dl"
-version = "0.3.0"
-source = "git+https://github.com/goshitsarch-eng/gosh-dl?tag=v0.3.0#32ef8a14a0899e43f57ec0ff969b8fa1e8c40c1e"
+version = "0.3.1"
+source = "git+https://github.com/goshitsarch-eng/gosh-dl?tag=v0.3.1#cf888e553cf0e8d279baa01201ff432d0d61d7c2"
 dependencies = [
  "async-trait",
  "base64",
@@ -938,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "gosh-fetch-engine"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "chrono",
  "dirs 5.0.1",

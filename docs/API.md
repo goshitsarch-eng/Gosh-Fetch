@@ -344,13 +344,13 @@ Returns:
 ```json
 {
   "name": "Gosh-Fetch",
-  "version": "2.0.4",
+  "version": "2.0.5",
   "description": "...",
   "license": "AGPL-3.0",
   "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",
   "engine": {
     "name": "gosh-dl",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "url": "https://github.com/goshitsarch-eng/gosh-dl",
     "license": "MIT"
   }

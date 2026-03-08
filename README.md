@@ -102,7 +102,7 @@ For more detail, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Build | Vite 7, electron-builder |
 | Desktop | Electron 40 |
 | Backend | Rust (Tokio, rusqlite, serde) |
-| Engine | gosh-dl 0.3.0 |
+| Engine | gosh-dl 0.3.1 |
 | Icons | Material Symbols Outlined (self-hosted), lucide-react (legacy) |
 | Drag & Drop | dnd-kit |
 | Testing | Vitest, React Testing Library, Rust `#[test]` |
