@@ -55,7 +55,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('split_count', '8'),
     ('download_speed_limit', '0'),
     ('upload_speed_limit', '0'),
-    ('user_agent', 'gosh-dl/0.1.0'),
+    ('user_agent', 'gosh-dl/0.2.9'),
     ('enable_notifications', 'true'),
     ('close_to_tray', 'true'),
     ('theme', 'dark'),

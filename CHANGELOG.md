@@ -5,6 +5,20 @@ All notable changes to Gosh-Fetch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-03-08
+
+### Changed
+- Bumped app version to `2.0.3` across frontend, Electron packaging, and Rust engine package metadata
+- Updated gosh-dl engine from v0.2.8 to v0.2.9
+- Updated visible app version labels so the sidebar shell and About page report `2.0.3`
+- Updated API documentation examples to reflect app version `2.0.3`
+
+### Fixed
+- Fixed tray popup positioning by anchoring it to the actual tray icon instead of guessing from the primary display
+- Fixed Linux tray popup rendering by avoiding the transparent popup path that produced unusable dark or gray menus
+- Fixed right-click tray behavior by switching to a native context menu instead of reusing the transient popup
+- Fixed stale app metadata and default user-agent strings that still reported older gosh-dl versions
+
 ## [2.0.2] - 2026-03-07
 
 ### Changed

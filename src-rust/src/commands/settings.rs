@@ -1,3 +1,4 @@
+use crate::constants::DEFAULT_USER_AGENT;
 use crate::db::Settings;
 use crate::{AppState, Result};
 use std::path::PathBuf;
@@ -111,7 +112,7 @@ pub async fn apply_settings_to_engine(
 
 pub fn get_user_agent_presets() -> Vec<(String, String)> {
     vec![
-        ("gosh-dl".to_string(), "gosh-dl/0.1.0".to_string()),
+        ("gosh-dl".to_string(), DEFAULT_USER_AGENT.to_string()),
         ("Chrome (Windows)".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36".to_string()),
         ("Chrome (macOS)".to_string(), "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36".to_string()),
         ("Firefox (Windows)".to_string(), "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:135.0) Gecko/20100101 Firefox/135.0".to_string()),

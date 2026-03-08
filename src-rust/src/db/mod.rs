@@ -1,4 +1,5 @@
 use crate::types::{Download, DownloadState, DownloadType};
+use crate::constants::DEFAULT_USER_AGENT;
 use crate::{Error, Result};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -61,7 +62,7 @@ impl Default for Settings {
             split_count: 8,
             download_speed_limit: 0,
             upload_speed_limit: 0,
-            user_agent: "gosh-dl/0.1.0".to_string(),
+            user_agent: DEFAULT_USER_AGENT.to_string(),
             enable_notifications: true,
             close_to_tray: true,
             theme: "dark".to_string(),

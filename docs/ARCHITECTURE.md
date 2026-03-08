@@ -12,7 +12,7 @@ Gosh-Fetch is a desktop download manager with three layers: a React frontend ren
 | Build | Vite 6 | Frontend bundling |
 | Desktop | Electron 35 | Window management, tray, IPC, auto-update |
 | Sidecar | Rust (Tokio, rusqlite) | Download engine, database, JSON-RPC server |
-| Engine | gosh-dl 0.2.2 | HTTP/BitTorrent downloads |
+| Engine | gosh-dl 0.2.9 | HTTP/BitTorrent downloads |
 | Database | SQLite | Settings, download history, tracker metadata |
 
 ## How the Layers Communicate

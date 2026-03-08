@@ -1,3 +1,4 @@
+use crate::constants::{ENGINE_NAME, ENGINE_VERSION};
 use crate::{AppState, Error, Result};
 use std::path::PathBuf;
 
@@ -20,8 +21,8 @@ fn validate_path(path: &str) -> Result<PathBuf> {
 pub async fn get_engine_version(state: &AppState) -> Result<serde_json::Value> {
     let is_running = state.is_engine_running().await;
     Ok(serde_json::json!({
-        "name": "gosh-dl",
-        "version": "0.1.0",
+        "name": ENGINE_NAME,
+        "version": ENGINE_VERSION,
         "running": is_running,
     }))
 }
@@ -122,8 +123,8 @@ pub fn get_app_info() -> serde_json::Value {
         "license": "AGPL-3.0",
         "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",
         "engine": {
-            "name": "gosh-dl",
-            "version": "0.2.8",
+            "name": ENGINE_NAME,
+            "version": ENGINE_VERSION,
             "url": "https://github.com/goshitsarch-eng/gosh-dl",
             "license": "MIT",
             "description": "A fast, safe, and reliable download engine written in Rust"

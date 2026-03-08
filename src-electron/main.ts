@@ -25,6 +25,7 @@ let sidecar: SidecarManager | null = null;
 let closeToTray = true;
 let isQuitting = false;
 let lastTrayData: any = null;
+let trayPopupOpenedAt = 0;
 const pendingMagnetUrls: string[] = [];
 const pendingTorrentFiles: string[] = [];
 
@@ -316,12 +317,16 @@ function createWindow(): void {
 }
 
 function createTrayPopup(): void {
+  const useTransparentPopup = process.platform !== 'linux';
+
   trayPopup = new BrowserWindow({
     width: 320,
     height: 500,
     frame: false,
-    transparent: true,
+    transparent: useTransparentPopup,
+    backgroundColor: '#1a242d',
     resizable: false,
+    movable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
     show: false,
@@ -332,15 +337,101 @@ function createTrayPopup(): void {
     },
   });
 
+  trayPopup.setAlwaysOnTop(true, 'pop-up-menu');
   trayPopup.loadFile(getTrayPopupHtmlPath());
+  trayPopup.webContents.on('did-finish-load', sendTrayDataToPopup);
 
   trayPopup.on('blur', () => {
-    trayPopup?.hide();
+    if (!trayPopup || trayPopup.isDestroyed()) {
+      return;
+    }
+
+    const elapsed = Date.now() - trayPopupOpenedAt;
+    const hide = () => {
+      if (trayPopup && !trayPopup.isDestroyed() && !trayPopup.isFocused()) {
+        trayPopup.hide();
+      }
+    };
+
+    if (elapsed < 200) {
+      setTimeout(hide, 200 - elapsed);
+      return;
+    }
+
+    hide();
   });
 
   trayPopup.on('closed', () => {
     trayPopup = null;
   });
+}
+
+function sendTrayDataToPopup(): void {
+  if (
+    lastTrayData &&
+    trayPopup &&
+    !trayPopup.isDestroyed() &&
+    !trayPopup.webContents.isLoading()
+  ) {
+    trayPopup.webContents.send('tray-update', lastTrayData);
+  }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (max < min) {
+    return min;
+  }
+  return Math.min(Math.max(value, min), max);
+}
+
+function getTrayPopupPosition(popupBounds: Electron.Rectangle): { x: number; y: number } {
+  const trayBounds = tray?.getBounds();
+  if (!trayBounds) {
+    const display = screen.getPrimaryDisplay();
+    return {
+      x: display.workArea.x + display.workArea.width - popupBounds.width - 8,
+      y: display.workArea.y + 8,
+    };
+  }
+
+  const trayCenter = {
+    x: trayBounds.x + Math.round(trayBounds.width / 2),
+    y: trayBounds.y + Math.round(trayBounds.height / 2),
+  };
+  const display = screen.getDisplayNearestPoint(trayCenter);
+  const { bounds, workArea } = display;
+  const edgeDistances = {
+    top: Math.abs(trayBounds.y - bounds.y),
+    bottom: Math.abs(bounds.y + bounds.height - (trayBounds.y + trayBounds.height)),
+    left: Math.abs(trayBounds.x - bounds.x),
+    right: Math.abs(bounds.x + bounds.width - (trayBounds.x + trayBounds.width)),
+  };
+  const nearestEdge = (Object.entries(edgeDistances) as Array<[keyof typeof edgeDistances, number]>)
+    .sort((a, b) => a[1] - b[1])[0][0];
+  const margin = 8;
+
+  let x = trayCenter.x - Math.round(popupBounds.width / 2);
+  let y = trayCenter.y - Math.round(popupBounds.height / 2);
+
+  switch (nearestEdge) {
+    case 'top':
+      y = trayBounds.y + trayBounds.height + margin;
+      break;
+    case 'bottom':
+      y = trayBounds.y - popupBounds.height - margin;
+      break;
+    case 'left':
+      x = trayBounds.x + trayBounds.width + margin;
+      break;
+    case 'right':
+      x = trayBounds.x - popupBounds.width - margin;
+      break;
+  }
+
+  return {
+    x: clamp(x, workArea.x + margin, workArea.x + workArea.width - popupBounds.width - margin),
+    y: clamp(y, workArea.y + margin, workArea.y + workArea.height - popupBounds.height - margin),
+  };
 }
 
 function toggleTrayPopup(): void {
@@ -353,36 +444,14 @@ function toggleTrayPopup(): void {
     return;
   }
 
-  // Detect panel position from work area vs screen bounds
-  const display = screen.getPrimaryDisplay();
-  const { bounds, workArea } = display;
   const popupBounds = trayPopup!.getBounds();
-
-  const hasTopPanel = workArea.y > bounds.y;
-  const hasBottomPanel = (workArea.y + workArea.height) < (bounds.y + bounds.height);
-
-  // Position at the right edge, near the panel (where system tray lives)
-  const x = workArea.x + workArea.width - popupBounds.width - 8;
-  let y: number;
-
-  if (hasBottomPanel) {
-    // Bottom panel: popup appears above the panel
-    y = workArea.y + workArea.height - popupBounds.height - 4;
-  } else if (hasTopPanel) {
-    // Top panel (GNOME, etc.): popup appears just below the panel
-    y = workArea.y + 4;
-  } else {
-    // No detectable panel: default to top-right
-    y = workArea.y + 4;
-  }
-
-  trayPopup!.setPosition(x, y);
+  const { x, y } = getTrayPopupPosition(popupBounds);
+  trayPopup!.setPosition(Math.round(x), Math.round(y), false);
+  trayPopupOpenedAt = Date.now();
   trayPopup!.show();
+  trayPopup!.focus();
 
-  // Send current data immediately
-  if (lastTrayData && trayPopup && !trayPopup.isDestroyed()) {
-    trayPopup.webContents.send('tray-update', lastTrayData);
-  }
+  sendTrayDataToPopup();
 }
 
 async function pushTrayData(globalStats: any): Promise<void> {
@@ -402,12 +471,60 @@ async function pushTrayData(globalStats: any): Promise<void> {
 
     lastTrayData = trayData;
 
-    if (trayPopup && !trayPopup.isDestroyed() && trayPopup.isVisible()) {
-      trayPopup.webContents.send('tray-update', trayData);
-    }
+    sendTrayDataToPopup();
   } catch {
     // Ignore errors fetching active downloads
   }
+}
+
+function handleTrayAction(action: string): void {
+  switch (action) {
+    case 'open-app':
+      mainWindow?.show();
+      mainWindow?.focus();
+      trayPopup?.hide();
+      break;
+    case 'add-url':
+      mainWindow?.show();
+      mainWindow?.focus();
+      mainWindow?.webContents.send('rpc-event', 'navigate', '/');
+      setTimeout(() => {
+        mainWindow?.webContents.send('rpc-event', 'open-add-modal', {});
+      }, 100);
+      trayPopup?.hide();
+      break;
+    case 'pause-all':
+      sidecar?.invoke('pause_all').catch(console.error);
+      break;
+    case 'resume-all':
+      sidecar?.invoke('resume_all').catch(console.error);
+      break;
+    case 'open-settings':
+      mainWindow?.show();
+      mainWindow?.focus();
+      mainWindow?.webContents.send('rpc-event', 'navigate', '/settings');
+      trayPopup?.hide();
+      break;
+    case 'quit':
+      isQuitting = true;
+      app.quit();
+      break;
+  }
+}
+
+function buildTrayContextMenu(): Menu {
+  const template: MenuItemConstructorOptions[] = [
+    { label: 'Open Gosh-Fetch', click: () => handleTrayAction('open-app') },
+    { label: 'Add URL...', click: () => handleTrayAction('add-url') },
+    { type: 'separator' },
+    { label: 'Pause All', click: () => handleTrayAction('pause-all') },
+    { label: 'Resume All', click: () => handleTrayAction('resume-all') },
+    { type: 'separator' },
+    { label: 'Settings', click: () => handleTrayAction('open-settings') },
+    { label: 'Quit', click: () => handleTrayAction('quit') },
+  ];
+
+  return Menu.buildFromTemplate(template);
 }
 
 function createTray(): void {
@@ -417,13 +534,11 @@ function createTray(): void {
 
   tray.setToolTip('Gosh-Fetch');
 
-  // Both click and right-click show the popup
-  if (process.platform === 'darwin') {
-    tray.on('double-click', toggleTrayPopup);
-  } else {
-    tray.on('click', toggleTrayPopup);
-    tray.on('right-click', toggleTrayPopup);
-  }
+  tray.on('click', toggleTrayPopup);
+  tray.on('right-click', () => {
+    trayPopup?.hide();
+    tray?.popUpContextMenu(buildTrayContextMenu());
+  });
 }
 
 function setupSidecar(): void {
@@ -671,38 +786,7 @@ function setupIPC(): void {
   ipcMain.handle('get-fonts-path', () => getFontsPath());
 
   ipcMain.on('tray-action', (_event, action: string) => {
-    switch (action) {
-      case 'open-app':
-        mainWindow?.show();
-        mainWindow?.focus();
-        trayPopup?.hide();
-        break;
-      case 'add-url':
-        mainWindow?.show();
-        mainWindow?.focus();
-        mainWindow?.webContents.send('rpc-event', 'navigate', '/');
-        setTimeout(() => {
-          mainWindow?.webContents.send('rpc-event', 'open-add-modal', {});
-        }, 100);
-        trayPopup?.hide();
-        break;
-      case 'pause-all':
-        sidecar?.invoke('pause_all').catch(console.error);
-        break;
-      case 'resume-all':
-        sidecar?.invoke('resume_all').catch(console.error);
-        break;
-      case 'open-settings':
-        mainWindow?.show();
-        mainWindow?.focus();
-        mainWindow?.webContents.send('rpc-event', 'navigate', '/settings');
-        trayPopup?.hide();
-        break;
-      case 'quit':
-        isQuitting = true;
-        app.quit();
-        break;
-    }
+    handleTrayAction(action);
   });
 }
 
