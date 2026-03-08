@@ -2,16 +2,10 @@
 
 A cross-platform download manager for Linux, Windows, and macOS. Built with Electron, React, and a native Rust download engine.
 
-## Philosophy
-
-Gosh apps are built with a Linux-first mindset: simplicity, transparency, and user control.
-
-We also provide Windows and macOS builds not as a compromise, but as an on-ramp. Many people are curious about Linux but still live on other platforms day-to-day. If these tools help someone get comfortable and eventually make the jump, we're happy to meet them where they are.
-
 ## Screenshots
 
-![Screenshot 1](screenshots/img1.png)
-![Screenshot 2](screenshots/img2.png)
+![Screenshot 1](screenshots/img11.png)
+![Screenshot 2](screenshots/img22.png)
 ![Screenshot 3](screenshots/img3.png)
 ![Screenshot 4](screenshots/img4.png)
 
