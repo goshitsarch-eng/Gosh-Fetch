@@ -54,7 +54,7 @@ const defaultForm: SettingsFormState = {
   enableNotifications: true,
   closeToTray: true,
   deleteFilesOnRemove: false,
-  userAgent: 'gosh-dl/0.2.9',
+  userAgent: 'gosh-dl/0.3.0',
   maxConcurrent: 5,
   maxConnections: 16,
   splitCount: 16,

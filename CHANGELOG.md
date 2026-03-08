@@ -5,6 +5,14 @@ All notable changes to Gosh-Fetch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] - 2026-03-08
+
+### Changed
+- Bumped app version to `2.0.4` across frontend, Electron packaging, and Rust engine package metadata
+- Updated gosh-dl engine from v0.2.9 to v0.3.0
+- Updated visible app version labels so the sidebar shell and About page report `2.0.4`
+- Updated API and architecture documentation examples to reflect app version `2.0.4` and engine version `0.3.0`
+
 ## [2.0.3] - 2026-03-08
 
 ### Changed

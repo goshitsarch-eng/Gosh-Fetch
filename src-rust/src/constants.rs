@@ -1,3 +1,3 @@
 pub const ENGINE_NAME: &str = "gosh-dl";
-pub const ENGINE_VERSION: &str = "0.2.9";
-pub const DEFAULT_USER_AGENT: &str = "gosh-dl/0.2.9";
+pub const ENGINE_VERSION: &str = "0.3.0";
+pub const DEFAULT_USER_AGENT: &str = "gosh-dl/0.3.0";
