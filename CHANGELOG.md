@@ -5,6 +5,23 @@ All notable changes to Gosh-Fetch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.6] - 2026-03-11
+
+### Changed
+- Updated gosh-dl engine from v0.3.1 to v0.3.2
+- Bumped app version to `2.0.6` across frontend, Electron packaging, and Rust engine package metadata
+- Updated visible app version labels so the sidebar shell and About page report `2.0.6`
+- Updated API documentation examples to reflect app version `2.0.6` and engine version `0.3.2`
+
+### Fixed
+- Downloads no longer fail permanently on mid-stream connection drops (engine fix: correctly classified as retryable)
+- Fixed double retryability bug in error classification that prevented retries on ConnectionReset, 408, 429, and 5xx
+- Fixed segment errors being hardcoded as non-retryable
+- Single-stream downloads now retry with resume via Range requests or restart from byte 0
+- Segment progress is now saved before marking failure, preventing progress loss
+- Sibling segments are cancelled promptly on non-retryable errors instead of wasting bandwidth
+- Default max_retries increased from 3 to 5 for improved reliability
+
 ## [2.0.5] - 2026-03-08
 
 ### Changed

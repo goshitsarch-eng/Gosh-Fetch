@@ -899,8 +899,8 @@ dependencies = [
 
 [[package]]
 name = "gosh-dl"
-version = "0.3.1"
-source = "git+https://github.com/goshitsarch-eng/gosh-dl?tag=v0.3.1#cf888e553cf0e8d279baa01201ff432d0d61d7c2"
+version = "0.3.2"
+source = "git+https://github.com/goshitsarch-eng/gosh-dl?tag=v0.3.2#d8f28fccfbc3df484e914655020f07a117695032"
 dependencies = [
  "async-trait",
  "base64",
@@ -938,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "gosh-fetch-engine"
-version = "2.0.5"
+version = "2.0.6"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -3090,7 +3090,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
