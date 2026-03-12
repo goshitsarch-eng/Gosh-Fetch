@@ -107,7 +107,29 @@ For more detail, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Drag & Drop | dnd-kit |
 | Testing | Vitest, React Testing Library, Rust `#[test]` |
 
-## Requirements
+## Installation
+
+### Arch Linux (AUR)
+
+```bash
+yay -S gosh-fetch-bin
+```
+
+Available as [`gosh-fetch-bin`](https://aur.archlinux.org/packages/gosh-fetch-bin) on the AUR. Installs the prebuilt AppImage with a desktop entry, icons, `.torrent` file association, and `magnet:` URI handler.
+
+### Other Linux / Windows / macOS
+
+Download the latest release from the [Releases](https://github.com/goshitsarch-eng/Gosh-Fetch/releases) page.
+
+| Platform | Formats |
+|----------|---------|
+| Linux | AppImage, .deb, .rpm |
+| macOS | .dmg |
+| Windows | NSIS installer, portable |
+
+## Building from Source
+
+### Requirements
 
 ### All Platforms
 
@@ -150,14 +172,6 @@ npm run electron:build
 npm test                   # Frontend tests (Vitest)
 cargo test --manifest-path src-rust/Cargo.toml  # Rust tests
 ```
-
-### Build Outputs
-
-| Platform | Formats |
-|----------|---------|
-| Linux | AppImage, .deb, .rpm |
-| macOS | .dmg |
-| Windows | NSIS installer, portable |
 
 ## Usage
 
