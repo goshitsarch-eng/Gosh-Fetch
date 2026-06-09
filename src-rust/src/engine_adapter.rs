@@ -80,12 +80,9 @@ impl EngineAdapter {
         self.engine.pause(id).await
     }
 
-    /// Pause all downloads
-    pub async fn pause_all(&self) -> Result<(), gosh_dl::EngineError> {
-        for status in self.engine.active() {
-            let _ = self.engine.pause(status.id).await;
-        }
-        Ok(())
+    /// Pause all active and queued downloads
+    pub async fn pause_all(&self) -> serde_json::Value {
+        batch_to_json(self.engine.pause_all().await)
     }
 
     /// Resume a download
@@ -94,17 +91,26 @@ impl EngineAdapter {
         self.engine.resume(id).await
     }
 
-    /// Resume all downloads
-    pub async fn resume_all(&self) -> Result<(), gosh_dl::EngineError> {
+    /// Resume all paused downloads, and retry errored ones
+    /// (the engine's resume_all only covers Paused; errored retry is a
+    /// Gosh-Fetch behavior carried over from the pre-0.5.0 adapter)
+    pub async fn resume_all(&self) -> serde_json::Value {
+        let mut result = self.engine.resume_all().await;
         for status in self.engine.stopped() {
-            if matches!(
-                status.state,
-                EngineState::Paused | EngineState::Error { .. }
-            ) {
-                let _ = self.engine.resume(status.id).await;
+            if matches!(status.state, EngineState::Error { .. }) {
+                match self.engine.resume(status.id).await {
+                    Ok(()) => result.succeeded.push(status.id),
+                    Err(gosh_dl::EngineError::NotFound(_)) => result.skipped.push(status.id),
+                    Err(e) => result.failed.push((status.id, e)),
+                }
             }
         }
-        Ok(())
+        batch_to_json(result)
+    }
+
+    /// Cancel all downloads, optionally deleting files
+    pub async fn cancel_all(&self, delete_files: bool) -> serde_json::Value {
+        batch_to_json(self.engine.cancel_all(delete_files).await)
     }
 
     /// Remove a download
@@ -219,6 +225,19 @@ impl EngineAdapter {
         })
     }
 
+}
+
+/// Convert a BatchResult to JSON for the frontend
+/// (BatchResult does not implement Serialize because failed entries carry EngineError)
+fn batch_to_json(result: gosh_dl::BatchResult) -> serde_json::Value {
+    serde_json::json!({
+        "succeeded": result.succeeded.iter().map(|id| id.as_uuid().to_string()).collect::<Vec<_>>(),
+        "skipped": result.skipped.iter().map(|id| id.as_uuid().to_string()).collect::<Vec<_>>(),
+        "failed": result.failed.iter().map(|(id, e)| serde_json::json!({
+            "id": id.as_uuid().to_string(),
+            "error": e.to_string(),
+        })).collect::<Vec<_>>(),
+    })
 }
 
 /// Public wrapper for parse_gid, used by RPC handlers

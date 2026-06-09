@@ -12,7 +12,7 @@ name = "gosh-fetch-engine"
 path = "src/main.rs"
 
 [dependencies]
-gosh-dl = { git = "https://github.com/goshitsarch-eng/gosh-dl", tag = "v0.3.2" }
+gosh-dl = { version = "0.5.0", features = ["recursive-http"] }
 rusqlite = { version = "0.38", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -21,7 +21,7 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 log = "0.4"
 env_logger = "0.11"
-reqwest = { version = "0.12" }
+reqwest = { version = "0.13" }
 hex = "0.4"
 dirs = "5"
 url = "2"

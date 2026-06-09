@@ -29,11 +29,11 @@ pub async fn pause_download(state: &AppState, gid: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn pause_all(state: &AppState) -> Result<()> {
+pub async fn pause_all(state: &AppState) -> Result<serde_json::Value> {
     let adapter = state.get_adapter().await?;
-    adapter.pause_all().await?;
+    let result = adapter.pause_all().await;
     log::info!("Paused all downloads");
-    Ok(())
+    Ok(result)
 }
 
 pub async fn resume_download(state: &AppState, gid: String) -> Result<()> {
@@ -43,11 +43,18 @@ pub async fn resume_download(state: &AppState, gid: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn resume_all(state: &AppState) -> Result<()> {
+pub async fn resume_all(state: &AppState) -> Result<serde_json::Value> {
     let adapter = state.get_adapter().await?;
-    adapter.resume_all().await?;
+    let result = adapter.resume_all().await;
     log::info!("Resumed all downloads");
-    Ok(())
+    Ok(result)
+}
+
+pub async fn cancel_all(state: &AppState, delete_files: bool) -> Result<serde_json::Value> {
+    let adapter = state.get_adapter().await?;
+    let result = adapter.cancel_all(delete_files).await;
+    log::info!("Cancelled all downloads (delete_files: {})", delete_files);
+    Ok(result)
 }
 
 pub async fn remove_download(

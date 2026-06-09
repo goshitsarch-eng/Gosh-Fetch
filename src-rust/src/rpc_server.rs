@@ -216,8 +216,7 @@ async fn handle_method(
             Ok(Value::Null)
         }
         "pause_all" => {
-            commands::pause_all(state).await?;
-            Ok(Value::Null)
+            Ok(commands::pause_all(state).await?)
         }
         "resume_download" => {
             let gid = params.get("gid").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -225,8 +224,11 @@ async fn handle_method(
             Ok(Value::Null)
         }
         "resume_all" => {
-            commands::resume_all(state).await?;
-            Ok(Value::Null)
+            Ok(commands::resume_all(state).await?)
+        }
+        "cancel_all" => {
+            let delete_files = params.get("deleteFiles").or(params.get("delete_files")).and_then(|v| v.as_bool()).unwrap_or(false);
+            Ok(commands::cancel_all(state, delete_files).await?)
         }
         "remove_download" => {
             let gid = params.get("gid").and_then(|v| v.as_str()).unwrap_or("").to_string();
