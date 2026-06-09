@@ -1,17 +1,25 @@
 [package]
-name = "gosh-fetch-engine"
-version = "2.0.6"
+name = "gosh-fetch"
+version = "3.0.0"
 description = "Gosh Fetch - a modern download manager with native Rust engine"
 authors = ["Gosh"]
 license = "AGPL-3.0"
 repository = "https://github.com/goshitsarch-eng/Gosh-Fetch"
 edition = "2021"
 
-[[bin]]
-name = "gosh-fetch-engine"
-path = "src/main.rs"
+[lib]
+name = "gosh_fetch_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-log = "2"
 gosh-dl = { version = "0.5.0", features = ["recursive-http"] }
 rusqlite = { version = "0.38", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
@@ -20,12 +28,20 @@ tokio = { version = "1", features = ["full"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 log = "0.4"
-env_logger = "0.11"
 reqwest = { version = "0.13" }
 hex = "0.4"
 dirs = "5"
 url = "2"
 uuid = "1"
+fs4 = "0.13"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [profile.release]
 codegen-units = 1
