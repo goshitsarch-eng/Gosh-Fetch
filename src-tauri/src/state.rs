@@ -3,12 +3,25 @@ use crate::engine_adapter::EngineAdapter;
 use crate::types::DownloadState;
 use crate::utils::TrackerUpdater;
 use crate::Result;
-use gosh_dl::{DownloadEngine, DownloadEvent, EngineConfig};
-use serde_json::Value;
+use gosh_dl::{DownloadEngine, DownloadEvent, EngineConfig, RecursiveJobEvent};
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter};
+use tokio::sync::RwLock;
+
+/// A magnet URI or .torrent file received from the OS (deep link, file
+/// association, second instance) before the frontend was ready to handle it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum OpenRequest {
+    #[serde(rename_all = "camelCase")]
+    Magnet { uri: String },
+    #[serde(rename_all = "camelCase")]
+    TorrentFile { path: String },
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -16,9 +29,13 @@ pub struct AppState {
     adapter: Arc<RwLock<Option<EngineAdapter>>>,
     pub db: Arc<RwLock<Option<Database>>>,
     close_to_tray: Arc<AtomicBool>,
+    quitting: Arc<AtomicBool>,
     event_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
+    recursive_event_handle: Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>,
     data_dir: Arc<RwLock<Option<PathBuf>>>,
     tracker_updater: Arc<RwLock<TrackerUpdater>>,
+    frontend_ready: Arc<AtomicBool>,
+    pending_opens: Arc<Mutex<Vec<OpenRequest>>>,
 }
 
 impl AppState {
@@ -28,9 +45,13 @@ impl AppState {
             adapter: Arc::new(RwLock::new(None)),
             db: Arc::new(RwLock::new(None)),
             close_to_tray: Arc::new(AtomicBool::new(true)),
+            quitting: Arc::new(AtomicBool::new(false)),
             event_handle: Arc::new(RwLock::new(None)),
+            recursive_event_handle: Arc::new(RwLock::new(None)),
             data_dir: Arc::new(RwLock::new(None)),
             tracker_updater: Arc::new(RwLock::new(TrackerUpdater::new())),
+            frontend_ready: Arc::new(AtomicBool::new(false)),
+            pending_opens: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -42,11 +63,39 @@ impl AppState {
         self.close_to_tray.store(value, Ordering::Relaxed);
     }
 
-    pub async fn initialize(
-        &self,
-        data_dir: PathBuf,
-        event_tx: broadcast::Sender<Value>,
-    ) -> Result<()> {
+    /// True once the user chose Quit (tray menu / app exit), so the
+    /// close-to-tray handler must not intercept window close anymore.
+    pub fn is_quitting(&self) -> bool {
+        self.quitting.load(Ordering::Relaxed)
+    }
+
+    pub fn set_quitting(&self, value: bool) {
+        self.quitting.store(value, Ordering::Relaxed);
+    }
+
+    /// Deliver an OS open request (magnet / .torrent). Emits to the frontend
+    /// when it is ready, otherwise queues it for `get_pending_open_requests`.
+    pub fn deliver_open_request(&self, app: &AppHandle, request: OpenRequest) {
+        if self.frontend_ready.load(Ordering::Relaxed) {
+            let (event, payload) = match &request {
+                OpenRequest::Magnet { uri } => ("open-magnet", serde_json::json!({ "uri": uri })),
+                OpenRequest::TorrentFile { path } => {
+                    ("open-torrent-file", serde_json::json!({ "path": path }))
+                }
+            };
+            let _ = app.emit(event, payload);
+        } else {
+            self.pending_opens.lock().unwrap().push(request);
+        }
+    }
+
+    /// Mark the frontend ready and drain any queued open requests.
+    pub fn take_pending_open_requests(&self) -> Vec<OpenRequest> {
+        self.frontend_ready.store(true, Ordering::Relaxed);
+        std::mem::take(&mut *self.pending_opens.lock().unwrap())
+    }
+
+    pub async fn initialize(&self, data_dir: PathBuf, app: AppHandle) -> Result<()> {
         *self.data_dir.write().await = Some(data_dir.clone());
 
         // Initialize database
@@ -100,9 +149,9 @@ impl AppState {
         *self.engine.write().await = Some(engine.clone());
         *self.adapter.write().await = Some(adapter);
 
-        // Start event listener - writes to broadcast channel
+        // Forward engine events to the webview
         let mut events = engine.subscribe();
-        let tx = event_tx.clone();
+        let event_app = app.clone();
         let handle = tokio::spawn(async move {
             while let Ok(event) = events.recv().await {
                 let event_name = match &event {
@@ -116,15 +165,35 @@ impl AppState {
                     DownloadEvent::Paused { .. } => "download:paused",
                     DownloadEvent::Resumed { .. } => "download:resumed",
                 };
-                let payload = serde_json::to_value(&event).unwrap_or(Value::Null);
-                let msg = serde_json::json!({
-                    "event": event_name,
-                    "data": payload,
-                });
-                let _ = tx.send(msg);
+                let payload = serde_json::to_value(&event).unwrap_or(serde_json::Value::Null);
+                let _ = event_app.emit(event_name, payload);
             }
         });
         *self.event_handle.write().await = Some(handle);
+
+        // Forward recursive mirroring job events to the webview
+        let mut recursive_events = engine.subscribe_recursive_jobs();
+        let recursive_app = app.clone();
+        let recursive_handle = tokio::spawn(async move {
+            while let Ok(event) = recursive_events.recv().await {
+                let (event_name, payload) = match &event {
+                    RecursiveJobEvent::Added { job, status } => (
+                        "recursive:added",
+                        serde_json::json!({ "job": job, "status": status }),
+                    ),
+                    RecursiveJobEvent::Updated { job, status } => (
+                        "recursive:updated",
+                        serde_json::json!({ "job": job, "status": status }),
+                    ),
+                    RecursiveJobEvent::Removed { id } => (
+                        "recursive:removed",
+                        serde_json::json!({ "id": id }),
+                    ),
+                };
+                let _ = recursive_app.emit(event_name, payload);
+            }
+        });
+        *self.recursive_event_handle.write().await = Some(recursive_handle);
 
         log::info!("App state initialized with gosh-dl engine");
         Ok(())
@@ -180,6 +249,9 @@ impl AppState {
         if let Some(handle) = self.event_handle.write().await.take() {
             handle.abort();
         }
+        if let Some(handle) = self.recursive_event_handle.write().await.take() {
+            handle.abort();
+        }
         if let Some(ref engine) = *self.engine.read().await {
             engine.shutdown().await?;
         }
@@ -206,10 +278,10 @@ impl AppState {
             .ok_or(crate::Error::Database("Data dir not set".into()))
     }
 
-    pub async fn reinitialize(&self, event_tx: broadcast::Sender<Value>) -> Result<()> {
+    pub async fn reinitialize(&self, app: AppHandle) -> Result<()> {
         self.shutdown().await?;
         let data_dir = self.get_data_dir().await?;
-        self.initialize(data_dir, event_tx).await
+        self.initialize(data_dir, app).await
     }
 }
 

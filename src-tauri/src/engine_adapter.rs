@@ -225,6 +225,39 @@ impl EngineAdapter {
         })
     }
 
+    /// Dry-run discovery for recursive HTTP directory mirroring
+    pub async fn discover_recursive(
+        &self,
+        url: &str,
+        options: Option<FrontendOptions>,
+        recursive: gosh_dl::RecursiveOptions,
+    ) -> Result<gosh_dl::RecursiveManifest, gosh_dl::EngineError> {
+        let opts = options.map(convert_options).unwrap_or_default();
+        self.engine
+            .discover_http_recursive(url, &opts, &recursive)
+            .await
+    }
+
+    /// Start a recursive HTTP mirroring job; returns the tracked job record
+    pub async fn add_recursive(
+        &self,
+        url: &str,
+        options: Option<FrontendOptions>,
+        recursive: gosh_dl::RecursiveOptions,
+    ) -> Result<gosh_dl::TrackedRecursiveJob, gosh_dl::EngineError> {
+        let opts = options.map(convert_options).unwrap_or_default();
+        let job = self.engine.add_http_recursive(url, opts, recursive).await?;
+        // add_http_recursive returns an id-less RecursiveJob; the tracked
+        // record (with id) is registered just before it returns, so match it
+        // by root URL + child set. list_recursive_jobs is sorted newest-first.
+        self.engine
+            .list_recursive_jobs()
+            .into_iter()
+            .find(|t| t.root_url == job.root_url && t.child_ids == job.child_ids)
+            .ok_or_else(|| {
+                gosh_dl::EngineError::NotFound("recursive job record not found after add".into())
+            })
+    }
 }
 
 /// Convert a BatchResult to JSON for the frontend
