@@ -113,7 +113,7 @@ Batch operations (`pause_all`, `resume_all`, `cancel_all`) use gosh-dl's engine-
 
 ### Events
 
-`events.rs` runs two background tasks: an event forwarder that reads gosh-dl engine events from a broadcast channel and emits them as Tauri events to the webview, and a stats emitter that queries `get_global_stats()` every second and emits `global-stats`.
+Two kinds of background tasks push events to the webview. `state.rs` spawns forwarders during initialization: one subscribes to gosh-dl engine events and emits them as `download:*` Tauri events, another subscribes to recursive job events and emits `recursive:*`. `events.rs` runs the stats emitter, which queries `get_global_stats()` every second, emits `global-stats`, updates the tray tooltip, and feeds the tray popup window.
 
 ### Security
 
