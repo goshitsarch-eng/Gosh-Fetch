@@ -1,12 +1,22 @@
 # Gosh-Fetch API Reference
 
-This document covers the IPC methods available between the React frontend and the Rust sidecar, along with the Electron-specific IPC methods handled by the main process.
+This document covers the Tauri commands available between the Svelte frontend and the Rust backend, along with the plugin-backed helpers for native OS functionality.
 
-All frontend calls go through `window.electronAPI.invoke(method, params)`, which is defined in the preload script and wraps `ipcRenderer.invoke('rpc-invoke', method, params)`. The convenience wrappers in `src/lib/api.ts` provide typed access to every method.
+All frontend calls go through `invoke(command, params)` from `@tauri-apps/api/core`. Command names are unchanged from the 2.x RPC methods, and camelCase argument keys are converted to the Rust handlers' snake_case parameters automatically by Tauri. The convenience wrappers in `src/lib/api/commands.ts` provide typed access to every command:
 
-## RPC Methods (Sidecar)
+```typescript
+import { invoke } from '@tauri-apps/api/core';
 
-These methods are forwarded from the Electron main process to the Rust sidecar via JSON-RPC over stdin/stdout. Each must appear in the `ALLOWED_RPC_METHODS` set in `src-electron/main.ts`.
+const gid = await invoke<string>('add_download', { url, options });
+// or, equivalently, via the typed wrapper:
+const gid = await api.addDownload(url, options);
+```
+
+Events are received with `listen(name, handler)` from `@tauri-apps/api/event` (see [Events](#events)).
+
+## Tauri Commands
+
+These commands are implemented as `#[tauri::command]` functions in `src-tauri/src/api.rs`, which delegate to the handlers in `src-tauri/src/commands/`. Only commands registered in the `invoke_handler` are callable from the webview.
 
 ---
 
@@ -40,9 +50,13 @@ api.pauseDownload(gid: string): Promise<void>
 
 #### pause_all
 
+Pause all downloads, including queued ones.
+
 ```typescript
-api.pauseAll(): Promise<void>
+api.pauseAll(): Promise<BatchResult>
 ```
+
+Returns a [`BatchResult`](#batchresult) with per-download outcomes (changed in 3.0.0; previously returned nothing).
 
 #### resume_download
 
@@ -53,8 +67,20 @@ api.resumeDownload(gid: string): Promise<void>
 #### resume_all
 
 ```typescript
-api.resumeAll(): Promise<void>
+api.resumeAll(): Promise<BatchResult>
 ```
+
+Returns a [`BatchResult`](#batchresult) with per-download outcomes (changed in 3.0.0; previously returned nothing).
+
+#### cancel_all
+
+Cancel all downloads at once. New in 3.0.0.
+
+```typescript
+api.cancelAll(deleteFiles?: boolean): Promise<BatchResult>
+```
+
+If `deleteFiles` is true, partially downloaded files are deleted from disk.
 
 #### remove_download
 
@@ -154,6 +180,58 @@ Get connected peer information for a torrent download.
 
 ```typescript
 api.getPeers(gid: string): Promise<PeerInfo[]>
+```
+
+---
+
+### Mirror Commands
+
+Recursive HTTP directory mirroring, new in 3.0.0. These commands drive the Mirror page: they crawl an HTTP directory-listing URL and download the tree to disk. Mirror-specific types are described in [Types](#mirroroptions).
+
+#### discover_recursive
+
+Dry-run discovery: crawl the listing and return the manifest of files that *would* be downloaded, without adding anything.
+
+```typescript
+api.discoverRecursive(url: string, options?: DownloadOptions, recursive?: MirrorOptions): Promise<MirrorManifest>
+```
+
+#### add_recursive
+
+Start a mirror job. Each discovered file becomes a child download tracked under the job.
+
+```typescript
+api.addRecursive(url: string, options?: DownloadOptions, recursive?: MirrorOptions): Promise<MirrorJob>
+```
+
+Returns the `{ job, status }` pair for the new job.
+
+#### list_recursive_jobs
+
+```typescript
+api.listRecursiveJobs(): Promise<MirrorJob[]>
+```
+
+#### get_recursive_job
+
+```typescript
+api.getRecursiveJob(id: string): Promise<MirrorJob>
+```
+
+#### cancel_recursive_job
+
+Cancel a running mirror job.
+
+```typescript
+api.cancelRecursiveJob(id: string, deleteFiles?: boolean): Promise<void>
+```
+
+#### remove_recursive_job
+
+Remove a mirror job and stop tracking its children.
+
+```typescript
+api.removeRecursiveJob(id: string, deleteFiles?: boolean): Promise<void>
 ```
 
 ---
@@ -344,113 +422,118 @@ Returns:
 ```json
 {
   "name": "Gosh-Fetch",
-  "version": "2.0.6",
+  "version": "3.0.0",
   "description": "...",
   "license": "AGPL-3.0",
   "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",
   "engine": {
     "name": "gosh-dl",
-    "version": "0.3.2",
+    "version": "0.5.0",
     "url": "https://github.com/goshitsarch-eng/gosh-dl",
     "license": "MIT"
   }
 }
 ```
 
----
+#### get_disk_space
 
-## Electron-Only IPC Methods
-
-These are handled directly by the Electron main process, not forwarded to the sidecar. They are exposed on `window.electronAPI` via the preload script.
-
-#### selectFile
-
-Open a native file picker dialog.
+Get total and free disk space for a given path (defaults to the system Downloads directory). New in 3.0.0 (previously an Electron-only IPC method).
 
 ```typescript
-window.electronAPI.selectFile(options?: { filters?: Array<{ name: string; extensions: string[] }> }): Promise<string | null>
+api.getDiskSpace(path?: string): Promise<{ total: number; free: number }>
 ```
 
-#### selectDirectory
+#### perform_system_action
 
-Open a native directory picker dialog.
+Perform an OS power action when downloads finish (used by the Scheduler's on-completion setting). New in 3.0.0.
 
 ```typescript
-window.electronAPI.selectDirectory(): Promise<string | null>
+api.performSystemAction(action: 'sleep' | 'shutdown' | 'close', forceCloseApps?: boolean): Promise<void>
+```
+
+#### read_settings_json
+
+Read and parse a JSON settings file from disk (used by settings import, paired with the `selectFile` dialog helper). New in 3.0.0.
+
+```typescript
+api.readSettingsJson(path: string): Promise<any>
+```
+
+#### get_pending_open_requests
+
+Drain magnet links and `.torrent` files that the OS handed to the app before the frontend's event listeners were ready (cold start). Called once by the event bridge on startup. New in 3.0.0.
+
+```typescript
+api.getPendingOpenRequests(): Promise<Array<
+  { kind: 'magnet'; uri: string } | { kind: 'torrentFile'; path: string }
+>>
+```
+
+---
+
+## Plugin-Backed Helpers
+
+Native OS functionality that the Electron main process used to provide is now backed by official Tauri plugins. The helpers in `src/lib/api/system.ts` wrap them:
+
+#### selectFile / selectDirectory
+
+Open a native file or directory picker dialog (tauri-plugin-dialog).
+
+```typescript
+selectFile(filters?: Array<{ name: string; extensions: string[] }>): Promise<string | null>
+selectDirectory(): Promise<string | null>
 ```
 
 #### showNotification
 
-Show a native OS notification.
+Show a native OS notification, requesting permission if needed (tauri-plugin-notification).
 
 ```typescript
-window.electronAPI.showNotification(title: string, body: string): Promise<void>
+showNotification(title: string, body: string): Promise<void>
 ```
 
-#### getNativeTheme
+#### setRunAtStartup / getRunAtStartup
 
-Check whether the OS is using dark mode.
+Configure whether the app starts at OS login (tauri-plugin-autostart).
 
 ```typescript
-window.electronAPI.getNativeTheme(): Promise<boolean>
+setRunAtStartup(enabled: boolean): Promise<void>
+getRunAtStartup(): Promise<boolean>
 ```
 
-Returns `true` if the OS dark mode is active.
+#### setMagnetHandler / isMagnetHandler
 
-#### getDiskSpace
-
-Get total and free disk space for a given path (defaults to the system Downloads directory).
+Manage `magnet:` protocol registration (tauri-plugin-deep-link). On macOS this is install-time (Info.plist); runtime register/unregister works on Windows and Linux only.
 
 ```typescript
-window.electronAPI.getDiskSpace(path?: string): Promise<{ total: number; free: number }>
+setMagnetHandler(enabled: boolean): Promise<boolean>
+isMagnetHandler(): Promise<boolean>
 ```
 
-#### setLoginItemSettings / getLoginItemSettings
+#### Auto-update
 
-Configure whether the app starts at OS login.
+Updates are handled by tauri-plugin-updater through the updater store (`src/lib/stores/updater.svelte.ts`): `check()` queries GitHub Releases, `downloadAndInstall()` streams progress, and tauri-plugin-process relaunches the app. The old `updaterDownload`/`updaterInstall` IPC methods and `update-*` events are gone.
 
-```typescript
-window.electronAPI.setLoginItemSettings(openAtLogin: boolean): Promise<void>
-window.electronAPI.getLoginItemSettings(): Promise<{ openAtLogin: boolean }>
-```
-
-#### setDefaultProtocolClient / removeDefaultProtocolClient / isDefaultProtocolClient
-
-Manage protocol handler registration (e.g., `magnet:` links).
-
-```typescript
-window.electronAPI.setDefaultProtocolClient(protocol: string): Promise<boolean>
-window.electronAPI.removeDefaultProtocolClient(protocol: string): Promise<boolean>
-window.electronAPI.isDefaultProtocolClient(protocol: string): Promise<boolean>
-```
-
-#### importSettingsFile
-
-Open a file dialog for a JSON settings file and return its parsed contents.
-
-```typescript
-window.electronAPI.importSettingsFile(): Promise<any | null>
-```
-
-#### updaterDownload / updaterInstall
-
-Control the auto-update process.
-
-```typescript
-window.electronAPI.updaterDownload(): Promise<void>
-window.electronAPI.updaterInstall(): Promise<void>
-```
+Note: `getNativeTheme` is also gone -- the frontend follows the OS theme with a `prefers-color-scheme` media query directly.
 
 ---
 
 ## Events
 
-Events flow from the sidecar and Electron main process to the renderer via `window.electronAPI.onEvent(callback)`. The callback receives `(eventName: string, data: any)`.
+Events flow from the Rust backend to the webview via Tauri's event system. Subscribe with `listen()` from `@tauri-apps/api/event`; the event names are unchanged from 2.x. All subscriptions live in the event bridge (`src/lib/api/events.ts`):
 
-### Sidecar Events
+```typescript
+import { listen } from '@tauri-apps/api/event';
 
-| Event | Data | Description |
-|-------|------|-------------|
+const unlisten = await listen<GlobalStats>('global-stats', (event) => {
+  stats.update(event.payload);
+});
+```
+
+### Engine Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
 | `global-stats` | `GlobalStats` | Emitted every second with speed/count stats |
 | `download:added` | `{ gid, name, ... }` | A new download was added |
 | `download:started` | `{ gid, ... }` | Download started actively transferring |
@@ -461,20 +544,21 @@ Events flow from the sidecar and Electron main process to the renderer via `wind
 | `download:removed` | `{ gid, ... }` | Download was removed |
 | `download:paused` | `{ gid, ... }` | Download was paused |
 | `download:resumed` | `{ gid, ... }` | Download was resumed |
+| `recursive:added` | `MirrorJob` | A mirror job was added (new in 3.0.0) |
+| `recursive:updated` | `MirrorJob` | A mirror job's state or progress changed (new in 3.0.0) |
+| `recursive:removed` | `{ id }` | A mirror job was removed (new in 3.0.0) |
 
-### Electron Events
+### Application Events
 
-| Event | Data | Description |
-|-------|------|-------------|
+| Event | Payload | Description |
+|-------|---------|-------------|
 | `engine-status` | `{ connected: boolean, restarting: boolean }` | Engine connection state changed |
-| `native-theme-changed` | `{ shouldUseDarkColors: boolean }` | OS dark mode toggled |
 | `navigate` | `string` (path) | Navigate to a route (triggered from tray) |
 | `open-add-modal` | `{}` | Open the add download modal (triggered from tray) |
 | `open-magnet` | `{ uri: string }` | A magnet link was opened externally |
 | `open-torrent-file` | `{ path: string }` | A .torrent file was opened externally |
-| `update-available` | `{ version, releaseName, releaseNotes, releaseDate }` | An update is available |
-| `update-progress` | `{ total, transferred, percent, bytesPerSecond }` | Update download progress |
-| `update-downloaded` | `{}` | Update has been downloaded and is ready to install |
+
+The 2.x `native-theme-changed` and `update-*` events no longer exist; OS theme changes are observed via a media query, and update progress is reported through tauri-plugin-updater callbacks.
 
 ---
 
@@ -502,6 +586,18 @@ interface DownloadOptions {
   checksum?: string;               // "sha256:hex..." or "md5:hex..."
   mirrors?: string[];              // Mirror/failover URLs
   sequential?: boolean;            // Sequential download mode
+}
+```
+
+### BatchResult
+
+Per-download outcomes for batch operations (`pause_all`, `resume_all`, `cancel_all`).
+
+```typescript
+interface BatchResult {
+  succeeded: string[];                     // GIDs the operation applied to
+  skipped: string[];                       // GIDs in a state the operation does not apply to
+  failed: { id: string; error: string }[]; // GIDs that errored, with the reason
 }
 ```
 
@@ -585,6 +681,78 @@ interface MagnetInfo {
   name: string | null;
   infoHash: string;
   trackers: string[];
+}
+```
+
+### MirrorOptions
+
+Crawl configuration for the mirror commands. Field names are snake_case because they mirror gosh-dl's serde output (defined in `src/lib/types/mirror.ts`).
+
+```typescript
+interface MirrorOptions {
+  max_depth: number;                 // Crawl depth limit, default 16
+  same_host_only: boolean;           // Stay on the root URL's host, default true
+  allowed_prefix: string | null;     // Restrict to URLs under this prefix
+  include_patterns: string[];        // Only download matching files
+  exclude_patterns: string[];        // Skip matching files
+  preserve_paths: boolean;           // Recreate the directory tree on disk, default true
+  overwrite_existing: boolean;       // Overwrite files that already exist, default false
+  fail_fast: boolean;                // Abort the job on first failure, default false
+  max_discovery_concurrency: number; // Parallel listing fetches, default 4
+}
+```
+
+### MirrorManifest
+
+The dry-run result from `discover_recursive`.
+
+```typescript
+interface MirrorManifest {
+  root_url: string;
+  entries: MirrorManifestEntry[];
+}
+
+interface MirrorManifestEntry {
+  url: string;
+  relative_path: string;
+  size_hint: number | null;          // Size from the listing, if known
+}
+```
+
+### MirrorJob
+
+The `{ job, status }` pair returned by the mirror commands and carried by the `recursive:*` events.
+
+```typescript
+interface MirrorJob {
+  job: MirrorTrackedJob;
+  status: MirrorJobStatus;
+}
+
+interface MirrorTrackedJob {
+  id: string;
+  root_url: string;
+  child_ids: string[];               // GIDs of the per-file child downloads
+  created_at: string;
+}
+
+interface MirrorJobStatus {
+  root_url: string;
+  child_ids: string[];
+  state: 'empty' | 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'partial';
+  progress: MirrorJobProgress;
+}
+
+interface MirrorJobProgress {
+  total_children: number;
+  queued_children: number;
+  active_children: number;
+  paused_children: number;
+  completed_children: number;
+  failed_children: number;
+  missing_children: number;
+  completed_size: number;
+  total_size: number | null;
 }
 ```
 

@@ -5,6 +5,23 @@ All notable changes to Gosh-Fetch will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-06-09
+
+### Added
+- Mirror page for recursive HTTP directory mirroring: crawl a directory-listing URL and download the whole tree, with depth limits, include/exclude patterns, and a dry-run discovery preview
+- New backend commands: `cancel_all`, the six `*_recursive` mirror commands, `get_disk_space`, `perform_system_action`, `read_settings_json`, and `get_pending_open_requests`
+- New `recursive:added`, `recursive:updated`, and `recursive:removed` events for mirror job tracking
+
+### Changed
+- Migrated the entire app from Electron + React to Tauri 2 + Svelte 5; the Rust engine now runs in-process instead of as a separate sidecar binary, and bundles are much smaller
+- Updated gosh-dl engine from v0.3.2 (git) to v0.5.0 (crates.io), with engine-level batch operations and recursive HTTP support
+- `pause_all` and `resume_all` now return per-download outcomes (`succeeded`/`skipped`/`failed`) instead of nothing, and pausing now also covers queued downloads
+- Replaced electron-updater with the Tauri updater (signed artifacts via GitHub Releases). The 2.x updater cannot deliver this release, so upgrading from 2.x requires a one-time manual download; existing download history, settings, and engine state are picked up in place (gosh-dl migrates `engine.db` automatically on first run), and the old 2.x package stays installed until removed manually
+- Window position and size reset once after upgrading (window state is now persisted by tauri-plugin-window-state)
+
+### Known Issues
+- On Linux, the tray is menu-only: the tray popup with live download status is unavailable because libappindicator delivers no click events (the popup still works on macOS and Windows)
+
 ## [2.0.6] - 2026-03-11
 
 ### Changed

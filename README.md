@@ -1,6 +1,6 @@
 # Gosh-Fetch
 
-A cross-platform download manager for Linux, Windows, and macOS. Built with Electron, React, and a native Rust download engine.
+A cross-platform download manager for Linux, Windows, and macOS. Built with Tauri 2, Svelte 5, and a native Rust download engine.
 
 ## Screenshots
 
@@ -23,6 +23,10 @@ The queue supports drag-and-drop reordering, which automatically syncs with the 
 
 Completed downloads are available in the History page, where you can open files or their containing folders directly.
 
+### Mirror
+
+The Mirror page handles recursive HTTP directory mirroring: point it at a directory-listing URL and Gosh-Fetch crawls the listing and downloads the whole tree to disk, preserving the directory structure. You can limit crawl depth, filter with include/exclude patterns, and run a dry-run discovery first to preview exactly which files would be fetched before committing. Mirror jobs track per-file progress and can be cancelled or removed like any other download.
+
 ### BitTorrent
 
 Full BitTorrent protocol support including torrent files and magnet links, DHT, PEX, and Local Peer Discovery. You get seeder/peer counts, configurable seed ratio, selective file download from multi-file torrents, and auto-updating tracker lists sourced from the community.
@@ -41,7 +45,7 @@ Full BitTorrent protocol support including torrent files and magnet links, DHT, 
 
 ### Desktop Integration
 
-- System tray with live download/upload speed display and a popup showing active downloads
+- System tray with live download/upload speed display and a popup showing active downloads (macOS and Windows; on Linux the tray is menu-only, since libappindicator does not deliver click events)
 - Minimize to tray on close
 - Window size, position, and maximized state persistence
 - `.torrent` file association and `magnet:` protocol handler
@@ -54,7 +58,7 @@ Full BitTorrent protocol support including torrent files and magnet links, DHT, 
 
 ### Pages
 
-The sidebar navigation provides access to: Downloads (with active/paused filters), History, Statistics, Scheduler, and Settings. A disk space widget in the sidebar shows remaining storage. A notification dropdown tracks download events (added, completed, failed).
+The sidebar navigation provides access to: Downloads (with active/paused filters), Mirror, History, Statistics, Scheduler, and Settings. A disk space widget in the sidebar shows remaining storage. A notification dropdown tracks download events (added, completed, failed).
 
 ## Download Engine
 
@@ -67,7 +71,7 @@ Gosh-Fetch uses [gosh-dl](https://github.com/goshitsarch-eng/gosh-dl), a native 
 | Single binary distribution | Yes | No |
 | Integrated error handling | Yes | Limited |
 
-gosh-dl provides HTTP/HTTPS segmented downloads with automatic resume, full BitTorrent protocol support with DHT/PEX/LPD, async I/O built on Tokio, real-time progress events pushed to the frontend, a priority queue, bandwidth scheduling, mirror/failover management, and checksum verification.
+gosh-dl provides HTTP/HTTPS segmented downloads with automatic resume, full BitTorrent protocol support with DHT/PEX/LPD, recursive HTTP directory mirroring, async I/O built on Tokio, real-time progress events pushed to the frontend, a priority queue, bandwidth scheduling, mirror/failover management, and checksum verification. As of v3.0.0 the engine is embedded directly in the app process (gosh-dl 0.5.0 from crates.io) rather than shipped as a separate binary.
 
 gosh-dl is licensed under MIT. See the [gosh-dl repository](https://github.com/goshitsarch-eng/gosh-dl) for details.
 
@@ -75,14 +79,11 @@ gosh-dl is licensed under MIT. See the [gosh-dl repository](https://github.com/g
 
 ```
 +----------------------------------+
-|  React 19 + Redux Toolkit (UI)   |
+|  Svelte 5 (runes) webview UI     |
 |  Vite dev server / built bundle  |
 +----------------------------------+
-|  Electron Main Process           |
-|  IPC bridge, tray, auto-update   |
-+----------------------------------+
-|  gosh-fetch-engine (Rust)        |
-|  JSON-RPC over stdin/stdout      |
+|  Tauri 2 Rust backend            |
+|  commands, events, tray, update  |
 |  SQLite for settings & history   |
 +----------------------------------+
 |  gosh-dl (Rust download engine)  |
@@ -90,7 +91,7 @@ gosh-dl is licensed under MIT. See the [gosh-dl repository](https://github.com/g
 +----------------------------------+
 ```
 
-The Rust sidecar (`gosh-fetch-engine`) runs as a child process managed by Electron. The main process communicates with it via JSON-RPC over stdin/stdout. The frontend receives real-time push events for download state changes (added, completed, failed, paused, resumed, etc.), with a 5-second heartbeat poll as fallback.
+Everything runs in a single process. The Svelte frontend calls Rust functions directly via Tauri commands (`invoke`), and the backend pushes real-time events for download state changes (added, completed, failed, paused, resumed, etc.) via Tauri's event system. The gosh-dl download engine is embedded as a library -- there is no separate sidecar binary or JSON-RPC layer.
 
 For more detail, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -98,14 +99,14 @@ For more detail, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 19, Redux Toolkit, React Router 7, TypeScript |
-| Build | Vite 7, electron-builder |
-| Desktop | Electron 40 |
+| Frontend | Svelte 5 (runes), svelte-spa-router, TypeScript |
+| Build | Vite 7, Tauri CLI |
+| Desktop | Tauri 2 |
 | Backend | Rust (Tokio, rusqlite, serde) |
-| Engine | gosh-dl 0.3.2 |
-| Icons | Material Symbols Outlined (self-hosted), lucide-react (legacy) |
-| Drag & Drop | dnd-kit |
-| Testing | Vitest, React Testing Library, Rust `#[test]` |
+| Engine | gosh-dl 0.5.0 |
+| Icons | Material Symbols Outlined (self-hosted) |
+| Drag & Drop | svelte-dnd-action |
+| Testing | Vitest, Svelte Testing Library, Rust `#[test]` |
 
 ## Installation
 
@@ -115,7 +116,7 @@ For more detail, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 yay -S gosh-fetch-bin
 ```
 
-Available as [`gosh-fetch-bin`](https://aur.archlinux.org/packages/gosh-fetch-bin) on the AUR. Installs the prebuilt AppImage with a desktop entry, icons, `.torrent` file association, and `magnet:` URI handler.
+Available as [`gosh-fetch-bin`](https://aur.archlinux.org/packages/gosh-fetch-bin) on the AUR. Installs the prebuilt package with a desktop entry, icons, `.torrent` file association, and `magnet:` URI handler. Note: v3 release artifacts and runtime dependencies differ from v2 (the Tauri build needs `webkit2gtk-4.1`, `gtk3`, and `libappindicator-gtk3`, and the bundle is much smaller), so the PKGBUILD is updated alongside the first v3 release.
 
 ### Other Linux / Windows / macOS
 
@@ -125,7 +126,11 @@ Download the latest release from the [Releases](https://github.com/goshitsarch-e
 |----------|---------|
 | Linux | AppImage, .deb, .rpm |
 | macOS | .dmg |
-| Windows | NSIS installer, portable |
+| Windows | NSIS installer |
+
+### Upgrading from 2.x
+
+The 2.x in-app updater (electron-updater) cannot deliver v3, so the jump to 3.0.0 is a one-time manual download from the Releases page. The old 2.x package remains installed until you remove it yourself. Your data is preserved automatically: v3 uses the same app data locations and picks up your existing download history, settings, and engine state in place (gosh-dl migrates its `engine.db` schema automatically on first run). If you want to be cautious, back up `engine.db` from the app data directory before the first v3 launch. From 3.0.0 onward, in-app updates work again via the Tauri updater.
 
 ## Building from Source
 
@@ -138,7 +143,10 @@ Download the latest release from the [Releases](https://github.com/goshitsarch-e
 
 ### Linux
 
-No additional system dependencies required beyond Node.js and Rust.
+```bash
+# Debian/Ubuntu
+sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+```
 
 ### macOS
 
@@ -154,23 +162,20 @@ No additional system dependencies required beyond Node.js and Rust.
 # Install dependencies
 npm install
 
-# Build the Rust engine
-cargo build --release --manifest-path src-rust/Cargo.toml
+# Development (frontend + Tauri window, compiles the Rust backend)
+npm run tauri dev
 
-# Development (frontend + Electron)
+# Frontend only
 npm run dev                # Vite dev server on port 5173
-npm run build:electron     # Compile Electron main process
-npx electron .             # Launch the app
+npm run build              # Build frontend bundle
+npm run check              # svelte-check
 
-# Or use the combined dev command
-npm run electron:dev
-
-# Production build
-npm run electron:build
+# Production build (AppImage/deb/rpm on Linux, dmg on macOS, NSIS on Windows)
+npm run tauri build
 
 # Run tests
 npm test                   # Frontend tests (Vitest)
-cargo test --manifest-path src-rust/Cargo.toml  # Rust tests
+cd src-tauri && cargo test # Rust tests
 ```
 
 ## Usage
@@ -178,9 +183,10 @@ cargo test --manifest-path src-rust/Cargo.toml  # Rust tests
 1. **Add Download** -- Click "Add Download" or press `Ctrl+N`. Enter a URL, magnet link, or browse for a `.torrent` file. Expand "Advanced Options" for filename, directory, speed limit, headers, priority, checksum, mirrors, and more.
 2. **Monitor** -- Watch real-time speed, progress, ETA, and peer info. Filter by Active, Paused, or view all.
 3. **Manage** -- Pause, resume, retry, or remove downloads. Select multiple with checkboxes for batch operations. Drag to reorder priority.
-4. **History** -- View completed downloads and open files or folders directly.
-5. **Statistics** -- View download statistics and trends.
-6. **Scheduler** -- Set up bandwidth scheduling rules based on time of day.
+4. **Mirror** -- Recursively mirror an HTTP directory listing to disk, with depth and include/exclude filters and a dry-run preview.
+5. **History** -- View completed downloads and open files or folders directly.
+6. **Statistics** -- View download statistics and trends.
+7. **Scheduler** -- Set up bandwidth scheduling rules based on time of day.
 
 You can also drag URLs, magnet links, or `.torrent` files directly onto the app window.
 

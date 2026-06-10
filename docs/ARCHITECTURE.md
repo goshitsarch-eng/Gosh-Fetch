@@ -4,125 +4,126 @@ This document describes how Gosh-Fetch is built, how its parts communicate, and 
 
 ## Overview
 
-Gosh-Fetch is a desktop download manager with three layers: a React frontend rendered by Electron, an Electron main process that manages the application lifecycle and IPC, and a Rust sidecar binary that handles all download operations and data storage.
+Gosh-Fetch is a Tauri 2 desktop download manager with two layers: a Svelte 5 frontend rendered in the system webview, and a Rust backend that runs in the same process and handles all download operations, data storage, and desktop integration. The gosh-dl download engine is embedded in the backend as a library.
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| UI | React 19, Redux Toolkit, TypeScript | User interface |
-| Build | Vite 6 | Frontend bundling |
-| Desktop | Electron 35 | Window management, tray, IPC, auto-update |
-| Sidecar | Rust (Tokio, rusqlite) | Download engine, database, JSON-RPC server |
-| Engine | gosh-dl 0.3.2 | HTTP/BitTorrent downloads |
+| UI | Svelte 5 (runes), svelte-spa-router, TypeScript | User interface |
+| Build | Vite 7, Tauri CLI | Frontend bundling, app packaging |
+| Desktop | Tauri 2 | Window management, tray, commands/events, auto-update |
+| Backend | Rust (Tokio, rusqlite) | Download engine, database, Tauri commands |
+| Engine | gosh-dl 0.5.0 (features: `recursive-http`) | HTTP/BitTorrent downloads, directory mirroring |
 | Database | SQLite | Settings, download history, tracker metadata |
 
 ## How the Layers Communicate
 
-The frontend never talks to the Rust sidecar directly. All communication flows through Electron's IPC:
+Everything runs in a single process. There is no separate sidecar binary, no JSON-RPC envelope, and no IPC bridge process -- the frontend calls Rust functions directly through Tauri's command system:
 
 ```
-React (renderer process)
+Svelte (webview)
     |
-    |  window.electronAPI.invoke(method, params)
-    |  (ipcRenderer.invoke -> ipcMain.handle)
+    |  invoke('method_name', params)
+    |  (@tauri-apps/api/core)
     v
-Electron Main Process
+Tauri command layer (src-tauri/src/api.rs)
     |
-    |  JSON-RPC over stdin/stdout
-    |  (SidecarManager writes JSON lines to child process stdin,
-    |   reads JSON line responses from stdout)
+    |  Direct Rust function calls
     v
-gosh-fetch-engine (Rust sidecar)
+Command handlers (src-tauri/src/commands/*)
     |
-    |  Direct Rust API calls
+    |  Direct Rust API calls via EngineAdapter
     v
 gosh-dl (download engine library)
 ```
 
-The frontend calls `window.electronAPI.invoke('method_name', params)` which goes through `ipcRenderer.invoke('rpc-invoke', ...)` in the preload script. The main process receives this via `ipcMain.handle('rpc-invoke', ...)`, checks the method against an allowlist of 42 permitted methods, then forwards it as a JSON-RPC request to the sidecar's stdin. The sidecar processes the request and writes a JSON-RPC response to stdout.
+The frontend calls `invoke('method_name', params)`, which Tauri routes to the matching `#[tauri::command]` function in `api.rs`. Command names are identical to the old RPC method names (`add_download`, `pause_all`, `db_get_settings`, etc.), and camelCase argument keys from JavaScript map automatically to snake_case Rust parameters. The typed wrappers in `src/lib/api/commands.ts` provide access to every command.
 
-Events flow in the reverse direction. The sidecar emits events (download progress, state changes, global stats) as JSON lines on stdout. The Electron main process reads these and forwards them to the renderer via `mainWindow.webContents.send('rpc-event', eventName, data)`. The renderer listens with `window.electronAPI.onEvent(callback)`.
+Events flow in the reverse direction. The backend emits events (download progress, state changes, global stats, mirror job updates) via Tauri's event system, and the frontend subscribes with `listen()` from `@tauri-apps/api/event`. The event names are unchanged from 2.x (`download:added`, `download:completed`, `global-stats`, etc.), plus new `recursive:added/updated/removed` events for mirror jobs.
 
-Some IPC methods are handled directly by the Electron main process without involving the sidecar. These include native dialogs (`select-file`, `select-directory`), OS integration (`get-native-theme`, `set-login-item-settings`, `get-disk-space`), notifications, and the auto-updater.
+Native OS functionality that the Electron main process used to provide (dialogs, notifications, autostart, deep links, updater) is now handled by official Tauri plugins, wrapped in `src/lib/api/system.ts`.
 
 ## Frontend Architecture
 
 ### Routing
 
-The app uses React Router with `HashRouter` (important for Electron's `file://` protocol in production). Routes are defined in `App.tsx`:
+The app uses svelte-spa-router with hash routing. Routes are defined in `App.svelte`:
 
 - `/` -- Downloads page (with optional `?filter=active|paused` query parameter)
+- `/mirror` -- Recursive HTTP directory mirroring jobs
 - `/history` -- Completed download history
 - `/statistics` -- Download statistics
 - `/settings` -- Configuration
 - `/scheduler` -- Bandwidth scheduling rules
+- `/tray` -- Tray popup content (rendered chrome-less in the tray popup window)
 
-`About.tsx` exists as a component but is not a routed page.
+`About.svelte` exists as a component but is not a routed page.
 
 ### State Management
 
-Redux Toolkit manages all application state through six slices:
+State lives in runes-based store classes under `src/lib/stores/`, each exporting a singleton instance:
 
-**downloadSlice** uses `createEntityAdapter` keyed by download `gid` for normalized storage. This means individual downloads can be updated without replacing the entire list, and selectors like `selectAll`, `selectById` work efficiently. The slice provides selectors for filtering by status (active, paused, completed, error).
+**downloads.svelte.ts** holds the download list keyed by `gid`, exposes filtered views (active, paused, completed, error), and wraps the add/pause/resume/remove command calls.
 
-**statsSlice** tracks global download/upload speeds, active/waiting/stopped counts, and engine connection status. The `isConnected` flag drives the disconnection banner in the UI.
+**stats.svelte.ts** tracks global download/upload speeds, active/waiting/stopped counts, and engine connection status. The connection flag drives the disconnection banner in the UI.
 
-**themeSlice** supports three modes: `dark`, `light`, and `system`. System mode listens for OS theme changes via `native-theme-changed` events from Electron. The active theme is applied by setting a `data-theme` attribute on the document element, which CSS variables respond to.
+**theme.svelte.ts** supports three modes: `dark`, `light`, and `system`. System mode follows the OS via a `prefers-color-scheme` media query (replacing Electron's `native-theme-changed` event). The active theme is applied by setting a `data-theme` attribute on the document element, which CSS variables respond to.
 
-**notificationSlice** accumulates in-app notifications for download events (added, completed, failed), shown in the `NotificationDropdown` component.
+**notifications.svelte.ts** accumulates in-app notifications for download events (added, completed, failed), shown in the notification dropdown.
 
-**updaterSlice** tracks auto-update state: whether an update is available, download progress, and whether it has finished downloading.
+**updater.svelte.ts** tracks auto-update state via tauri-plugin-updater: whether an update is available, download progress, and whether it is ready to install.
 
-**orderSlice** manages the drag-and-drop ordering of download cards, syncing with the engine's priority system.
+**mirror.svelte.ts** holds recursive mirroring jobs, updated by the `recursive:*` events.
+
+**ui.svelte.ts** holds cross-cutting UI state such as the add-download modal.
 
 ### Event Handling
 
-`App.tsx` sets up a single event listener via `window.electronAPI.onEvent()` that handles all sidecar events. Download lifecycle events (`download:added`, `download:completed`, `download:failed`, `download:paused`, `download:resumed`, `download:state-changed`, `download:removed`) trigger a `fetchDownloads()` dispatch to refresh the download list. The `global-stats` event updates the stats slice every second.
+`src/lib/api/events.ts` is the event bridge. `App.svelte` calls `startEventBridge()` once on mount, which registers all `listen()` subscriptions and wires them into the stores. Download lifecycle events (`download:added`, `download:completed`, `download:failed`, `download:paused`, `download:resumed`, `download:state-changed`, `download:removed`) trigger a debounced refresh of the download list. The `global-stats` event updates the stats store every second, and `recursive:*` events upsert or remove mirror jobs.
 
-As a fallback, the Downloads page also polls every 5 seconds. But the primary mechanism is push-based -- the sidecar emits events through gosh-dl's event subscription system, and they propagate through stdout to the renderer in near real-time.
+On startup, the bridge also calls `get_pending_open_requests` to drain any magnet links or `.torrent` files that the OS handed to the app before the listeners were wired (cold start).
 
 ### Styling
 
 All styles use a CSS custom property (variable) design system defined in `src/App.css`. There is no Tailwind or CSS-in-JS. The design tokens cover colors, spacing, typography scales, border radii, and transitions. Theme switching works by redefining these variables under `[data-theme="light"]` and `[data-theme="dark"]` selectors.
 
-Icons are primarily Google Material Symbols Outlined, loaded as a self-hosted woff2 font file from `public/fonts/`. This avoids external network requests and complies with the production Content Security Policy (`font-src 'self'`). Some legacy components still use lucide-react.
+Icons are Google Material Symbols Outlined, loaded as a self-hosted woff2 font file from `public/fonts/`. This avoids external network requests.
 
-## Sidecar Architecture
+## Backend Architecture
 
-The Rust sidecar (`gosh-fetch-engine`) is a standalone binary that communicates exclusively via JSON-RPC over stdin/stdout. It never opens network ports or creates its own windows.
+The Rust backend lives in `src-tauri/` and is compiled into the app binary. It replaces both the old Electron main process and the `gosh-fetch-engine` sidecar.
 
 ### Startup
 
-On startup (`main.rs`), the sidecar initializes `AppState`, which creates the SQLite database (loading saved settings or using defaults for a fresh install), configures and starts the gosh-dl `DownloadEngine`, wraps it in an `EngineAdapter` for type conversion, and then enters the RPC server loop.
+`lib.rs` builds the Tauri app: it registers plugins (single-instance first, then log, dialog, notification, opener, deep-link, window-state, updater, process, autostart), and in the setup hook initializes `AppState` (`state.rs`), which creates the SQLite database (loading saved settings or using defaults for a fresh install), configures and starts the gosh-dl `DownloadEngine`, and wraps it in an `EngineAdapter` for type conversion. It also creates the tray icon and spawns the event forwarder and stats emitter.
 
-### RPC Server
+### Command Layer
 
-`rpc_server.rs` is the heart of the sidecar. It sets up three concurrent tasks:
+`api.rs` contains thin `#[tauri::command]` wrappers -- one per command, with the same names, parameters, and return shapes as the old RPC methods. Tauri generates the dispatch automatically from the `invoke_handler` registration, so there is no hand-maintained allowlist; the registered command set *is* the allowlist.
 
-1. A **stdout writer** task that serializes all outbound data through a single `mpsc` channel, preventing write contention between the event forwarder, stats emitter, and RPC response handlers.
-2. An **event forwarder** that reads gosh-dl engine events from a broadcast channel and sends them to stdout.
-3. A **stats emitter** that queries `get_global_stats()` every second and sends the result to stdout.
+The wrappers delegate to handler functions organized by domain:
 
-The main loop reads JSON-RPC requests from async stdin (using `tokio::io::BufReader`), parses them, and spawns each request handler as an independent Tokio task for concurrent processing. Responses are sent back through the shared stdout channel.
-
-### Command Handlers
-
-RPC methods are dispatched in `rpc_server.rs` to handler functions organized by domain:
-
-- `commands/download.rs` -- Add, pause, resume, remove downloads; get status/list
+- `commands/download.rs` -- Add, pause, resume, remove downloads; batch operations; get status/list
 - `commands/torrent.rs` -- Torrent file and magnet link operations, peer info
 - `commands/settings.rs` -- Settings management, engine configuration, tracker lists, user agent presets
 - `commands/database.rs` -- Direct database queries (completed history, settings persistence)
-- `commands/system.rs` -- App info, file/folder opening, default paths
+- `commands/system.rs` -- App info, file/folder opening, default paths, disk space, system actions
+- `commands/recursive.rs` -- Recursive HTTP directory mirroring (discover, add, list, cancel, remove jobs)
+
+Batch operations (`pause_all`, `resume_all`, `cancel_all`) use gosh-dl's engine-level batch API and return a `BatchResult` with per-download outcomes (`succeeded`, `skipped`, `failed`) instead of failing or succeeding as a whole. `pause()` also covers queued downloads.
+
+### Events
+
+`events.rs` runs two background tasks: an event forwarder that reads gosh-dl engine events from a broadcast channel and emits them as Tauri events to the webview, and a stats emitter that queries `get_global_stats()` every second and emits `global-stats`.
 
 ### Security
 
-The sidecar validates all inputs:
+The backend validates all inputs (`validation.rs`):
 
 - **URL validation**: Only `http://`, `https://`, and `magnet:` schemes are accepted. Private/loopback IPs (127.x, 10.x, 172.16-31.x, 192.168.x, link-local, ::1, fc00::/7) are blocked. Maximum URL length is 8192 characters.
 - **Torrent path validation**: Files must have a `.torrent` extension and exist on disk.
 - **Path sanitization**: `open_download_folder` and `open_file_location` canonicalize paths, verify existence, and reject URL schemes before passing to the OS file manager.
 
-On the Electron side, `ALLOWED_RPC_METHODS` in `main.ts` acts as a second layer of defense -- any method not in the set is rejected before it reaches the sidecar.
+Tauri's capability system (`src-tauri/capabilities/`) scopes which plugin APIs the webview may call.
 
 ### Engine Adapter
 
@@ -130,11 +131,11 @@ On the Electron side, `ALLOWED_RPC_METHODS` in `main.ts` acts as a second layer 
 
 ### Database
 
-The SQLite database (`gosh-fetch.db` in the user data directory) stores four tables:
+The SQLite database (`gosh-fetch.db` in the app data directory, identifier `com.gosh.fetch`) stores the same tables as 2.x -- the schema (`migrations/001_initial.sql`) is unchanged, so existing databases are picked up in place:
 
 **downloads** -- Download metadata and history. Stores the GID, name, URL/magnet URI, type (http/torrent/magnet), status, sizes, speeds, paths, timestamps, and selected files. Indexed on status, created_at, and gid.
 
-**settings** -- Key-value configuration. All settings have defaults seeded by `001_initial.sql`. Notable defaults: download path `~/Downloads`, max concurrent downloads 5, connections per server 8, split count 8, dark theme, notifications enabled, close to tray enabled, sparse file allocation, 30s connect timeout, 60s read timeout, 3 retries.
+**settings** -- Key-value configuration. All settings have defaults seeded by `001_initial.sql`. Notable defaults: download path `~/Downloads`, max concurrent downloads 5, connections per server 8, split count 8, dark theme, notifications enabled, close to tray enabled, sparse file allocation, 30s connect timeout, 60s read timeout.
 
 **trackers** -- BitTorrent tracker URLs with enabled/working status.
 
@@ -144,34 +145,26 @@ The SQLite database (`gosh-fetch.db` in the user data directory) stores four tab
 
 Database operations use `tokio::task::spawn_blocking` to run SQLite I/O on Tokio's blocking thread pool, and settings saves are wrapped in transactions for atomicity.
 
-Note that gosh-dl maintains its own separate database (`engine.db`) for internal engine state like download segments and recovery data. The two databases serve different purposes and this separation is intentional.
+gosh-dl maintains its own separate database (`engine.db`) for internal engine state like download segments and recovery data. The two databases serve different purposes and this separation is intentional. gosh-dl migrates the `engine.db` schema (v2 to v4) automatically on first run after upgrading from 2.x.
 
-## Electron Main Process
+## Desktop Integration
 
-The main process (`src-electron/main.ts`) handles:
+Features previously handled by the Electron main process are now split between Tauri itself and official plugins:
 
-**Sidecar management** -- Spawns the Rust binary as a child process via `SidecarManager`. If the sidecar crashes, it auto-restarts up to 3 times with exponential backoff (1s, 2s, 4s). The renderer is notified of engine status via `engine-status` events.
+**System tray** (`tray.rs`) -- A Tauri `TrayIcon` with live speed display. On macOS and Windows, clicking the tray opens a popup window showing active downloads (the `/tray` route). On Linux, the tray is menu-only -- libappindicator delivers no click events, so the popup cannot be triggered. This is a known platform limitation.
 
-**Window management** -- Creates the main `BrowserWindow` with context isolation and no node integration. Window position, size, and maximized state persist between sessions via a JSON file in the user data directory.
+**Single instance** -- tauri-plugin-single-instance ensures only one instance runs. A second launch (e.g., from a magnet link) focuses the existing window and forwards the URL or torrent path as an open request.
 
-**System tray** -- Creates a tray icon with a popup window showing live download stats. On Linux/Windows, a single click toggles the popup. On macOS, double-click is used instead (single click is reserved for the context menu on macOS).
+**Protocol and file handling** -- tauri-plugin-deep-link registers the `magnet:` handler; `.torrent` association is declared via the bundle's `fileAssociations`. Requests that arrive before the frontend is ready are queued in `AppState` and drained via `get_pending_open_requests`.
 
-**IPC bridge** -- `ipcMain.handle('rpc-invoke', ...)` validates methods against the allowlist and forwards them to the sidecar. Additional IPC handlers provide native OS functionality: file/directory dialogs, notifications, disk space queries, native theme detection, login item settings, protocol client management, settings import, and auto-updater controls.
+**Window state** -- tauri-plugin-window-state persists size, position, and maximized state between sessions.
 
-**Application menu** -- macOS gets a standard application menu with app, edit, view, and window menus (required for Cmd+Q, Cmd+C/V/X to work). Linux and Windows have no menu bar.
+**Auto-update** -- tauri-plugin-updater checks GitHub Releases (`latest.json`, signed artifacts) on startup but does not auto-download. tauri-plugin-process handles relaunch after install.
 
-**Auto-update** -- Uses `electron-updater` with GitHub Releases as the provider. Checks for updates on startup but does not auto-download. Update availability, download progress, and completion are forwarded to the renderer as events.
-
-**Single instance** -- `app.requestSingleInstanceLock()` ensures only one instance runs. If a second instance is launched (e.g., by clicking a magnet link), the existing window is focused and the protocol URL or torrent file path is forwarded.
-
-**Protocol handling** -- Registers as the handler for `magnet:` URIs. On macOS, `open-url` and `open-file` events handle protocol URLs and `.torrent` file associations. On Windows/Linux, these arrive via `argv` on the `second-instance` event.
-
-**Content Security Policy** -- In production, response headers enforce `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'`. The tray popup is exempted since it is a trusted local file with inline scripts.
+**Other plugins** -- dialog (file/directory pickers), notification (completion notices), autostart (run at login), opener (open files/folders), log.
 
 ## Build and Packaging
 
-The frontend is built with Vite into `dist/`. The Electron main process TypeScript is compiled into `dist-electron/`. The Rust sidecar is compiled separately with `cargo build` into `src-rust/target/`. For production builds, `electron-builder` packages everything together using the configuration in `electron-builder.yml`.
+The frontend is built with Vite into `dist/`. `npm run tauri build` compiles the Rust backend, embeds the frontend, and bundles platform packages: AppImage/deb/rpm for Linux, DMG for macOS, and an NSIS installer for Windows. `npm run tauri dev` runs the Vite dev server and a debug build of the app together.
 
-The sidecar binary, tray icon, tray popup HTML, and fonts are bundled as `extraResources`. Output formats are AppImage/deb/rpm for Linux, DMG for macOS, and NSIS installer plus portable for Windows.
-
-CI workflows in `.github/workflows/` build for all three platforms and run both Rust and frontend tests before building.
+CI workflows in `.github/workflows/` cover both halves: `ci.yml` runs frontend and Rust tests on PRs and main, and `release.yml` uses tauri-action across a matrix (ubuntu-24.04 x64, ubuntu-24.04-arm, macos-14 universal, windows-latest) to build signed artifacts and draft a GitHub Release on `v*` tags. Release signing requires the `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` secrets.
