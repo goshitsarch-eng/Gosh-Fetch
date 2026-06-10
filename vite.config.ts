@@ -1,10 +1,11 @@
 /// <reference types="vitest" />
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { svelteTesting } from '@testing-library/svelte/vite';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [svelte(), svelteTesting()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -16,7 +17,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: {
-      ignored: ['**/src-rust/**', '**/src-electron/**'],
+      ignored: ['**/src-tauri/**'],
     },
   },
   build: {

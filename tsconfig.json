@@ -7,18 +7,19 @@
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "moduleDetection": "force",
     "noEmit": true,
-    "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "resolveJsonModule": true,
+    "types": ["svelte", "vite/client"],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "src/**/*.d.ts"]
 }

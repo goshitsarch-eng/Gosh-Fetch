@@ -1,0 +1,545 @@
+/* Mirror page — recursive HTTP directory mirroring */
+
+.mirror-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.mirror-header h2 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.mirror-header p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.mirror-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.mirror-error-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(218, 54, 51, 0.08);
+  border: 1px solid rgba(218, 54, 51, 0.19);
+  border-radius: var(--radius-md);
+  color: var(--color-destructive);
+  font-size: 13px;
+}
+
+.mirror-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-xl);
+  margin: auto;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.mirror-empty .mirror-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  margin-bottom: var(--space-sm);
+}
+
+.mirror-empty .mirror-empty-icon .material-symbols-outlined {
+  font-size: 40px;
+}
+
+.mirror-empty h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mirror-empty p {
+  font-size: 13px;
+}
+
+.mirror-job-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* Job card (download-card visual language) */
+.mirror-card {
+  position: relative;
+  background: color-mix(in srgb, var(--bg-tertiary) 40%, transparent);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  transition: border-color var(--transition-fast);
+  animation: fadeIn 200ms ease;
+}
+
+.mirror-card:hover {
+  border-color: var(--bg-hover);
+}
+
+.mirror-card-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-md);
+  padding: var(--space-md);
+}
+
+.mirror-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  flex-shrink: 0;
+  background: var(--icon-bg-blue);
+  color: var(--icon-color-blue);
+}
+
+.mirror-card-icon .material-symbols-outlined {
+  font-size: 24px;
+}
+
+.mirror-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mirror-card-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-md);
+  margin-bottom: 4px;
+}
+
+.mirror-card-url {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+  padding-right: var(--space-md);
+  font-family: var(--font-mono);
+}
+
+.mirror-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.mirror-card:hover .mirror-card-actions {
+  opacity: 1;
+}
+
+.mirror-card-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mirror-card-action-btn .material-symbols-outlined {
+  font-size: 20px;
+}
+
+.mirror-card-action-btn:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.mirror-card-action-btn.danger:hover {
+  color: var(--color-destructive);
+}
+
+.mirror-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-sm);
+}
+
+.mirror-state-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.mirror-state-badge.running {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 25%, transparent);
+}
+
+.mirror-state-badge.queued,
+.mirror-state-badge.empty {
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: var(--color-info);
+  border-color: color-mix(in srgb, var(--color-info) 25%, transparent);
+}
+
+.mirror-state-badge.paused,
+.mirror-state-badge.partial {
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 25%, transparent);
+}
+
+.mirror-state-badge.completed {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 25%, transparent);
+}
+
+.mirror-state-badge.failed {
+  background: color-mix(in srgb, var(--color-destructive) 12%, transparent);
+  color: var(--color-destructive);
+  border-color: color-mix(in srgb, var(--color-destructive) 25%, transparent);
+}
+
+.mirror-failed-count {
+  color: var(--color-destructive);
+  font-weight: 600;
+}
+
+.mirror-card-meta .meta-dot {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.mirror-card .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  cursor: pointer;
+}
+
+.mirror-card .checkbox-label span {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* Dual progress */
+.mirror-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.mirror-progress-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.mirror-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--color-primary);
+  transition: width var(--transition-normal);
+}
+
+.mirror-progress-fill.indeterminate {
+  position: absolute;
+  width: 30%;
+  animation: mirror-indeterminate 1.4s infinite ease-in-out;
+}
+
+@keyframes mirror-indeterminate {
+  0% { left: -30%; }
+  100% { left: 100%; }
+}
+
+/* New Mirror modal */
+.mirror-modal {
+  max-width: 560px;
+}
+
+.mirror-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: var(--space-xs);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+
+.mirror-modal-close:hover {
+  color: var(--text-primary);
+}
+
+.mirror-modal .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.mirror-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mirror-field > label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.mirror-field input[type='text'],
+.mirror-field input[type='number'] {
+  height: 38px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.mirror-field input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.mirror-field input::placeholder {
+  color: var(--text-muted);
+}
+
+.mirror-dir-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.mirror-dir-row input {
+  flex: 1;
+}
+
+.mirror-dir-browse {
+  height: 38px;
+  width: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--bg-hover);
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.mirror-dir-browse:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+/* Advanced accordion */
+.mirror-advanced {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+}
+
+.mirror-advanced summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.mirror-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.mirror-advanced-summary-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.mirror-advanced-summary-left .material-symbols-outlined {
+  font-size: 20px;
+  color: var(--text-secondary);
+}
+
+.mirror-advanced-chevron {
+  font-size: 20px;
+  color: var(--text-muted);
+  transition: transform var(--transition-normal);
+}
+
+.mirror-advanced[open] .mirror-advanced-chevron {
+  transform: rotate(180deg);
+}
+
+.mirror-advanced-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  border-top: 1px solid var(--border-secondary);
+}
+
+.mirror-field.full-width {
+  grid-column: 1 / -1;
+}
+
+.mirror-check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.mirror-check-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.mirror-check-row label {
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* Inline error */
+.mirror-modal-error {
+  padding: var(--space-sm) var(--space-md);
+  background: rgba(218, 54, 51, 0.08);
+  border: 1px solid rgba(218, 54, 51, 0.19);
+  border-radius: var(--radius-md);
+  color: var(--color-destructive);
+  font-size: 13px;
+}
+
+/* Discovery preview */
+.mirror-preview {
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-lg);
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+.mirror-preview-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mirror-preview-header .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--color-primary);
+}
+
+.mirror-preview-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.mirror-preview-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 4px var(--space-md);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.mirror-preview-row:nth-child(odd) {
+  background: color-mix(in srgb, var(--bg-tertiary) 40%, transparent);
+}
+
+.mirror-preview-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.mirror-preview-size {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mirror-preview-more {
+  padding: 4px var(--space-md) var(--space-sm);
+  font-size: 12px;
+  color: var(--text-muted);
+}

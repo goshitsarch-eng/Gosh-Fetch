@@ -8,7 +8,7 @@ dist-ssr/
 build/
 out/
 release/
-src-rust/target/
+src-tauri/target/
 
 # IDE
 .idea/
@@ -66,3 +66,4 @@ pids/
 
 # Internal development docs
 update.md
+src-tauri/gen/
