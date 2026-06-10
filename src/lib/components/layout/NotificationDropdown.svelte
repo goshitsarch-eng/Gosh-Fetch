@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Icon from '../ui/Icon.svelte';
   import { notifications } from '../../stores/notifications.svelte';
   import type { AppNotification } from '../../stores/notifications.svelte';
   import './NotificationDropdown.css';
@@ -10,11 +11,11 @@
       case 'failed':
         return 'error';
       case 'added':
-        return 'add_circle';
+        return 'downloading';
       case 'paused':
-        return 'pause_circle';
+        return 'pause';
       case 'resumed':
-        return 'play_circle';
+        return 'play_arrow';
       default:
         return 'notifications';
     }
@@ -23,24 +24,21 @@
   function getNotificationIconClass(type: AppNotification['type']): string {
     switch (type) {
       case 'completed':
-        return 'notif-icon green';
+        return 'done';
       case 'failed':
-        return 'notif-icon red';
+        return 'err';
       case 'added':
-        return 'notif-icon blue';
-      case 'paused':
-        return 'notif-icon orange';
       case 'resumed':
-        return 'notif-icon blue';
+        return 'act';
       default:
-        return 'notif-icon';
+        return '';
     }
   }
 
   function getNotificationText(type: AppNotification['type']): string {
     switch (type) {
       case 'completed':
-        return 'Download completed';
+        return 'Download complete';
       case 'failed':
         return 'Download failed';
       case 'added':
@@ -88,62 +86,56 @@
   }
 </script>
 
-<div class="notification-wrapper" bind:this={dropdownEl}>
+<div class="notif-wrapper" bind:this={dropdownEl}>
   <button
-    class="notification-bell"
+    class="icon-btn notif-bell"
     onclick={handleToggle}
     title="Notifications"
     aria-label={`Notifications${notifications.unreadCount > 0 ? ` (${notifications.unreadCount} unread)` : ''}`}
   >
-    <span class="material-symbols-outlined">notifications</span>
+    <Icon name="notifications" />
     {#if notifications.unreadCount > 0}
-      <span class="notification-badge"
-        >{notifications.unreadCount > 9 ? '9+' : notifications.unreadCount}</span
-      >
+      <span class="notif-unread-dot"></span>
     {/if}
   </button>
 
   {#if isOpen}
-    <div class="notification-dropdown">
-      <div class="notif-header">
-        <span class="notif-title">Notifications</span>
+    <div class="notif-dropdown">
+      <div class="notif-head">
+        <b>Notifications</b>
         {#if notifications.items.length > 0}
-          <button class="notif-clear-btn" onclick={() => notifications.clearAll()}>
-            Clear all
-          </button>
+          <button onclick={() => notifications.clearAll()}>Clear all</button>
         {/if}
       </div>
-      <div class="notif-list">
-        {#if notifications.items.length === 0}
-          <div class="notif-empty">
-            <span class="material-symbols-outlined">notifications_off</span>
-            <span>No notifications</span>
-          </div>
-        {:else}
-          {#each notifications.items.slice(0, 20) as notif (notif.id)}
-            <div class="notif-item{!notif.read ? ' unread' : ''}">
-              <span class="material-symbols-outlined {getNotificationIconClass(notif.type)}">
-                {getNotificationIcon(notif.type)}
-              </span>
-              <div class="notif-content">
-                <span class="notif-text">{getNotificationText(notif.type)}</span>
-                <span class="notif-name" title={notif.downloadName}>{notif.downloadName}</span>
-                <span class="notif-time">{formatRelativeTime(notif.timestamp)}</span>
-              </div>
-              <button
-                class="notif-dismiss"
-                onclick={(e) => {
-                  e.stopPropagation();
-                  notifications.remove(notif.id);
-                }}
-                aria-label="Dismiss"
-              >
-                <span class="material-symbols-outlined">close</span>
-              </button>
+      {#if notifications.items.length === 0}
+        <div class="notif-empty">
+          <Icon name="notifications_off" size={26} />
+          <span>No notifications</span>
+        </div>
+      {:else}
+        {#each notifications.items.slice(0, 20) as notif (notif.id)}
+          <div class="notif-item" class:unread={!notif.read}>
+            <div class="notif-ico {getNotificationIconClass(notif.type)}">
+              <Icon name={getNotificationIcon(notif.type)} fill size={17} />
             </div>
-          {/each}
-        {/if}
-      </div>
+            <div class="body">
+              <div class="t">{getNotificationText(notif.type)}</div>
+              <div class="d" title={notif.downloadName}>{notif.downloadName}</div>
+              <div class="time">{formatRelativeTime(notif.timestamp)}</div>
+            </div>
+            <button
+              class="notif-dismiss"
+              onclick={(e) => {
+                e.stopPropagation();
+                notifications.remove(notif.id);
+              }}
+              aria-label="Dismiss"
+            >
+              <Icon name="close" size={15} />
+            </button>
+          </div>
+        {/each}
+      {/if}
     </div>
   {/if}
 </div>

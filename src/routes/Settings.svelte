@@ -32,21 +32,22 @@
     btSeedRatio: number;
     autoUpdateTrackers: boolean;
   }
-
-  export type SettingsTab = 'general' | 'network' | 'bittorrent' | 'appearance' | 'about';
 </script>
 
 <script lang="ts">
-  import { push, router } from 'svelte-spa-router';
-  import { theme } from '../lib/stores/theme.svelte';
+  import { router } from 'svelte-spa-router';
+  import { getVersion } from '@tauri-apps/api/app';
+  import { theme, ACCENTS, type Theme } from '../lib/stores/theme.svelte';
+  import { updater } from '../lib/stores/updater.svelte';
   import { api } from '../lib/api/commands';
   import type { Settings as SettingsType } from '../lib/types/settings';
   import { selectDirectory } from '../lib/api/system';
-  import GeneralPanel from '../lib/components/settings/GeneralPanel.svelte';
-  import NetworkPanel from '../lib/components/settings/NetworkPanel.svelte';
-  import BitTorrentPanel from '../lib/components/settings/BitTorrentPanel.svelte';
-  import AppearancePanel from '../lib/components/settings/AppearancePanel.svelte';
-  import About from './About.svelte';
+  import Icon from '../lib/components/ui/Icon.svelte';
+  import Segmented from '../lib/components/ui/Segmented.svelte';
+  import Switch from '../lib/components/ui/Switch.svelte';
+  import NetworkSection from '../lib/components/settings/NetworkSection.svelte';
+  import BitTorrentSection from '../lib/components/settings/BitTorrentSection.svelte';
+  import IntegrationSection from '../lib/components/settings/IntegrationSection.svelte';
   import './Settings.css';
 
   const defaultForm: SettingsFormState = {
@@ -103,32 +104,15 @@
     return `${f.proxyType}://${auth}${f.proxyHost}${port}`;
   }
 
-  const NAV_ITEMS: { tab: SettingsTab; icon: string; label: string }[] = [
-    { tab: 'general', icon: 'settings', label: 'General' },
-    { tab: 'network', icon: 'wifi_tethering', label: 'Network' },
-    { tab: 'bittorrent', icon: 'cloud_download', label: 'BitTorrent' },
-    { tab: 'appearance', icon: 'palette', label: 'Appearance' },
-    { tab: 'about', icon: 'info', label: 'About' },
-  ];
-
-  const PANEL_META: Record<Exclude<SettingsTab, 'about'>, { title: string; subtitle: string }> = {
-    general: { title: 'General Settings', subtitle: 'Configure download behavior, notifications, and application preferences.' },
-    network: { title: 'Network & Reliability', subtitle: 'Configure connection limits, bandwidth throttles, proxy servers, and disk allocation strategies.' },
-    bittorrent: { title: 'BitTorrent Settings', subtitle: 'Configure protocol behavior, transfer limits, and tracker preferences.' },
-    appearance: { title: 'Appearance', subtitle: 'Customize the look and feel of Gosh-Fetch.' },
-  };
-
-  const initialTab = (new URLSearchParams(router.querystring ?? '').get('tab') as SettingsTab) || 'general';
-  let activeTab = $state<SettingsTab>(
-    NAV_ITEMS.some(n => n.tab === initialTab) ? initialTab : 'general'
-  );
-
   let form = $state<SettingsFormState>({ ...defaultForm });
   let userAgentPresets = $state<[string, string][]>([]);
   let isSaving = $state(false);
   let saveMessage = $state<string | null>(null);
   let showResetConfirm = $state(false);
   let savedSnapshot = $state('');
+  let appVersion = $state('');
+  let appInfo = $state<{ repository?: string; engine?: { name?: string; version?: string } } | null>(null);
+  let updateChecked = $state(false);
 
   let isDirty = $derived(savedSnapshot ? JSON.stringify($state.snapshot(form)) !== savedSnapshot : false);
 
@@ -136,14 +120,27 @@
     form[key] = value;
   }
 
-  function handleTabChange(tab: SettingsTab) {
-    activeTab = tab;
-    push(`/settings?tab=${tab}`);
-  }
+  // ?tab= deep links (e.g. from the tray popup) scroll to the matching section
+  $effect(() => {
+    const tab = new URLSearchParams(router.querystring ?? '').get('tab');
+    if (!tab) return;
+    const target = document.getElementById(`settings-${tab}`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   // Load settings on mount
   $effect(() => {
     (async () => {
+      try {
+        appVersion = await getVersion();
+      } catch {
+        /* not running under Tauri */
+      }
+      try {
+        appInfo = await api.getAppInfo();
+      } catch {
+        /* ignore */
+      }
       try {
         const presets = await api.getUserAgentPresets();
         userAgentPresets = presets;
@@ -231,7 +228,7 @@
       await api.dbSaveSettings(settings);
       await api.setCloseToTray(form.closeToTray);
       await api.applySettingsToEngine(settings);
-      saveMessage = 'Settings saved successfully';
+      saveMessage = 'Settings saved';
       savedSnapshot = JSON.stringify($state.snapshot(form));
     } catch (e) {
       saveMessage = `Failed to save: ${e}`;
@@ -252,10 +249,6 @@
     if (selected) updateField('downloadPath', selected);
   }
 
-  function handleThemeChange(newTheme: 'dark' | 'light') {
-    theme.setTheme(newTheme);
-  }
-
   async function handleUpdateTrackers() {
     try {
       const trackers = await api.updateTrackerList();
@@ -265,109 +258,177 @@
     }
   }
 
-  let meta = $derived(activeTab !== 'about' ? PANEL_META[activeTab] : null);
+  async function handleCheckUpdates() {
+    updateChecked = false;
+    await updater.checkForUpdates();
+    updateChecked = true;
+  }
 </script>
 
-<div class="settings-layout">
-  <!-- Sidebar -->
-  <nav class="settings-sidebar">
-    <div class="settings-sidebar-header">
-      <div class="settings-sidebar-brand">
-        <div class="brand-icon">
-          <span class="material-symbols-outlined" style="font-size: 20px">bolt</span>
+<div class="content page-fade">
+  <div class="content-inner" style="max-width: 760px">
+    <!-- Save bar -->
+    <div class="settings-savebar">
+      <span class="tag-label">Engine configuration</span>
+      <div class="toolbar-spacer"></div>
+      {#if isDirty}
+        <span class="save-flag dirty">● Unsaved changes</span>
+      {/if}
+      {#if saveMessage}
+        <span class="save-flag {saveMessage.startsWith('Failed') ? 'err' : 'ok'}">{saveMessage}</span>
+      {/if}
+      <button class="btn btn-ghost" onclick={() => (showResetConfirm = true)}>Reset</button>
+      <button class="btn btn-primary" onclick={handleSave} disabled={isSaving}>
+        <Icon name="save" size={16} />
+        {isSaving ? 'Saving…' : 'Save'}
+      </button>
+    </div>
+
+    <!-- Appearance -->
+    <div class="section-h" id="settings-appearance">Appearance</div>
+    <div class="card card-pad">
+      <div class="set-row">
+        <div class="set-info">
+          <div class="t">Theme</div>
+          <div class="d">Paper (light), Console (dark), or follow the system</div>
         </div>
-        <div class="brand-info">
-          <span class="brand-name">Gosh-Fetch</span>
-          <span class="brand-version">Settings</span>
+        <div class="set-control">
+          <Segmented
+            value={theme.theme}
+            options={[
+              { v: 'light', l: 'Paper' },
+              { v: 'dark', l: 'Console' },
+              { v: 'system', l: 'Auto' },
+            ]}
+            onChange={(v) => theme.setTheme(v as Theme)}
+            label="Theme"
+          />
+        </div>
+      </div>
+      <div class="set-row">
+        <div class="set-info">
+          <div class="t">Signal color</div>
+          <div class="d">Active / download highlight color</div>
+        </div>
+        <div class="set-control accent-swatches">
+          {#each ACCENTS as a (a.v)}
+            <button
+              class="accent-swatch"
+              class:on={theme.accent === a.v}
+              style="background: hsl({a.v} 100% 50%)"
+              title={a.name}
+              aria-label={a.name}
+              aria-pressed={theme.accent === a.v}
+              onclick={() => theme.setAccent(a.v)}
+            ></button>
+          {/each}
         </div>
       </div>
     </div>
-    <div class="settings-sidebar-nav">
-      {#each NAV_ITEMS as { tab, icon, label } (tab)}
-        <button
-          class="settings-nav-item{activeTab === tab ? ' active' : ''}"
-          onclick={() => handleTabChange(tab)}
-        >
-          <span class="material-symbols-outlined">{icon}</span>
-          <span>{label}</span>
-        </button>
-      {/each}
+
+    <!-- Storage -->
+    <div class="section-h" id="settings-general">Storage</div>
+    <div class="card card-pad">
+      <div class="set-row">
+        <div class="set-info">
+          <div class="t">Download location</div>
+          <div class="d">Where downloaded files are saved</div>
+        </div>
+        <div class="set-control">
+          <div class="input-group" style="width: 280px">
+            <input class="input mono" type="text" value={form.downloadPath} readonly aria-label="Download location" />
+            <button class="addon addon-btn" onclick={handleBrowseDownloadPath} title="Browse">
+              <Icon name="folder" size={17} />
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="set-row">
+        <div class="set-info">
+          <div class="t">Delete files on remove</div>
+          <div class="d">Also delete downloaded files when removing a task</div>
+        </div>
+        <Switch on={form.deleteFilesOnRemove} onToggle={() => updateField('deleteFilesOnRemove', !form.deleteFilesOnRemove)} label="Delete files on remove" />
+      </div>
     </div>
-  </nav>
 
-  <!-- Main content -->
-  <div class="settings-main">
-    {#if meta}
-      <header class="settings-panel-header">
-        <div class="settings-panel-title">
-          <h2>{meta.title}</h2>
-          <p>{meta.subtitle}</p>
-        </div>
-        <div class="settings-panel-actions">
-          {#if isDirty}
-            <span class="save-indicator dirty">Unsaved changes</span>
-          {/if}
-          {#if saveMessage}
-            <span class="save-indicator{saveMessage.startsWith('Failed') ? ' error' : ' success'}">
-              {saveMessage}
-            </span>
-          {/if}
-          <button class="btn btn-ghost" onclick={() => (showResetConfirm = true)}>Reset Defaults</button>
-          <button class="btn btn-primary" onclick={handleSave} disabled={isSaving}>
-            <span class="material-symbols-outlined" style="font-size: 16px">save</span>
-            {isSaving ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </header>
-    {/if}
+    <!-- Network & Reliability -->
+    <div class="section-h" id="settings-network">Network &amp; Reliability</div>
+    <NetworkSection {form} {updateField} {userAgentPresets} />
 
-    <div class="settings-panel-scroll">
-      {#if activeTab === 'general'}
-        <GeneralPanel
-          {form}
-          {updateField}
-          {userAgentPresets}
-          onBrowseDownloadPath={handleBrowseDownloadPath}
-        />
-      {/if}
-      {#if activeTab === 'network'}
-        <NetworkPanel {form} {updateField} />
-      {/if}
-      {#if activeTab === 'bittorrent'}
-        <BitTorrentPanel
-          {form}
-          {updateField}
-          onUpdateTrackers={handleUpdateTrackers}
-          {saveMessage}
-        />
-      {/if}
-      {#if activeTab === 'appearance'}
-        <AppearancePanel theme={theme.theme} onThemeChange={handleThemeChange} />
-      {/if}
-      {#if activeTab === 'about'}
-        <About />
-      {/if}
+    <!-- BitTorrent -->
+    <div class="section-h" id="settings-bittorrent">BitTorrent</div>
+    <BitTorrentSection {form} {updateField} onUpdateTrackers={handleUpdateTrackers} {saveMessage} />
+
+    <!-- Desktop Integration -->
+    <div class="section-h" id="settings-integration">Desktop Integration</div>
+    <IntegrationSection {form} {updateField} />
+
+    <!-- About -->
+    <div class="section-h" id="settings-about">About</div>
+    <div class="card card-pad about-card">
+      <div class="brand-mark about-mark"><Icon name="downloading" fill size={28} /></div>
+      <div class="about-info">
+        <div class="about-name">
+          Gosh-Fetch
+          {#if appVersion}<span class="about-version">v{appVersion}</span>{/if}
+        </div>
+        <div class="about-desc">
+          Cross-platform download manager · powered by the
+          {appInfo?.engine?.name ?? 'gosh-dl'}
+          {#if appInfo?.engine?.version}v{appInfo.engine.version}{/if} Rust engine
+        </div>
+        {#if appInfo?.repository}
+          <div class="about-links">
+            <a href={appInfo.repository} target="_blank" rel="noopener noreferrer">
+              <Icon name="code" size={14} /> Source
+            </a>
+            <a href="{appInfo.repository}/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">
+              <Icon name="gavel" size={14} /> AGPL-3.0
+            </a>
+            <a href="{appInfo.repository}/issues/new" target="_blank" rel="noopener noreferrer">
+              <Icon name="bug_report" size={14} /> Report issue
+            </a>
+          </div>
+        {/if}
+        {#if updateChecked && updater.phase === 'idle'}
+          <div class="about-update-msg">You're on the latest version.</div>
+        {/if}
+      </div>
+      <button class="btn btn-ghost" onclick={handleCheckUpdates}>
+        <Icon name="update" size={18} /> Check for updates
+      </button>
     </div>
   </div>
+
   {#if showResetConfirm}
-    <div class="modal-backdrop" onclick={() => (showResetConfirm = false)}>
-      <div class="modal reset-confirm-modal" onclick={(e) => e.stopPropagation()}>
-        <div class="reset-confirm-icon">
-          <span class="material-symbols-outlined">warning</span>
-        </div>
-        <h3>Reset all settings?</h3>
-        <p>
-          This will revert all network, BitTorrent, and appearance
-          preferences to their original values. Your download history
-          and files will not be affected.
-        </p>
-        <div class="reset-confirm-actions">
-          <button class="btn btn-ghost" onclick={() => (showResetConfirm = false)}>
-            Cancel
+    <div
+      class="scrim"
+      onclick={(e) => e.target === e.currentTarget && (showResetConfirm = false)}
+      onkeydown={(e) => e.key === 'Escape' && (showResetConfirm = false)}
+      role="presentation"
+    >
+      <div class="modal" style="max-width: 440px" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title">
+        <div class="modal-head">
+          <div class="dl-icon"><Icon name="warning" size={19} /></div>
+          <div style="flex: 1">
+            <div class="ttl" id="reset-confirm-title">Reset all settings?</div>
+          </div>
+          <button class="icon-btn" onclick={() => (showResetConfirm = false)} aria-label="Close">
+            <Icon name="close" />
           </button>
+        </div>
+        <div class="modal-body">
+          <p style="margin: 0; font-size: 13px; line-height: 1.55">
+            This reverts all network, BitTorrent, and appearance preferences to
+            their original values. Your download history and files are not affected.
+          </p>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-ghost" onclick={() => (showResetConfirm = false)}>Cancel</button>
+          <div class="sp"></div>
           <button class="btn btn-primary" onclick={() => { handleResetDefaults(); showResetConfirm = false; }}>
-            <span class="material-symbols-outlined" style="font-size: 16px">restart_alt</span>
-            Reset Everything
+            <Icon name="restart_alt" size={16} /> Reset everything
           </button>
         </div>
       </div>

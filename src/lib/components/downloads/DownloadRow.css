@@ -1,0 +1,118 @@
+/* Download table row — transfer console */
+.dl-row {
+  display: grid;
+  grid-template-columns: 30px 1fr 92px 116px 132px 40px;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  min-height: var(--row-h);
+  background: var(--surface);
+  border: none;
+  border-bottom: 1.5px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  transition: background 0.1s;
+  position: relative;
+}
+.dl-row:last-child { border-bottom: none; }
+.dl-row:hover { background: var(--surface-inset); }
+.dl-row.sel { background: var(--accent-soft); }
+.dl-row.sel::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--signal); }
+
+.dl-check {
+  width: 17px;
+  height: 17px;
+  border-radius: 0;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  transition: all 0.1s;
+  flex: none;
+  padding: 0;
+}
+.dl-check:hover { border-color: var(--ink); }
+.dl-check.on { background: var(--ink); border-color: var(--ink); }
+.dl-check .ms { font-size: 13px; color: var(--signal); opacity: 0; }
+.dl-check.on .ms { opacity: 1; }
+
+/* inline type glyph */
+.dl-glyph { width: 22px; height: 22px; display: grid; place-items: center; flex: none; }
+.dl-glyph .ms { font-size: 18px; color: var(--text-2); }
+
+.dl-main { min-width: 0; cursor: pointer; text-align: left; background: none; border: none; padding: 0; color: inherit; font: inherit; }
+.dl-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-family: var(--mono);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.dl-name-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dl-type {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  text-transform: uppercase;
+  flex: none;
+}
+.dl-meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+
+.dl-stats { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--text-3); font-weight: 500; min-width: 0; }
+.dl-stats > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dl-stats .err { color: var(--error); font-weight: 600; }
+.dl-stats .up { color: var(--lime); font-weight: 700; }
+
+/* column figures */
+.dl-col { font-family: var(--mono); text-align: right; }
+.dl-col .big { font-size: 12px; font-weight: 700; }
+.dl-col .big.lime { color: var(--lime); }
+.dl-col .sml { font-size: 9.5px; color: var(--text-3); margin-top: 3px; letter-spacing: 0.04em; }
+.dl-col .spd { color: var(--signal-ink); }
+.dl-col .spd.idle { color: var(--text-3); }
+
+/* expand chevron */
+.dl-expand { display: grid; place-items: center; }
+.dl-expand button { width: 30px; height: 30px; border: none; background: none; color: var(--text-3); display: grid; place-items: center; border-radius: 0; }
+.dl-expand button:hover { background: var(--surface-inset); color: var(--text); }
+.dl-expand .ms { font-size: 19px; }
+
+/* hover-revealed row actions */
+.dl-actions {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  display: flex;
+  gap: 0;
+  opacity: 0;
+  transition: all 0.12s var(--ease);
+  background: var(--surface-inset);
+  border: 1.5px solid var(--ink);
+}
+.dl-row:hover .dl-actions { opacity: 1; transform: translateY(-50%); }
+
+/* expanded detail */
+.dl-detail {
+  grid-column: 1 / -1;
+  margin-top: 14px;
+  padding: 14px;
+  margin-left: -16px;
+  margin-right: -16px;
+  margin-bottom: -12px;
+  background: var(--surface-inset);
+  border-top: 1.5px solid var(--border);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.detail-cell { min-width: 0; }
+.detail-cell .k { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-3); font-weight: 600; }
+.detail-cell .v { font-size: 12.5px; font-weight: 600; margin-top: 5px; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

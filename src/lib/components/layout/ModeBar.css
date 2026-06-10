@@ -1,0 +1,59 @@
+/* Console mode bar (navigation) */
+.modebar {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  height: 50px;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper);
+  position: relative;
+  z-index: 10;
+}
+.modes { display: flex; height: 100%; }
+.mode {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 18px;
+  border: none;
+  background: none;
+  border-right: 1.5px solid var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  transition: all 0.1s;
+  position: relative;
+}
+.mode:hover { background: var(--surface-inset); color: var(--text); }
+.mode.active { background: var(--ink); color: var(--paper); }
+.mode.active .ms { color: var(--signal); }
+.mode-idx { font-size: 9px; color: var(--text-3); letter-spacing: 0; }
+.mode.active .mode-idx { color: var(--signal); }
+
+.nav-badge {
+  margin-left: 2px;
+  background: var(--signal);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  min-width: 19px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+}
+
+.modebar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; padding: 0 16px; }
+.modebar-right .search { margin-left: 0; width: 190px; height: 34px; padding: 6px 11px; }
+.modebar-right .search:focus-within { width: 230px; }
+.modebar-right .icon-btn { width: 34px; height: 34px; }
+.modebar-right .btn { padding: 8px 14px; }
+
+@media (max-width: 1080px) {
+  .mode-label { display: none; }
+}

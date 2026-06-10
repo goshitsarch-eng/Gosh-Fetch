@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Icon from '../lib/components/ui/Icon.svelte';
+  import Segmented from '../lib/components/ui/Segmented.svelte';
   import { stats } from '../lib/stores/stats.svelte';
   import { downloads } from '../lib/stores/downloads.svelte';
   import { formatBytes, formatSpeed } from '../lib/utils/format';
@@ -12,6 +14,7 @@
   }
 
   type ChartPeriod = '5m' | '30m' | 'session';
+  type VolumePeriod = '7d' | '14d' | '30d';
 
   interface DomainStat {
     domain: string;
@@ -65,8 +68,6 @@
     return d;
   }
 
-  const DOMAIN_COLORS = ['#137fec', '#a855f7', '#10b981', '#f97316', '#ec4899'];
-
   // Chart constants
   const CHART_W = 800;
   const CHART_H = 280;
@@ -81,6 +82,7 @@
   const speedSamples: SpeedSample[] = [];
   let renderTick = $state(0);
   let chartPeriod = $state<ChartPeriod>('5m');
+  let volumePeriod = $state<VolumePeriod>('14d');
   let peakDownloadSpeed = $state(0);
   let totalUploadedBytes = $state(0);
   let speedSumForAvg = $state(0);
@@ -179,6 +181,48 @@
     return Array.from(map.values())
       .sort((a, b) => b.totalBytes - a.totalBytes)
       .slice(0, 5);
+  });
+
+  // Derived: per-day download volume buckets
+  const volumeDays = $derived(volumePeriod === '7d' ? 7 : volumePeriod === '14d' ? 14 : 30);
+
+  const volumeBars = $derived.by(() => {
+    const days = volumeDays;
+    const buckets: { label: string; bytes: number }[] = [];
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    for (let i = days - 1; i >= 0; i--) {
+      const day = new Date(now);
+      day.setDate(now.getDate() - i);
+      buckets.push({
+        label: day.toLocaleDateString(undefined, { weekday: 'narrow' }),
+        bytes: 0,
+      });
+    }
+    for (const d of downloads.completed) {
+      const completed = new Date(d.completedAt || d.createdAt);
+      completed.setHours(0, 0, 0, 0);
+      const diff = Math.round((now.getTime() - completed.getTime()) / 86400000);
+      if (diff >= 0 && diff < days) {
+        buckets[days - 1 - diff].bytes += d.completedSize || d.totalSize;
+      }
+    }
+    return buckets;
+  });
+
+  const maxVolumeBytes = $derived(Math.max(1, ...volumeBars.map((b) => b.bytes)));
+
+  // Derived: protocol split (http vs bittorrent bytes)
+  const protocolSplit = $derived.by(() => {
+    let http = 0;
+    let bt = 0;
+    for (const d of downloads.completed) {
+      const bytes = d.completedSize || d.totalSize;
+      if (d.downloadType === 'http') http += bytes;
+      else bt += bytes;
+    }
+    const total = http + bt;
+    return { http, bt, httpPct: total > 0 ? Math.round((http / total) * 100) : 0 };
   });
 
   // Session average speed
@@ -288,8 +332,6 @@
     hoverInfo = null;
   }
 
-  const PERIODS: ChartPeriod[] = ['5m', '30m', 'session'];
-
   // Compute tooltip position relative to the chart body
   const tooltipStyle = $derived.by(() => {
     if (!hoverInfo || !bodyEl) return undefined;
@@ -302,87 +344,61 @@
 </script>
 
 {#snippet statCard(icon: string, label: string, value: string, comparison?: number | null, subtitle?: string)}
-  <div class="stat-card">
-    <div class="stat-card-ghost-icon">
-      <span class="material-symbols-outlined">{icon}</span>
-    </div>
-    <span class="stat-card-label">{label}</span>
-    <span class="stat-card-value">{value}</span>
+  <div class="stat">
     {#if comparison != null}
-      <span class="stat-card-badge {comparison >= 0 ? 'positive' : 'negative'}">
-        <span class="material-symbols-outlined">
-          {comparison >= 0 ? 'trending_up' : 'trending_down'}
-        </span>
-        {Math.abs(comparison)}% vs last week
-      </span>
+      <div class="stat-trend {comparison >= 0 ? 'up' : 'down'}">
+        <Icon name={comparison >= 0 ? 'trending_up' : 'trending_down'} size={15} />
+        {Math.abs(comparison)}%
+      </div>
     {/if}
-    {#if subtitle}
-      <span class="stat-card-subtitle">{subtitle}</span>
-    {/if}
+    <div class="stat-ico"><Icon name={icon} fill size={18} /></div>
+    <div class="stat-val">{value}</div>
+    <div class="stat-key">{label}{subtitle ? ` · ${subtitle}` : ''}</div>
   </div>
 {/snippet}
 
-{#snippet sessionInfoRow(icon: string, iconClass: string, label: string, value: string)}
-  <div class="session-info-row">
-    <span class="material-symbols-outlined session-info-icon {iconClass}">{icon}</span>
-    <div class="session-info-body">
-      <span class="session-info-label">{label}</span>
-      <span class="session-info-value">{value}</span>
-    </div>
-  </div>
-{/snippet}
-
-<div class="page">
-  <div class="stats-header-bar">
-    <div>
-      <h2>Bandwidth Statistics</h2>
-    </div>
-    <span class="stats-subtitle">
-      Session: {uptimeText}
-    </span>
-  </div>
-
-  <div class="stats-content">
-    <!-- Stat Cards -->
-    <div class="stats-cards-row">
-      {@render statCard('download', 'Total Downloaded', formatBytes(totalDownloaded), weeklyComparison)}
-      {@render statCard('upload', 'Session Uploaded', formatBytes(totalUploadedBytes), null, 'This session only')}
-      {@render statCard('speed', 'Average Speed', formatSpeed(avgSpeed), null, 'This session only')}
+<div class="content page-fade">
+  <div class="content-inner">
+    <!-- Stat cards -->
+    <div class="stat-grid">
+      {@render statCard('download', 'Total downloaded', formatBytes(totalDownloaded), weeklyComparison, 'vs last week')}
+      {@render statCard('upload', 'Session uploaded', formatBytes(totalUploadedBytes), null, 'this session')}
+      {@render statCard('speed', 'Average speed', formatSpeed(avgSpeed), null, 'this session')}
+      {@render statCard('bolt', 'Peak speed', formatSpeed(peakDownloadSpeed), null, 'this session')}
     </div>
 
     <!-- Network Activity Chart -->
-    <div class="stats-chart-panel">
+    <div class="section-h">Network activity</div>
+    <div class="card card-pad">
       <div class="stats-chart-header">
-        <div class="stats-chart-header-left">
-          <h3>Network Activity</h3>
-          <p>Download throughput over time</p>
+        <div>
+          <b class="panel-title">Download throughput</b>
+          <div class="panel-sub">Session uptime {uptimeText} · {stats.isConnected ? 'engine online' : 'engine offline'}</div>
         </div>
-        <div class="stats-chart-period-toggle">
-          {#each PERIODS as p (p)}
-            <button
-              class="period-btn{chartPeriod === p ? ' active' : ''}"
-              onclick={() => (chartPeriod = p)}
-            >
-              {p === '5m' ? '5 min' : p === '30m' ? '30 min' : 'Session'}
-            </button>
-          {/each}
-        </div>
+        <Segmented
+          value={chartPeriod}
+          options={[
+            { v: '5m', l: '5 min' },
+            { v: '30m', l: '30 min' },
+            { v: 'session', l: 'Session' },
+          ]}
+          onChange={(v) => (chartPeriod = v as ChartPeriod)}
+          label="Chart period"
+        />
       </div>
 
       {#if filteredSamples.length < 2}
-        <div class="stats-chart-body">
-          <div class="chart-empty">
-            <span class="material-symbols-outlined">show_chart</span>
-            <span>Collecting data... Speed samples will appear here.</span>
-          </div>
+        <div class="chart-empty">
+          <Icon name="show_chart" size={30} />
+          <span>Collecting data… speed samples will appear here.</span>
         </div>
       {:else}
         <div class="stats-chart-body" bind:this={bodyEl}>
           <svg class="stats-chart-svg" viewBox="0 0 {CHART_W} {CHART_H}" preserveAspectRatio="xMidYMid meet">
             <defs>
               <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.3" />
-                <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0.02" />
+                <stop offset="0%" stop-color="var(--signal)" stop-opacity="0.3" />
+                <stop offset="100%" stop-color="var(--signal)" stop-opacity="0.02" />
               </linearGradient>
             </defs>
 
@@ -391,11 +407,11 @@
               <g>
                 <line
                   x1={PLOT_LEFT} y1={y} x2={PLOT_LEFT + PLOT_WIDTH} y2={y}
-                  stroke="var(--border-primary)" stroke-width="1"
+                  stroke="var(--border)" stroke-width="1"
                   stroke-dasharray={pct === 0 ? undefined : '4 4'}
                 />
-                <text x={PLOT_LEFT - 8} y={y + 4} text-anchor="end" fill="var(--text-muted)" font-size="10"
-                  font-family="var(--font-mono)">
+                <text x={PLOT_LEFT - 8} y={y + 4} text-anchor="end" fill="var(--text-3)" font-size="10"
+                  font-family="var(--mono)">
                   {label}
                 </text>
               </g>
@@ -403,8 +419,8 @@
 
             <!-- X-axis labels -->
             {#each xLabels as { x, label }, i (i)}
-              <text {x} y={PLOT_BOTTOM + 20} text-anchor="middle" fill="var(--text-muted)"
-                font-size="10" font-family="var(--font-mono)">
+              <text {x} y={PLOT_BOTTOM + 20} text-anchor="middle" fill="var(--text-3)"
+                font-size="10" font-family="var(--mono)">
                 {label}
               </text>
             {/each}
@@ -416,18 +432,18 @@
 
             <!-- Line -->
             {#if linePath}
-              <path d={linePath} fill="none" stroke="var(--color-primary)" stroke-width="2.5"
-                stroke-linecap="round" stroke-linejoin="round" />
+              <path d={linePath} fill="none" stroke="var(--signal)" stroke-width="2"
+                stroke-linecap="square" stroke-linejoin="miter" />
             {/if}
 
             <!-- Hover elements -->
             {#if hoverInfo}
               <line
                 x1={hoverInfo.svgX} y1={PLOT_TOP} x2={hoverInfo.svgX} y2={PLOT_BOTTOM}
-                stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="4 4" opacity="0.5"
+                stroke="var(--text-3)" stroke-width="1" stroke-dasharray="4 4" opacity="0.5"
               />
-              <circle cx={hoverInfo.svgX} cy={hoverInfo.svgY} r="5" fill="var(--color-primary)"
-                stroke="var(--bg-secondary)" stroke-width="2" />
+              <rect x={hoverInfo.svgX - 3} y={hoverInfo.svgY - 3} width="6" height="6" fill="var(--signal)"
+                stroke="var(--surface)" stroke-width="1.5" />
             {/if}
 
             <!-- Invisible hover overlay -->
@@ -451,47 +467,98 @@
       {/if}
     </div>
 
-    <!-- Bottom Row: Session Info + Top Domains -->
-    <div class="stats-bottom-row">
-      <div class="stats-session-panel">
-        <h3>Session Info</h3>
-        <div class="session-info-grid">
-          {@render sessionInfoRow('schedule', 'primary', 'Uptime', uptimeText)}
-          {@render sessionInfoRow('dynamic_feed', 'success', 'Active Threads', `${stats.numActive} Active`)}
-          {@render sessionInfoRow('bolt', 'warning', 'Peak Speed', formatSpeed(peakDownloadSpeed))}
-          <div class="session-info-row">
-            <span class="material-symbols-outlined session-info-icon primary">wifi</span>
-            <div class="session-info-body">
-              <span class="session-info-label">Connection</span>
-              <div class="session-info-health">
-                <div class="connection-indicator {stats.isConnected ? 'connected' : 'disconnected'}"></div>
-                <span class="session-info-value">{stats.isConnected ? 'Connected' : 'Disconnected'}</span>
-              </div>
-            </div>
-          </div>
+    <!-- Download volume per day -->
+    <div class="section-h">Download volume</div>
+    <div class="card card-pad">
+      <div class="stats-chart-header">
+        <div>
+          <b class="panel-title">Completed per day</b>
+          <div class="panel-sub">From download history</div>
         </div>
+        <Segmented
+          value={volumePeriod}
+          options={[
+            { v: '7d', l: '7d' },
+            { v: '14d', l: '14d' },
+            { v: '30d', l: '30d' },
+          ]}
+          onChange={(v) => (volumePeriod = v as VolumePeriod)}
+          label="Volume period"
+        />
       </div>
+      <div class="volume-bars" class:dense={volumeDays === 30}>
+        {#each volumeBars as bar, i (i)}
+          <div class="volume-col">
+            <div
+              class="volume-bar"
+              class:hot={i === volumeBars.length - 1 && bar.bytes > 0}
+              style="height: {Math.max(bar.bytes > 0 ? 4 : 1, (bar.bytes / maxVolumeBytes) * 100)}%"
+              title="{formatBytes(bar.bytes)}"
+            ></div>
+            <span class="volume-label">{bar.label}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
 
-      <div class="stats-domains-panel">
-        <h3>Top Domains</h3>
-        {#if topDomains.length === 0}
-          <div class="stats-domains-empty">
-            <span class="material-symbols-outlined">language</span>
+    <!-- Bottom row -->
+    <div class="stats-grid-2">
+      <div class="card card-pad">
+        <b class="panel-title">Protocol split</b>
+        {#if protocolSplit.http + protocolSplit.bt === 0}
+          <div class="panel-empty">
+            <Icon name="donut_small" size={26} />
             <p>No download history yet.</p>
           </div>
         {:else}
-          <div class="stats-domains-list">
-            {#each topDomains as d, i (d.domain)}
+          <div class="proto-split">
+            <div class="proto-donut">
+              <svg viewBox="0 0 36 36" style="transform: rotate(-90deg)">
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="var(--track)" stroke-width="4" />
+                <circle
+                  cx="18" cy="18" r="15.9" fill="none"
+                  stroke="var(--accent)" stroke-width="4"
+                  stroke-dasharray="{protocolSplit.httpPct} 100"
+                />
+              </svg>
+              <div class="proto-donut-center">
+                <div class="proto-pct">{protocolSplit.httpPct}%</div>
+                <div class="proto-pct-label">HTTP</div>
+              </div>
+            </div>
+            <div class="proto-legend">
+              <div class="proto-row">
+                <span class="proto-dot" style="background: var(--accent)"></span>
+                <span class="proto-name">HTTP / HTTPS</span>
+                <span class="proto-val mono">{formatBytes(protocolSplit.http)}</span>
+              </div>
+              <div class="proto-row">
+                <span class="proto-dot" style="background: var(--seed)"></span>
+                <span class="proto-name">BitTorrent</span>
+                <span class="proto-val mono">{formatBytes(protocolSplit.bt)}</span>
+              </div>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="card card-pad">
+        <b class="panel-title">Top sources</b>
+        {#if topDomains.length === 0}
+          <div class="panel-empty">
+            <Icon name="language" size={26} />
+            <p>No download history yet.</p>
+          </div>
+        {:else}
+          <div class="domain-list">
+            {#each topDomains as d (d.domain)}
               <div class="domain-row">
-                <div class="domain-info">
+                <div class="domain-head">
                   <span class="domain-name">{d.domain}</span>
-                  <span class="domain-size">{formatBytes(d.totalBytes)}</span>
+                  <span class="domain-size mono">{formatBytes(d.totalBytes)}</span>
                 </div>
-                <div class="domain-bar-track">
-                  <div
-                    class="domain-bar-fill"
-                    style="width: {(d.totalBytes / maxDomainBytes) * 100}%; background-color: {DOMAIN_COLORS[i % DOMAIN_COLORS.length]}"
-                  ></div>
+                <div class="pbar" style="height: 6px">
+                  <div class="pfill done" style="width: {(d.totalBytes / maxDomainBytes) * 100}%"></div>
                 </div>
               </div>
             {/each}

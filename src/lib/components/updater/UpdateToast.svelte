@@ -18,12 +18,12 @@
 {#if updater.phase === 'available' && !updater.dismissed}
   <div class="update-toast" role="alert" aria-live="polite">
     <button class="update-toast-close" onclick={handleLater} aria-label="Close">
-      <span class="material-symbols-outlined">close</span>
+      <span class="ms">close</span>
     </button>
 
     <div class="update-toast-header">
       <div class="update-toast-icon-badge">
-        <span class="material-symbols-outlined">bolt</span>
+        <span class="ms">bolt</span>
       </div>
       <div class="update-toast-header-text">
         <span class="update-toast-label">GOSH-FETCH</span>
@@ -44,7 +44,7 @@
     <div class="update-toast-actions">
       <button class="btn btn-ghost" onclick={handleLater}>Later</button>
       <button class="btn btn-primary" onclick={handleUpdateNow}>
-        <span class="material-symbols-outlined" style="font-size: 16px">download</span>
+        <span class="ms" style="font-size: 16px">download</span>
         Update Now
       </button>
     </div>

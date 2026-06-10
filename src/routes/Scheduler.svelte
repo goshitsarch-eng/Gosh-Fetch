@@ -1,5 +1,8 @@
 <script lang="ts">
   import { api } from '../lib/api/commands';
+  import Icon from '../lib/components/ui/Icon.svelte';
+  import Switch from '../lib/components/ui/Switch.svelte';
+  import Segmented from '../lib/components/ui/Segmented.svelte';
   import './Scheduler.css';
 
   type CellMode = 'full' | 'limited' | 'paused';
@@ -192,222 +195,169 @@
   }
 </script>
 
-<div class="page">
-  <!-- Header bar -->
-  <div class="scheduler-header-bar">
-    <h2>Download Scheduler</h2>
-    <button
-      class="scheduler-save-btn"
-      onclick={handleSave}
-      disabled={saving || !isDirty}
-    >
-      <span class="material-symbols-outlined">save</span>
-      {saving ? 'Saving...' : 'Save Changes'}
-    </button>
-  </div>
-
-  <div class="scheduler-content">
-    <!-- Description + Legend -->
-    <div class="scheduler-description">
-      <div>
-        <h3>Weekly Grid</h3>
-        <p>
-          Drag across the grid to set download rules. Blue blocks indicate full speed,
-          striped blocks are speed-limited, and dark blocks pause all downloads.
-        </p>
-      </div>
-      <div class="scheduler-legend">
-        <div class="legend-pill">
-          <div class="legend-dot full"></div>
-          <span>Full Speed</span>
-        </div>
-        <div class="legend-pill">
-          <div class="legend-dot limited"></div>
-          <span>Limited</span>
-        </div>
-        <div class="legend-pill">
-          <div class="legend-dot paused"></div>
-          <span>Paused</span>
-        </div>
-      </div>
+<div class="content page-fade">
+  <div class="content-inner" style="max-width: 980px">
+    <!-- Save bar -->
+    <div class="sched-savebar">
+      <span class="tag-label">Bandwidth schedule · weekly grid</span>
+      <div class="toolbar-spacer"></div>
+      {#if isDirty}
+        <span class="sched-dirty">● Unsaved changes</span>
+      {/if}
+      <button class="btn btn-primary" onclick={handleSave} disabled={saving || !isDirty}>
+        <Icon name="save" size={16} />
+        {saving ? 'Saving…' : 'Save'}
+      </button>
     </div>
 
-    <!-- Grid Container -->
-    <div class="scheduler-grid-container">
-      <!-- Toolbar -->
-      <div class="scheduler-toolbar">
-        <div class="scheduler-toolbar-left">
-          <span>Paint Mode:</span>
-          <div class="paint-mode-group">
-            <button
-              class="paint-btn{paintMode === 'full' ? ' active' : ''}"
-              onclick={() => (paintMode = 'full')}
-            >
-              <span class="material-symbols-outlined">bolt</span>
-              Full Speed
-            </button>
-            <button
-              class="paint-btn{paintMode === 'limited' ? ' active' : ''}"
-              onclick={() => (paintMode = 'limited')}
-            >
-              <span class="material-symbols-outlined">speed</span>
-              Limited
-            </button>
-            <button
-              class="paint-btn{paintMode === 'paused' ? ' active' : ''}"
-              onclick={() => (paintMode = 'paused')}
-            >
-              <span class="material-symbols-outlined">pause</span>
-              Paused
-            </button>
-          </div>
+    <!-- Grid card -->
+    <div class="card">
+      <div class="sched-toolbar">
+        <span class="tag-label">Paint mode</span>
+        <div class="chips">
+          <button class="chip" class:active={paintMode === 'full'} onclick={() => (paintMode = 'full')}>
+            <Icon name="bolt" size={14} /> Full speed
+          </button>
+          <button class="chip" class:active={paintMode === 'limited'} onclick={() => (paintMode = 'limited')}>
+            <Icon name="speed" size={14} /> Limited
+          </button>
+          <button class="chip" class:active={paintMode === 'paused'} onclick={() => (paintMode = 'paused')}>
+            <Icon name="pause" size={14} /> Paused
+          </button>
         </div>
-        <button class="clear-grid-btn" onclick={clearGrid} title="Clear Grid">
-          <span class="material-symbols-outlined">delete_sweep</span>
+        <div class="toolbar-spacer"></div>
+        <div class="sched-legend">
+          <span><i class="cell-swatch full"></i>Full</span>
+          <span><i class="cell-swatch limited"></i>Limited</span>
+          <span><i class="cell-swatch paused"></i>Paused</span>
+        </div>
+        <button class="icon-btn" onclick={clearGrid} title="Clear grid" style="width: 32px; height: 32px">
+          <Icon name="delete_sweep" size={17} />
         </button>
       </div>
 
-      <!-- Grid -->
-      <div class="scheduler-grid-area" ontouchmove={handleTouchMove}>
-        <div class="scheduler-grid-inner">
-          <div class="scheduler-time-labels">
-            {#each TIME_LABELS as t (t)}
-              <span>{t}</span>
-            {/each}
-          </div>
-          <div class="scheduler-days">
-            {#each DAYS as day, dayIdx (day)}
-              <div class="scheduler-day-row">
-                <span class="scheduler-day-label">{day}</span>
-                <div class="scheduler-cells">
-                  {#each Array.from({ length: 24 }, (_, h) => h) as hour (hour)}
-                    <div
-                      class="scheduler-cell {grid[dayIdx][hour]}"
-                      data-cell="{dayIdx},{hour}"
-                      role="presentation"
-                      onmousedown={(e) => handleMouseDown(dayIdx, hour, e)}
-                      onmouseenter={() => handleMouseEnter(dayIdx, hour)}
-                      ontouchstart={(e) => handleTouchStart(dayIdx, hour, e)}
-                    ></div>
-                  {/each}
-                </div>
-              </div>
-            {/each}
-          </div>
+      <div class="sched-grid-area" ontouchmove={handleTouchMove}>
+        <div class="sched-time-labels">
+          {#each TIME_LABELS as t (t)}
+            <span>{t}</span>
+          {/each}
         </div>
+        {#each DAYS as day, dayIdx (day)}
+          <div class="sched-day-row">
+            <span class="sched-day-label">{day}</span>
+            <div class="sched-cells">
+              {#each Array.from({ length: 24 }, (_, h) => h) as hour (hour)}
+                <div
+                  class="sched-cell {grid[dayIdx][hour]}"
+                  data-cell="{dayIdx},{hour}"
+                  role="presentation"
+                  onmousedown={(e) => handleMouseDown(dayIdx, hour, e)}
+                  onmouseenter={() => handleMouseEnter(dayIdx, hour)}
+                  ontouchstart={(e) => handleTouchStart(dayIdx, hour, e)}
+                ></div>
+              {/each}
+            </div>
+          </div>
+        {/each}
       </div>
     </div>
 
-    <!-- Config Cards -->
-    <div class="scheduler-config-grid">
-      <!-- Scheduled Limit Speed -->
-      <div class="scheduler-config-card">
-        <div class="scheduler-config-card-inner">
-          <div class="scheduler-config-icon">
-            <span class="material-symbols-outlined">speed</span>
+    <!-- Config -->
+    <div class="section-h">Schedule configuration</div>
+    <div class="card card-pad">
+      <div class="set-row">
+        <div class="set-info">
+          <div class="t">Scheduled limit speed</div>
+          <div class="d">Maximum download speed during "Limited" blocks</div>
+        </div>
+        <div class="set-control sched-limit">
+          <div class="input-group" style="width: 130px">
+            <input
+              class="input mono"
+              type="text"
+              inputmode="numeric"
+              value={limitSpeed}
+              oninput={(e) => { limitSpeed = e.currentTarget.value; isDirty = true; }}
+              aria-label="Scheduled limit speed"
+            />
           </div>
-          <div class="scheduler-config-body">
-            <h4>Scheduled Limit Speed</h4>
-            <p>Maximum download speed applied during "Limited" blocks.</p>
-            <div class="speed-input-row">
-              <div class="speed-input-wrapper">
-                <input
-                  type="text"
-                  value={limitSpeed}
-                  oninput={(e) => { limitSpeed = e.currentTarget.value; isDirty = true; }}
-                  inputmode="numeric"
-                />
-                <span class="speed-input-suffix">{limitUnit}</span>
-              </div>
-              <div class="speed-unit-group">
-                <button
-                  class="speed-unit-btn{limitUnit === 'KB/s' ? ' active' : ''}"
-                  onclick={() => { limitUnit = 'KB/s'; isDirty = true; }}
-                >KB/s</button>
-                <button
-                  class="speed-unit-btn{limitUnit === 'MB/s' ? ' active' : ''}"
-                  onclick={() => { limitUnit = 'MB/s'; isDirty = true; }}
-                >MB/s</button>
-              </div>
-            </div>
-          </div>
+          <Segmented
+            value={limitUnit}
+            options={[
+              { v: 'KB/s', l: 'KB/s' },
+              { v: 'MB/s', l: 'MB/s' },
+            ]}
+            onChange={(v) => { limitUnit = v as 'KB/s' | 'MB/s'; isDirty = true; }}
+            label="Limit unit"
+          />
         </div>
       </div>
 
-      <!-- Schedule Logic -->
-      <div class="scheduler-config-card">
-        <div class="scheduler-config-card-inner">
-          <div class="scheduler-config-icon">
-            <span class="material-symbols-outlined">toggle_on</span>
-          </div>
-          <div class="scheduler-config-body">
-            <h4>Schedule Logic</h4>
-            <p>Control how the scheduler interacts with manual actions.</p>
-            <div class="scheduler-toggle-row">
-              <span>Start/Stop based on schedule</span>
-              <label class="scheduler-toggle">
-                <input
-                  type="checkbox"
-                  checked={scheduleEnabled}
-                  onchange={(e) => { scheduleEnabled = e.currentTarget.checked; isDirty = true; }}
-                />
-                <div class="toggle-track"></div>
-                <div class="toggle-thumb"></div>
-              </label>
-            </div>
-            <div class="scheduler-toggle-row{!scheduleEnabled ? ' disabled' : ''}">
-              <span>Force pause manual downloads</span>
-              <label class="scheduler-toggle">
-                <input
-                  type="checkbox"
-                  checked={forcePauseManual}
-                  disabled={!scheduleEnabled}
-                  onchange={(e) => { forcePauseManual = e.currentTarget.checked; isDirty = true; }}
-                />
-                <div class="toggle-track"></div>
-                <div class="toggle-thumb"></div>
-              </label>
-            </div>
-          </div>
+      <div class="set-row">
+        <div class="set-info">
+          <div class="t">Start / stop based on schedule</div>
+          <div class="d">Apply the weekly grid to all downloads</div>
+        </div>
+        <Switch
+          on={scheduleEnabled}
+          onToggle={() => { scheduleEnabled = !scheduleEnabled; isDirty = true; }}
+          label="Enable schedule"
+        />
+      </div>
+
+      <div class="set-row" class:row-disabled={!scheduleEnabled}>
+        <div class="set-info">
+          <div class="t">Force pause manual downloads</div>
+          <div class="d">Paused blocks also pause downloads you started by hand</div>
+        </div>
+        <Switch
+          on={forcePauseManual}
+          onToggle={() => { if (scheduleEnabled) { forcePauseManual = !forcePauseManual; isDirty = true; } }}
+          label="Force pause manual downloads"
+        />
+      </div>
+
+      <div class="set-row" class:row-disabled={!scheduleEnabled}>
+        <div class="set-info">
+          <div class="t">On completion</div>
+          <div class="d">Action when all scheduled downloads finish</div>
+        </div>
+        <div class="set-control">
+          <select
+            class="select"
+            style="width: 190px"
+            value={onCompletion}
+            disabled={!scheduleEnabled}
+            onchange={(e) => { onCompletion = e.currentTarget.value; isDirty = true; }}
+            aria-label="On completion action"
+          >
+            <option value="nothing">Do nothing</option>
+            <option value="close">Close Gosh-Fetch</option>
+            <option value="sleep">Sleep computer</option>
+            <option value="shutdown">Shutdown computer</option>
+          </select>
         </div>
       </div>
 
-      <!-- On Completion -->
-      <div class="scheduler-config-card">
-        <div class="scheduler-config-card-inner">
-          <div class="scheduler-config-icon">
-            <span class="material-symbols-outlined">power_settings_new</span>
-          </div>
-          <div class="scheduler-config-body">
-            <h4>On Completion</h4>
-            <p>Action to perform when all scheduled downloads finish.</p>
-            <div class="scheduler-select-wrapper">
-              <select
-                value={onCompletion}
-                disabled={!scheduleEnabled}
-                onchange={(e) => { onCompletion = e.currentTarget.value; isDirty = true; }}
-              >
-                <option value="nothing">Do nothing</option>
-                <option value="close">Close Gosh-Fetch</option>
-                <option value="sleep">Sleep Computer</option>
-                <option value="shutdown">Shutdown Computer</option>
-              </select>
-              <div class="scheduler-select-chevron">
-                <span class="material-symbols-outlined">expand_more</span>
-              </div>
-            </div>
-            <div class="scheduler-checkbox-row">
-              <input
-                type="checkbox"
-                id="force-close"
-                checked={forceCloseApps}
-                disabled={!scheduleEnabled}
-                onchange={(e) => { forceCloseApps = e.currentTarget.checked; isDirty = true; }}
-              />
-              <label for="force-close">Force close blocking apps</label>
-            </div>
-          </div>
+      <div class="set-row" class:row-disabled={!scheduleEnabled}>
+        <div class="set-info">
+          <div class="t">Force close blocking apps</div>
+          <div class="d">When shutting down, close apps that prevent it</div>
         </div>
+        <Switch
+          on={forceCloseApps}
+          onToggle={() => { if (scheduleEnabled) { forceCloseApps = !forceCloseApps; isDirty = true; } }}
+          label="Force close blocking apps"
+        />
+      </div>
+    </div>
+
+    <div class="sched-hint">
+      <Icon name="lightbulb" fill size={19} style="color: var(--accent-strong); margin-top: 1px" />
+      <div>
+        Drag across the grid to paint rules. Rules apply globally across all active
+        downloads. A "Limited" block uses the scheduled limit speed; a "Paused" block
+        stops transfers entirely.
       </div>
     </div>
   </div>

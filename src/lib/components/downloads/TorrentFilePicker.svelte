@@ -196,7 +196,7 @@
             onchange={() => toggleFile(node.index)}
           />
           <span class={`file-row-icon ${fileIcon.colorClass}`}>
-            <span class="material-symbols-outlined">{fileIcon.icon}</span>
+            <span class="ms">{fileIcon.icon}</span>
           </span>
           <span class="file-row-label" title={node.name}>{node.name}</span>
         </div>
@@ -214,7 +214,7 @@
               <option value="Skip">Skip</option>
             </select>
             <div class="select-chevron">
-              <span class="material-symbols-outlined">expand_more</span>
+              <span class="ms">expand_more</span>
             </div>
           </div>
         </div>
@@ -226,7 +226,7 @@
     <div class={`file-row folder-row${depth > 0 ? ' nested-bg' : ''}`}>
       <div class={`file-row-name${depth > 0 ? ` indent-${Math.min(depth, 3)}` : ''}`} style={indentStyle(depth)}>
         <button class="file-row-expand" onclick={() => toggleExpand(node.path)}>
-          <span class="material-symbols-outlined">
+          <span class="ms">
             {isExpanded ? 'expand_more' : 'chevron_right'}
           </span>
         </button>
@@ -237,7 +237,7 @@
           onchange={() => toggleFolder(node)}
         />
         <span class="file-row-icon icon-yellow">
-          <span class="material-symbols-outlined">
+          <span class="ms">
             {isExpanded ? 'folder_open' : 'folder'}
           </span>
         </span>
@@ -262,7 +262,7 @@
             <option value="Skip">Skip</option>
           </select>
           <div class="select-chevron">
-            <span class="material-symbols-outlined">expand_more</span>
+            <span class="ms">expand_more</span>
           </div>
         </div>
       </div>
@@ -275,20 +275,20 @@
   {/if}
 {/snippet}
 
-<div class="modal-backdrop" onclick={onCancel} onkeydown={handleKeyDown} role="dialog" aria-modal="true" aria-labelledby="file-picker-title">
+<div class="scrim" onclick={onCancel} onkeydown={handleKeyDown} role="dialog" aria-modal="true" aria-labelledby="file-picker-title">
   <div class="modal file-picker-modal" onclick={(e) => e.stopPropagation()} bind:this={modalEl}>
     <!-- Header -->
     <div class="file-picker-header">
       <div class="file-picker-header-left">
         <div class="file-picker-icon">
-          <span class="material-symbols-outlined">folder_zip</span>
+          <span class="ms">folder_zip</span>
         </div>
         <div class="file-picker-title-group">
           <div class="file-picker-title" id="file-picker-title" title={torrentInfo.name}>
             {torrentInfo.name}
           </div>
           <div class="file-picker-subtitle">
-            <span class="material-symbols-outlined">database</span>
+            <span class="ms">database</span>
             <span>{formatBytes(torrentInfo.totalSize)} Total</span>
             <span>•</span>
             <span class="file-picker-selected-size">{formatBytes(selectedSize)} Selected</span>
@@ -297,7 +297,7 @@
       </div>
       <div class="file-picker-header-actions">
         <button onclick={onCancel} aria-label="Close">
-          <span class="material-symbols-outlined">close</span>
+          <span class="ms">close</span>
         </button>
       </div>
     </div>
@@ -305,7 +305,7 @@
     <!-- Toolbar -->
     <div class="file-picker-toolbar">
       <div class="file-picker-search">
-        <span class="material-symbols-outlined">search</span>
+        <span class="ms">search</span>
         <input
           type="text"
           placeholder="Filter files by name..."
@@ -323,9 +323,9 @@
             class="file-picker-bulk-priority-btn"
             onclick={() => (showBulkDropdown = !showBulkDropdown)}
           >
-            <span class="material-symbols-outlined">tune</span>
+            <span class="ms">tune</span>
             Set Priority
-            <span class="material-symbols-outlined">arrow_drop_down</span>
+            <span class="ms">arrow_drop_down</span>
           </button>
           {#if showBulkDropdown}
             <div class="file-picker-bulk-dropdown">
@@ -380,7 +380,7 @@
           disabled={selected.size === 0}
           type="button"
         >
-          <span class="material-symbols-outlined">download</span>
+          <span class="ms">download</span>
           Download Selected
         </button>
       </div>

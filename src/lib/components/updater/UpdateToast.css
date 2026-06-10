@@ -1,130 +1,79 @@
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
+/* Update-available toast — hard-shadow console card */
 .update-toast {
   position: fixed;
-  bottom: calc(var(--statusbar-height) + var(--space-md));
-  right: var(--space-lg);
-  z-index: 1050;
-  width: 380px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
-  padding: var(--space-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  animation: slideInRight 300ms ease;
+  bottom: 20px;
+  right: 20px;
+  z-index: 55;
+  width: 320px;
+  background: var(--surface);
+  border: 1.5px solid var(--ink);
+  box-shadow: 7px 7px 0 0 var(--hard);
+  animation: toastIn 0.22s var(--ease);
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
 }
 
 .update-toast-close {
   position: absolute;
-  top: var(--space-sm);
-  right: var(--space-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
   border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: var(--space-xs);
-  border-radius: var(--radius-sm);
-  transition: color var(--transition-fast);
+  background: none;
+  color: var(--text-3);
+  display: grid;
+  place-items: center;
 }
+.update-toast-close:hover { background: var(--ink); color: var(--paper); }
+.update-toast-close .ms { font-size: 16px; }
 
-.update-toast-close:hover {
-  color: var(--text-primary);
-}
-
-.update-toast-close .material-symbols-outlined {
-  font-size: 18px;
-}
-
-/* Header: icon badge + label + version */
 .update-toast-header {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 11px;
+  padding: 14px 16px 0;
 }
-
 .update-toast-icon-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
-  color: white;
-  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  background: var(--ink);
+  color: var(--signal);
+  display: grid;
+  place-items: center;
+  flex: none;
 }
-
-.update-toast-icon-badge .material-symbols-outlined {
-  font-size: 18px;
-}
-
-.update-toast-header-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
+.update-toast-icon-badge .ms { font-size: 19px; }
+.update-toast-header-text { display: flex; flex-direction: column; gap: 2px; }
 .update-toast-label {
-  font-size: 11px;
+  font-family: var(--mono);
+  font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--text-secondary);
+  letter-spacing: 0.16em;
+  color: var(--text-3);
+  text-transform: uppercase;
 }
-
 .update-toast-version {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--color-success);
-}
-
-.update-toast-pulse-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-success);
-  animation: pulse 2s ease-in-out infinite;
-}
-
-/* Body */
-.update-toast-body {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-
-.update-toast-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.update-toast-desc {
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
   font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
+  font-weight: 700;
+  color: var(--signal-ink);
 }
+.update-toast-pulse-dot { width: 6px; height: 6px; background: var(--signal); animation: blink 1.1s steps(1) infinite; }
 
-/* Actions */
+.update-toast-body { padding: 12px 16px 0; }
+.update-toast-title { margin: 0; font-size: 13.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.01em; }
+.update-toast-desc { margin: 6px 0 0; font-family: var(--mono); font-size: 11px; color: var(--text-3); line-height: 1.5; }
+
 .update-toast-actions {
   display: flex;
-  gap: var(--space-sm);
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 16px;
 }
-
-.update-toast-actions .btn {
-  flex: 1;
-}
+.update-toast-actions .btn { padding: 7px 12px; font-size: 11px; }

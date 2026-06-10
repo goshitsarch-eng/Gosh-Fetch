@@ -1,48 +1,47 @@
+/* Sortable wrapper for active download rows (table layout).
+   The grab handle overlays the row's left padding and appears on hover. */
 .sortable-card-wrapper {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
+  position: relative;
 }
 
-.drag-handle {
+.sortable-card-wrapper .drag-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  flex-shrink: 0;
   cursor: grab;
-  color: var(--text-muted);
-  font-size: 18px;
+  color: var(--text-3);
+  opacity: 0;
   user-select: none;
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  transition: color var(--transition-fast), background var(--transition-fast);
+  z-index: 3;
+  transition: opacity 0.12s;
 }
 
-.drag-handle:hover {
-  color: var(--text-secondary);
-  background: var(--bg-hover);
+.sortable-card-wrapper:hover .drag-handle {
+  opacity: 0.7;
 }
 
-.drag-handle:active {
+.sortable-card-wrapper .drag-handle:hover {
+  opacity: 1;
+  color: var(--text);
+}
+
+.sortable-card-wrapper .drag-handle:active {
   cursor: grabbing;
 }
 
-.sortable-card-wrapper .download-card {
-  flex: 1;
-  min-width: 0;
+.sortable-card-wrapper .dl-row {
+  border-bottom: 1.5px solid var(--border);
 }
 
-.sortable-card-wrapper.is-dragging {
-  opacity: 0.4;
-}
-
-.drag-overlay-card {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-}
-
-.drag-overlay-card .sortable-card-wrapper {
-  opacity: 1;
+/* hard-offset ghost while dragging */
+#dnd-action-dragged-el .dl-row,
+.sortable-card-wrapper.is-dragging .dl-row {
+  background: var(--surface-inset);
+  outline: 1.5px solid var(--ink);
+  box-shadow: 5px 5px 0 0 var(--hard);
 }

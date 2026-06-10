@@ -2,6 +2,8 @@
 // gosh-fetch:open-add-modal / focus-search / select-all).
 class UiStore {
   addModalOpen = $state(false);
+  /** Global search query — input lives in the ModeBar; Downloads/History filter on it. */
+  searchQuery = $state('');
   /** Incrementing counters: components $effect on these to react to signals. */
   focusSearchTick = $state(0);
   selectAllTick = $state(0);

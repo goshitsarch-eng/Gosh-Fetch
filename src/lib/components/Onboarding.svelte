@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getVersion } from '@tauri-apps/api/app';
   import { api } from '../api/commands';
   import {
     selectFile,
@@ -8,13 +9,16 @@
     setMagnetHandler,
     isMagnetHandler,
   } from '../api/system';
-  import { theme } from '../stores/theme.svelte';
+  import { theme, ACCENTS } from '../stores/theme.svelte';
   import type { Theme } from '../stores/theme.svelte';
+  import Icon from './ui/Icon.svelte';
+  import Switch from './ui/Switch.svelte';
+  import Segmented from './ui/Segmented.svelte';
   import './Onboarding.css';
 
   let { onComplete }: { onComplete: () => void } = $props();
 
-  let step = $state(1);
+  let step = $state(0);
   let downloadPath = $state('');
   let alwaysAskLocation = $state(false);
   let selectedTheme = $state<Theme>(theme.theme);
@@ -24,6 +28,12 @@
   let appVersion = $state('');
   let overlayEl = $state<HTMLDivElement | null>(null);
 
+  const STEPS = [
+    { art: 'downloading', title: 'Welcome to Gosh-Fetch' },
+    { art: 'folder_open', title: 'Where should downloads go?' },
+    { art: 'tune', title: 'System integration' },
+  ];
+
   // Load defaults on mount
   $effect(() => {
     (async () => {
@@ -31,7 +41,7 @@
         downloadPath = await api.getDefaultDownloadPath();
       } catch {}
       try {
-        appVersion = await api.getAppVersion();
+        appVersion = await getVersion();
       } catch {}
       // Check current protocol/login state
       try {
@@ -80,13 +90,7 @@
     return () => overlay.removeEventListener('keydown', trapFocus);
   });
 
-  function goNext() {
-    step = Math.min(step + 1, 3);
-  }
-
-  function goBack() {
-    step = Math.max(step - 1, 1);
-  }
+  const isLast = $derived(step === STEPS.length - 1);
 
   async function handleBrowse() {
     const selected = await selectDirectory();
@@ -107,6 +111,11 @@
     } catch (err) {
       console.error('Failed to import settings:', err);
     }
+  }
+
+  function handleSkip() {
+    localStorage.setItem('gosh-fetch-onboarding-done', '1');
+    onComplete();
   }
 
   async function handleFinish() {
@@ -144,345 +153,172 @@
   }
 </script>
 
-<div class="onboarding-overlay" bind:this={overlayEl} role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
-  {#if step === 1}
-    <!-- Step 1: Welcome -->
-    <div class="welcome-step">
-      <div class="welcome-bg"></div>
-
-      <header class="welcome-header">
-        <div class="welcome-version">
-          <span class="material-symbols-outlined">cloud_download</span>
-          <span>{appVersion ? `v${appVersion}` : ''}</span>
+<div class="ob-scrim" bind:this={overlayEl} role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+  <div class="modal ob-modal">
+    <div class="ob-head">
+      <div class="brand-mark ob-mark"><Icon name={STEPS[step].art} fill size={32} /></div>
+      <div class="ob-title" id="onboarding-title">{STEPS[step].title}</div>
+      {#if step === 0}
+        <div class="ob-sub">
+          A fast, private download manager for HTTP and BitTorrent — powered by a
+          native Rust engine.{appVersion ? ` v${appVersion}` : ''}
         </div>
-        <div class="welcome-window-controls">
-          <button tabindex="-1" aria-label="window control"></button>
-          <button tabindex="-1" aria-label="window control"></button>
-          <button tabindex="-1" aria-label="window control"></button>
-        </div>
-      </header>
-
-      <main class="welcome-content">
-        <div class="welcome-hero">
-          <div class="welcome-logo-ring">
-            <div class="welcome-logo-icon">
-              <span class="material-symbols-outlined">bolt</span>
-            </div>
-          </div>
-          <div class="welcome-text">
-            <h1 id="onboarding-title" class="welcome-title">
-              Welcome to <span class="highlight">Gosh-Fetch</span>
-            </h1>
-            <p class="welcome-subtitle">
-              A fast, transparent, and user-centric download manager.
-            </p>
-          </div>
-        </div>
-
-        <div class="welcome-features">
-          <div class="welcome-feature-card">
-            <div class="feature-icon blue">
-              <span class="material-symbols-outlined">speed</span>
-            </div>
-            <div class="feature-text">
-              <h3>Rust-Powered Speed</h3>
-              <p>Optimized specifically for low memory usage and high throughput on all connections.</p>
-            </div>
-          </div>
-
-          <div class="welcome-feature-card">
-            <div class="feature-icon emerald">
-              <span class="material-symbols-outlined">hub</span>
-            </div>
-            <div class="feature-text">
-              <h3>Native BitTorrent</h3>
-              <p>Handle magnet links directly within the app without needing third-party plugins.</p>
-            </div>
-          </div>
-
-          <div class="welcome-feature-card">
-            <div class="feature-icon purple">
-              <span class="material-symbols-outlined">security</span>
-            </div>
-            <div class="feature-text">
-              <h3>Privacy First</h3>
-              <p>Zero telemetry. Your download history stays local and is never shared.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="welcome-cta-section">
-          <button class="welcome-cta-btn" onclick={goNext}>
-            <span>Get Started</span>
-            <span class="material-symbols-outlined">arrow_forward</span>
-          </button>
-          <button class="welcome-import-link" onclick={handleImportSettings}>
-            <span class="material-symbols-outlined">file_upload</span>
-            Import settings from previous version
-          </button>
-        </div>
-      </main>
-
-      <div class="welcome-bottom-line"></div>
+      {:else if step === 1}
+        <div class="ob-sub">Pick a default save location. You can always change it per download.</div>
+      {:else}
+        <div class="ob-sub">Choose how Gosh-Fetch works with your desktop. All optional.</div>
+      {/if}
     </div>
-  {/if}
 
-  {#if step > 1}
-    <header class="onboarding-header">
-      <div class="onboarding-logo">
-        <span class="material-symbols-outlined">bolt</span>
-        <span>Gosh-Fetch</span>
-      </div>
-      <div class="onboarding-step-info">
-        <span class="onboarding-step-label">Step {step} of 3</span>
-        <div class="onboarding-progress-track">
-          <div
-            class="onboarding-progress-fill"
-            style="width: {(step / 3) * 100}%"
-          ></div>
-        </div>
-      </div>
-    </header>
-  {/if}
-
-  {#if step === 2}
-    <!-- Step 2: Initial Setup -->
-    <div class="setup-step">
-      <div class="setup-left-pane">
-        <div>
-          <div class="setup-left-icon">
-            <span class="material-symbols-outlined">folder_managed</span>
-          </div>
-          <h1>Default Save Location</h1>
-          <p class="setup-desc">
-            Choose where your files will be saved by default. We recommend selecting a drive with plenty of free space for large downloads.
-          </p>
-        </div>
-        <div class="setup-left-hint">
-          <span class="material-symbols-outlined">info</span>
-          <p>You can change this later in settings.</p>
-        </div>
-      </div>
-
-      <div class="setup-right-pane">
-        <div class="setup-right-inner">
-          <!-- Storage Configuration -->
-          <div class="setup-section">
-            <h2>Storage Configuration</h2>
-            <div class="setup-path-label">Downloads Folder</div>
-            <div class="setup-path-row">
-              <input
-                type="text"
-                class="setup-path-input"
-                value={downloadPath}
-                readonly
-              />
-              <button class="setup-browse-btn" onclick={handleBrowse}>
-                <span class="material-symbols-outlined">folder_open</span>
-                Browse
-              </button>
-            </div>
-
-            <div class="ob-toggle-card">
-              <div class="ob-toggle-info">
-                <span class="title">Always ask for save location</span>
-                <span class="desc">Prompt for destination before every download starts</span>
-              </div>
-              <label class="ob-toggle">
-                <input
-                  type="checkbox"
-                  bind:checked={alwaysAskLocation}
-                />
-                <span class="ob-toggle-track"></span>
-                <span class="ob-toggle-thumb"></span>
-              </label>
+    <div class="modal-body ob-body">
+      {#if step === 0}
+        <div class="ob-feature-grid">
+          <div class="ob-feature">
+            <Icon name="bolt" fill size={20} style="color: var(--accent)" />
+            <div>
+              <div class="ft">Multi-segment</div>
+              <div class="fd">Up to 128 parallel parts</div>
             </div>
           </div>
+          <div class="ob-feature">
+            <Icon name="hub" fill size={20} style="color: var(--accent)" />
+            <div>
+              <div class="ft">BitTorrent</div>
+              <div class="fd">Magnet, DHT, PEX &amp; LPD</div>
+            </div>
+          </div>
+          <div class="ob-feature">
+            <Icon name="lock" fill size={20} style="color: var(--accent)" />
+            <div>
+              <div class="ft">Fully private</div>
+              <div class="fd">No accounts, no telemetry</div>
+            </div>
+          </div>
+          <div class="ob-feature">
+            <Icon name="devices" fill size={20} style="color: var(--accent)" />
+            <div>
+              <div class="ft">Cross-platform</div>
+              <div class="fd">Linux, macOS &amp; Windows</div>
+            </div>
+          </div>
+        </div>
+        <button class="ob-import-link" onclick={handleImportSettings}>
+          <Icon name="file_upload" size={15} /> Import settings from a previous version
+        </button>
+      {/if}
 
-          <div class="setup-divider"></div>
+      {#if step === 1}
+        <div class="field">
+          <label for="ob-download-path">Default download folder</label>
+          <div class="input-group">
+            <input id="ob-download-path" class="input mono" type="text" value={downloadPath} readonly />
+            <button class="addon ob-addon-btn" onclick={handleBrowse} type="button">
+              <Icon name="folder" size={16} /> Browse
+            </button>
+          </div>
+        </div>
 
-          <!-- Theme Preference -->
-          <div class="setup-section">
-            <h2>Theme Preference</h2>
-            <div class="theme-select-grid">
+        <div class="set-row" style="border: none; padding: 8px 0 0">
+          <div class="set-info">
+            <div class="t" style="font-size: 13px">Always ask for save location</div>
+            <div class="d">Prompt for destination before every download starts</div>
+          </div>
+          <Switch on={alwaysAskLocation} onToggle={() => (alwaysAskLocation = !alwaysAskLocation)} label="Always ask for save location" />
+        </div>
+
+        <div class="set-row" style="border: none; padding: 0">
+          <div class="set-info">
+            <div class="t" style="font-size: 13px">Theme</div>
+            <div class="d">Paper (light) or Console (dark)</div>
+          </div>
+          <Segmented
+            value={selectedTheme}
+            options={[
+              { v: 'light', l: 'Paper' },
+              { v: 'dark', l: 'Console' },
+              { v: 'system', l: 'Auto' },
+            ]}
+            onChange={(v) => (selectedTheme = v as Theme)}
+            label="Theme"
+          />
+        </div>
+
+        <div class="set-row" style="border: none; padding: 0">
+          <div class="set-info">
+            <div class="t" style="font-size: 13px">Signal color</div>
+            <div class="d">Active / download highlight</div>
+          </div>
+          <div class="ob-accents">
+            {#each ACCENTS as a (a.v)}
               <button
-                class="theme-select-card{selectedTheme === 'system' ? ' selected' : ''}"
-                onclick={() => (selectedTheme = 'system')}
-              >
-                <div class="theme-select-card-icon system">
-                  <span class="material-symbols-outlined">settings_brightness</span>
-                </div>
-                <span>System</span>
-                <div class="theme-check">
-                  <span class="material-symbols-outlined">check_circle</span>
-                </div>
-              </button>
-
-              <button
-                class="theme-select-card{selectedTheme === 'light' ? ' selected' : ''}"
-                onclick={() => (selectedTheme = 'light')}
-              >
-                <div class="theme-select-card-icon light">
-                  <span class="material-symbols-outlined">light_mode</span>
-                </div>
-                <span>Light</span>
-                <div class="theme-check">
-                  <span class="material-symbols-outlined">check_circle</span>
-                </div>
-              </button>
-
-              <button
-                class="theme-select-card{selectedTheme === 'dark' ? ' selected' : ''}"
-                onclick={() => (selectedTheme = 'dark')}
-              >
-                <div class="theme-select-card-icon dark">
-                  <span class="material-symbols-outlined">dark_mode</span>
-                </div>
-                <span>Dark</span>
-                <div class="theme-check">
-                  <span class="material-symbols-outlined">check_circle</span>
-                </div>
-              </button>
-            </div>
+                class="ob-accent"
+                class:on={theme.accent === a.v}
+                style="background: hsl({a.v} 100% 50%)"
+                title={a.name}
+                aria-label={a.name}
+                aria-pressed={theme.accent === a.v}
+                onclick={() => theme.setAccent(a.v)}
+              ></button>
+            {/each}
           </div>
         </div>
-      </div>
-    </div>
-  {/if}
+      {/if}
 
-  {#if step === 3}
-    <!-- Step 3: Desktop Integration -->
-    <div class="integration-step">
-      <div class="integration-inner">
-        <!-- Step progress -->
-        <div class="step-progress">
-          <div class="step-progress-header">
-            <span class="step-count">Step 3 of 3</span>
-            <span class="step-active">Integration</span>
-          </div>
-          <div class="step-progress-bars">
-            <div class="bar completed"></div>
-            <div class="bar completed"></div>
-            <div class="bar active"></div>
-          </div>
-          <div class="step-progress-labels">
-            <span>Appearance</span>
-            <span>Network</span>
-            <span class="active">Integration</span>
-          </div>
-        </div>
-
-        <!-- Heading -->
-        <div class="integration-heading">
-          <h1>Desktop Integration</h1>
-          <p>
-            Configure how Gosh-Fetch interacts with your OS. You can change these settings later in preferences.
-          </p>
-        </div>
-
-        <!-- Toggle cards -->
-        <div class="integration-toggles">
-          <label class="integration-toggle-card">
-            <div class="integration-toggle-left">
-              <div class="integration-toggle-icon">
-                <span class="material-symbols-outlined">folder_zip</span>
-              </div>
-              <div class="integration-toggle-text">
-                <h3>Default Torrent Handler</h3>
-                <p>Automatically open .torrent files with Gosh-Fetch</p>
-              </div>
-            </div>
-            <div class="ob-toggle">
-              <input
-                type="checkbox"
-                bind:checked={torrentHandler}
-              />
-              <span class="ob-toggle-track"></span>
-              <span class="ob-toggle-thumb"></span>
-            </div>
-          </label>
-
-          <label class="integration-toggle-card">
-            <div class="integration-toggle-left">
-              <div class="integration-toggle-icon">
-                <span class="material-symbols-outlined">link</span>
-              </div>
-              <div class="integration-toggle-text">
-                <h3>Capture Magnet Links</h3>
-                <p>Handle magnet: protocols from your web browser</p>
-              </div>
-            </div>
-            <div class="ob-toggle">
-              <input
-                type="checkbox"
-                bind:checked={magnetLinks}
-              />
-              <span class="ob-toggle-track"></span>
-              <span class="ob-toggle-thumb"></span>
-            </div>
-          </label>
-
-          <label class="integration-toggle-card">
-            <div class="integration-toggle-left">
-              <div class="integration-toggle-icon">
-                <span class="material-symbols-outlined">rocket_launch</span>
-              </div>
-              <div class="integration-toggle-text">
-                <h3>Run at Startup</h3>
-                <p>Launch Gosh-Fetch automatically when you log in</p>
-              </div>
-            </div>
-            <div class="ob-toggle">
-              <input
-                type="checkbox"
-                bind:checked={runAtStartup}
-              />
-              <span class="ob-toggle-track"></span>
-              <span class="ob-toggle-thumb"></span>
-            </div>
-          </label>
-        </div>
-
-        <!-- Privacy info box -->
-        <div class="privacy-box">
-          <div class="privacy-box-inner">
-            <div class="privacy-box-content">
-              <div class="privacy-badge">
-                <span class="material-symbols-outlined">security</span>
-                <span>Privacy First</span>
-              </div>
-              <h3>Zero Telemetry Promise</h3>
-              <p>
-                Gosh-Fetch runs 100% locally on your machine. We do not collect usage statistics, file metadata, or IP addresses. Your data never leaves your device.
-              </p>
-            </div>
-            <div class="privacy-graphic">
-              <span class="material-symbols-outlined">shield_lock</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  {#if step > 1}
-    <footer class="onboarding-footer">
-      <button class="ob-btn-back" onclick={goBack}>
-        <span class="material-symbols-outlined">arrow_back</span>
-        Back
-      </button>
       {#if step === 2}
-        <button class="ob-btn-next" onclick={goNext}>
-          Next Step
-          <span class="material-symbols-outlined">arrow_forward</span>
+        <div class="set-row">
+          <div class="set-info">
+            <div class="t">Default torrent handler</div>
+            <div class="d">Automatically open .torrent files with Gosh-Fetch</div>
+          </div>
+          <Switch on={torrentHandler} onToggle={() => (torrentHandler = !torrentHandler)} label="Default torrent handler" />
+        </div>
+        <div class="set-row">
+          <div class="set-info">
+            <div class="t">Capture magnet links</div>
+            <div class="d">Handle magnet: protocols from your web browser</div>
+          </div>
+          <Switch on={magnetLinks} onToggle={() => (magnetLinks = !magnetLinks)} label="Capture magnet links" />
+        </div>
+        <div class="set-row">
+          <div class="set-info">
+            <div class="t">Run at startup</div>
+            <div class="d">Launch Gosh-Fetch automatically when you log in</div>
+          </div>
+          <Switch on={runAtStartup} onToggle={() => (runAtStartup = !runAtStartup)} label="Run at startup" />
+        </div>
+
+        <div class="ob-privacy">
+          <Icon name="shield_lock" fill size={22} style="color: var(--accent-strong); flex: none" />
+          <div>
+            <b>Zero telemetry.</b> Gosh-Fetch runs 100% locally — no usage
+            statistics, file metadata, or IP addresses ever leave your device.
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <div class="modal-foot">
+      <div class="ob-dots">
+        {#each STEPS as _, i (i)}
+          <span class="ob-dot" class:on={i === step}></span>
+        {/each}
+      </div>
+      <div class="sp"></div>
+      {#if step > 0}
+        <button class="btn btn-ghost" onclick={() => (step = Math.max(0, step - 1))}>Back</button>
+      {/if}
+      {#if step === 0}
+        <button class="btn btn-ghost" onclick={handleSkip}>Skip</button>
+      {/if}
+      {#if isLast}
+        <button class="btn btn-primary" onclick={handleFinish}>
+          <Icon name="check" size={17} /> Get started
+        </button>
+      {:else}
+        <button class="btn btn-primary" onclick={() => (step = Math.min(STEPS.length - 1, step + 1))}>
+          Continue
         </button>
       {/if}
-      {#if step === 3}
-        <button class="ob-btn-next" onclick={handleFinish}>
-          Finish Setup
-          <span class="material-symbols-outlined">check</span>
-        </button>
-      {/if}
-    </footer>
-  {/if}
+    </div>
+  </div>
 </div>

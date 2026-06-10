@@ -1,5 +1,7 @@
 <script lang="ts">
+  import Icon from '../lib/components/ui/Icon.svelte';
   import { downloads } from '../lib/stores/downloads.svelte';
+  import { ui } from '../lib/stores/ui.svelte';
   import { formatBytes, formatDate, getFileExtension } from '../lib/utils/format';
   import { api } from '../lib/api/commands';
   import type { Download } from '../lib/types/download';
@@ -38,20 +40,18 @@
     return 'all';
   }
 
-  function getFileTypeIcon(download: Download): { icon: string; colorClass: string } {
-    if (download.downloadType === 'torrent' || download.downloadType === 'magnet') {
-      return { icon: 'cloud_download', colorClass: 'violet' };
-    }
+  function getFileTypeIcon(download: Download): string {
+    if (download.downloadType === 'torrent' || download.downloadType === 'magnet') return 'hub';
     const ext = getFileExtension(download.name);
-    if (ext === 'iso') return { icon: 'album', colorClass: 'orange' };
-    if (DOC_EXTS.has(ext)) return { icon: 'description', colorClass: 'blue' };
-    if (VIDEO_EXTS.has(ext)) return { icon: 'movie', colorClass: 'purple' };
-    if (ARCHIVE_EXTS.has(ext)) return { icon: 'folder_zip', colorClass: 'emerald' };
-    if (AUDIO_EXTS.has(ext)) return { icon: 'music_note', colorClass: 'pink' };
-    if (IMAGE_EXTS.has(ext)) return { icon: 'image', colorClass: 'rose' };
-    if (SCRIPT_EXTS.has(ext)) return { icon: 'terminal', colorClass: 'sky' };
-    if (SOFTWARE_EXTS.has(ext)) return { icon: 'apps', colorClass: 'indigo' };
-    return { icon: 'insert_drive_file', colorClass: 'slate' };
+    if (ext === 'iso') return 'album';
+    if (DOC_EXTS.has(ext)) return 'description';
+    if (VIDEO_EXTS.has(ext)) return 'movie';
+    if (ARCHIVE_EXTS.has(ext)) return 'folder_zip';
+    if (AUDIO_EXTS.has(ext)) return 'music_note';
+    if (IMAGE_EXTS.has(ext)) return 'image';
+    if (SCRIPT_EXTS.has(ext)) return 'terminal';
+    if (SOFTWARE_EXTS.has(ext)) return 'apps';
+    return 'draft';
   }
 
   function getSourceDomain(download: Download): string {
@@ -67,16 +67,6 @@
     return download.savePath || '';
   }
 
-  function getStatusBadge(download: Download): { label: string; className: string; icon: string | null } {
-    if (download.status === 'complete') {
-      return { label: 'Valid', className: 'complete', icon: 'verified' };
-    }
-    if (download.status === 'error') {
-      return { label: 'Error', className: 'error', icon: 'error' };
-    }
-    return { label: 'N/A', className: 'na', icon: null };
-  }
-
   function joinPath(basePath: string, fileName: string): string {
     if (!basePath) return fileName;
     if (basePath.endsWith('/') || basePath.endsWith('\\')) {
@@ -86,7 +76,6 @@
     return `${basePath}${separator}${fileName}`;
   }
 
-  let searchQuery = $state('');
   let activeFilter = $state<CategoryFilter>('all');
   let showClearConfirm = $state(false);
   let isClearing = $state(false);
@@ -101,8 +90,8 @@
   const filteredDownloads = $derived.by(() => {
     let items = downloads.completed;
 
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
+    const q = ui.searchQuery.trim().toLowerCase();
+    if (q) {
       items = items.filter((d) => d.name.toLowerCase().includes(q));
     }
 
@@ -150,132 +139,97 @@
   }
 </script>
 
-<div class="history-page">
-  <header class="history-header">
-    <div class="history-header-top">
-      <div>
-        <h2>Download History</h2>
-        <p>Manage and review your completed downloads.</p>
-      </div>
-      {#if downloads.completed.length > 0}
-        <button class="btn-clear-history" onclick={() => (showClearConfirm = true)}>
-          <span class="material-symbols-outlined">delete_sweep</span>
-          Clear History
-        </button>
-      {/if}
-    </div>
-    <div class="history-toolbar">
-      <div class="history-search">
-        <span class="material-symbols-outlined search-icon">search</span>
-        <input
-          type="text"
-          placeholder="Search filenames, types, or checksums..."
-          bind:value={searchQuery}
-        />
-      </div>
-      <div class="history-filters">
+<div class="content page-fade">
+  <div class="content-inner">
+    <div class="toolbar">
+      <div class="chips">
         {#each FILTERS as f (f.key)}
-          <button
-            class="filter-pill{activeFilter === f.key ? ' active' : ''}"
-            onclick={() => (activeFilter = f.key)}
-          >
+          <button class="chip" class:active={activeFilter === f.key} onclick={() => (activeFilter = f.key)}>
             {f.label}
           </button>
         {/each}
       </div>
+      <div class="toolbar-spacer"></div>
     </div>
-  </header>
 
-  <div class="history-table-container">
     {#if filteredDownloads.length === 0}
-      <div class="history-empty">
-        <span class="material-symbols-outlined">history</span>
-        <h3>{downloads.completed.length === 0 ? 'No download history' : 'No matching downloads'}</h3>
-        <p>{downloads.completed.length === 0 ? 'Completed downloads will appear here.' : 'Try adjusting your search or filters.'}</p>
+      <div class="empty">
+        <Icon name="history" />
+        <h3>{downloads.completed.length === 0 ? 'No download history' : 'No matches'}</h3>
+        <p>
+          {downloads.completed.length === 0
+            ? 'Completed downloads will appear here.'
+            : 'Try adjusting your search or filters.'}
+        </p>
       </div>
     {:else}
-      <div class="history-table-wrapper">
-        <table class="history-table">
-          <thead>
-            <tr>
-              <th class="col-type">Type</th>
-              <th>Filename</th>
-              <th class="col-size">Size</th>
-              <th class="col-date">Date</th>
-              <th class="col-status">Status</th>
-              <th class="col-actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each filteredDownloads as download (download.gid)}
-              {@const typeIcon = getFileTypeIcon(download)}
-              {@const source = getSourceDomain(download)}
-              {@const status = getStatusBadge(download)}
-              <tr>
-                <td>
-                  <div class="history-type-icon {typeIcon.colorClass}">
-                    <span class="material-symbols-outlined">{typeIcon.icon}</span>
-                  </div>
-                </td>
-                <td>
-                  <div class="history-filename">
-                    <span class="history-filename-name" title={download.name}>{download.name}</span>
-                    <span class="history-filename-source" title={source}>{source}</span>
-                  </div>
-                </td>
-                <td><span class="history-size">{formatBytes(download.totalSize)}</span></td>
-                <td><span class="history-date">{download.completedAt ? formatDate(download.completedAt) : formatDate(download.createdAt)}</span></td>
-                <td style="text-align: center">
-                  <span class="history-status-badge {status.className}">
-                    {#if status.icon}
-                      <span class="material-symbols-outlined">{status.icon}</span>
-                    {/if}
-                    {status.label}
-                  </span>
-                </td>
-                <td>
-                  <div class="history-actions">
-                    <button class="history-action-btn" onclick={() => handleOpenFolder(download)} title="Open Folder">
-                      <span class="material-symbols-outlined">folder</span>
-                    </button>
-                    <button class="history-action-btn" onclick={() => handleOpenFile(download)} title="Open File">
-                      <span class="material-symbols-outlined">open_in_new</span>
-                    </button>
-                    <button class="history-action-btn delete" onclick={() => handleDeleteItem(download.gid)} title="Delete">
-                      <span class="material-symbols-outlined">delete</span>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <div class="history-count">
-        Showing {filteredDownloads.length} of {downloads.completed.length} items
+      <div class="card">
+        <div class="hist-head">
+          <Icon name="history" size={19} style="color: var(--text-3)" />
+          <b>Completed downloads</b>
+          <span class="hist-count">{filteredDownloads.length} of {downloads.completed.length} items</span>
+          <button class="btn btn-ghost" onclick={() => (showClearConfirm = true)}>
+            <Icon name="delete_sweep" size={17} /> Clear
+          </button>
+        </div>
+        {#each filteredDownloads as download (download.gid)}
+          {@const isTorrent = download.downloadType !== 'http'}
+          <div class="hist-row">
+            <div class="dl-icon {isTorrent ? 'torrent' : 'http'}">
+              <Icon name={getFileTypeIcon(download)} size={19} />
+            </div>
+            <div class="hist-info">
+              <div class="hist-name" title={download.name}>{download.name}</div>
+              <div class="hist-meta">
+                {download.completedAt ? formatDate(download.completedAt) : formatDate(download.createdAt)}
+                · {formatBytes(download.totalSize)}
+                · {getSourceDomain(download)}
+              </div>
+            </div>
+            <div class="hist-actions">
+              <button class="act go" title="Open file" onclick={() => handleOpenFile(download)}>
+                <Icon name="open_in_new" />
+              </button>
+              <button class="act" title="Open folder" onclick={() => handleOpenFolder(download)}>
+                <Icon name="folder_open" />
+              </button>
+              <button class="act danger" title="Remove from history" onclick={() => handleDeleteItem(download.gid)}>
+                <Icon name="close" />
+              </button>
+            </div>
+          </div>
+        {/each}
       </div>
     {/if}
   </div>
 
   {#if showClearConfirm}
     <div
-      class="modal-backdrop"
-      onclick={() => (showClearConfirm = false)}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="clear-history-title"
+      class="scrim"
+      onclick={(e) => e.target === e.currentTarget && (showClearConfirm = false)}
+      onkeydown={(e) => e.key === 'Escape' && (showClearConfirm = false)}
+      role="presentation"
     >
-      <div class="modal" onclick={(e) => e.stopPropagation()} style="max-width: 440px" role="document">
-        <div class="modal-header">
-          <h3 class="modal-title" id="clear-history-title">Clear History</h3>
+      <div class="modal" style="max-width: 440px" role="dialog" aria-modal="true" aria-labelledby="clear-history-title">
+        <div class="modal-head">
+          <div class="dl-icon"><Icon name="delete_sweep" size={19} /></div>
+          <div style="flex: 1">
+            <div class="ttl" id="clear-history-title">Clear History</div>
+          </div>
+          <button class="icon-btn" onclick={() => (showClearConfirm = false)} aria-label="Close">
+            <Icon name="close" />
+          </button>
         </div>
         <div class="modal-body">
-          <p>Are you sure you want to clear download history? This will not delete the downloaded files.</p>
+          <p style="margin: 0; font-size: 13px; line-height: 1.55">
+            Are you sure you want to clear download history? This will not delete the downloaded files.
+          </p>
         </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick={() => (showClearConfirm = false)}>Cancel</button>
-          <button class="btn btn-destructive" onclick={handleClearHistory} disabled={isClearing}>
-            {isClearing ? 'Clearing...' : 'Clear History'}
+        <div class="modal-foot">
+          <button class="btn btn-ghost" onclick={() => (showClearConfirm = false)}>Cancel</button>
+          <div class="sp"></div>
+          <button class="btn btn-danger" onclick={handleClearHistory} disabled={isClearing}>
+            {isClearing ? 'Clearing…' : 'Clear history'}
           </button>
         </div>
       </div>

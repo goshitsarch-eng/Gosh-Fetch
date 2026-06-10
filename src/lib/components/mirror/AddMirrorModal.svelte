@@ -4,6 +4,8 @@
   import { formatBytes } from '../../utils/format';
   import { defaultMirrorOptions, type MirrorManifest, type MirrorOptions } from '../../types/mirror';
   import type { DownloadOptions } from '../../types/download';
+  import Icon from '../ui/Icon.svelte';
+  import Switch from '../ui/Switch.svelte';
 
   let { onClose }: { onClose: () => void } = $props();
 
@@ -18,6 +20,7 @@
   let preservePaths = $state(defaultMirrorOptions().preserve_paths);
   let failFast = $state(defaultMirrorOptions().fail_fast);
 
+  let advOpen = $state(false);
   let error = $state<string | null>(null);
   let isPreviewing = $state(false);
   let isStarting = $state(false);
@@ -83,110 +86,102 @@
       isStarting = false;
     }
   }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') onClose();
+  }
 </script>
 
 <div
-  class="modal-backdrop"
-  onclick={onClose}
-  role="dialog"
-  aria-modal="true"
-  aria-labelledby="add-mirror-title"
+  class="scrim"
+  onclick={(e) => e.target === e.currentTarget && onClose()}
+  onkeydown={handleKeyDown}
+  role="presentation"
 >
-  <div class="modal mirror-modal" onclick={(e) => e.stopPropagation()} role="document">
-    <div class="modal-header">
-      <h3 class="modal-title" id="add-mirror-title">New Mirror</h3>
-      <button class="mirror-modal-close" onclick={onClose} aria-label="Close">
-        <span class="material-symbols-outlined">close</span>
-      </button>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-mirror-title">
+    <div class="modal-head">
+      <div class="dl-icon http"><Icon name="folder_copy" size={21} /></div>
+      <div style="flex: 1">
+        <div class="ttl" id="add-mirror-title">New Mirror</div>
+        <div class="sub">Recursively mirror an HTTP directory listing</div>
+      </div>
+      <button class="icon-btn" onclick={onClose} aria-label="Close"><Icon name="close" /></button>
     </div>
 
     <div class="modal-body">
-      <div class="mirror-field">
+      <div class="field">
         <label for="mirror-url">Directory URL</label>
         <input
           id="mirror-url"
+          class="input mono"
           type="text"
           placeholder="https://example.com/files/"
           bind:value={url}
         />
       </div>
 
-      <div class="mirror-field">
-        <label for="mirror-dir">Destination Directory (optional)</label>
-        <div class="mirror-dir-row">
+      <div class="field">
+        <label for="mirror-dir">Destination directory <span class="label-hint">(optional)</span></label>
+        <div class="input-group">
           <input
             id="mirror-dir"
+            class="input mono"
             type="text"
             placeholder="Default download directory"
             bind:value={saveDir}
           />
-          <button class="mirror-dir-browse" onclick={handleBrowse} title="Browse">
-            <span class="material-symbols-outlined">folder_open</span>
+          <button class="addon addon-btn" onclick={handleBrowse} title="Browse" type="button">
+            <Icon name="folder_open" size={17} />
           </button>
         </div>
       </div>
 
-      <details class="mirror-advanced">
-        <summary>
-          <div class="mirror-advanced-summary-left">
-            <span class="material-symbols-outlined">tune</span>
-            <span>Advanced</span>
-          </div>
-          <span class="material-symbols-outlined mirror-advanced-chevron">expand_more</span>
-        </summary>
-        <div class="mirror-advanced-grid">
-          <div class="mirror-field">
-            <label for="mirror-max-depth">Max Depth</label>
-            <input id="mirror-max-depth" type="number" min="1" bind:value={maxDepth} />
-          </div>
-          <div class="mirror-field">
-            <label for="mirror-same-host">Hosts</label>
-            <div class="mirror-check-row">
-              <input id="mirror-same-host" type="checkbox" bind:checked={sameHostOnly} />
-              <label for="mirror-same-host">Same host only</label>
+      <div class="disclosure" class:open={advOpen}>
+        <button class="disclosure-head" onclick={() => (advOpen = !advOpen)}>
+          <Icon name="tune" size={18} /> Advanced
+          <Icon name="expand_more" class="chev" size={20} />
+        </button>
+        {#if advOpen}
+          <div class="disclosure-body">
+            <div class="field">
+              <label for="mirror-max-depth">Max depth</label>
+              <input id="mirror-max-depth" class="input mono" type="number" min="1" bind:value={maxDepth} />
+            </div>
+            <div class="mirror-adv-toggle">
+              <div class="set-info"><div class="t" style="font-size: 13px">Same host only</div></div>
+              <Switch on={sameHostOnly} onToggle={() => (sameHostOnly = !sameHostOnly)} label="Same host only" />
+            </div>
+            <div class="field full">
+              <label for="mirror-include">Include patterns <span class="label-hint">(comma-separated)</span></label>
+              <input id="mirror-include" class="input mono" type="text" placeholder="*.iso, *.img" bind:value={includePatterns} />
+            </div>
+            <div class="field full">
+              <label for="mirror-exclude">Exclude patterns <span class="label-hint">(comma-separated)</span></label>
+              <input id="mirror-exclude" class="input mono" type="text" placeholder="*.tmp, *.log" bind:value={excludePatterns} />
+            </div>
+            <div class="mirror-adv-toggle">
+              <div class="set-info"><div class="t" style="font-size: 13px">Preserve paths</div></div>
+              <Switch on={preservePaths} onToggle={() => (preservePaths = !preservePaths)} label="Preserve paths" />
+            </div>
+            <div class="mirror-adv-toggle">
+              <div class="set-info"><div class="t" style="font-size: 13px">Fail fast</div></div>
+              <Switch on={failFast} onToggle={() => (failFast = !failFast)} label="Fail fast" />
             </div>
           </div>
-          <div class="mirror-field full-width">
-            <label for="mirror-include">Include Patterns (comma-separated)</label>
-            <input
-              id="mirror-include"
-              type="text"
-              placeholder="*.iso, *.img"
-              bind:value={includePatterns}
-            />
-          </div>
-          <div class="mirror-field full-width">
-            <label for="mirror-exclude">Exclude Patterns (comma-separated)</label>
-            <input
-              id="mirror-exclude"
-              type="text"
-              placeholder="*.tmp, *.log"
-              bind:value={excludePatterns}
-            />
-          </div>
-          <div class="mirror-field">
-            <div class="mirror-check-row">
-              <input id="mirror-preserve" type="checkbox" bind:checked={preservePaths} />
-              <label for="mirror-preserve">Preserve paths</label>
-            </div>
-          </div>
-          <div class="mirror-field">
-            <div class="mirror-check-row">
-              <input id="mirror-fail-fast" type="checkbox" bind:checked={failFast} />
-              <label for="mirror-fail-fast">Fail fast</label>
-            </div>
-          </div>
-        </div>
-      </details>
+        {/if}
+      </div>
 
       {#if error}
-        <div class="mirror-modal-error">{error}</div>
+        <div class="mirror-modal-error">
+          <Icon name="error" size={15} />
+          <span>{error}</span>
+        </div>
       {/if}
 
       {#if manifest}
         <div class="mirror-preview">
           <div class="mirror-preview-header">
-            <span class="material-symbols-outlined">travel_explore</span>
+            <Icon name="travel_explore" size={17} />
             <span>{manifest.entries.length} file{manifest.entries.length === 1 ? '' : 's'} found</span>
           </div>
           <div class="mirror-preview-list">
@@ -201,35 +196,31 @@
           </div>
           {#if manifest.entries.length > PREVIEW_LIMIT}
             <div class="mirror-preview-more">
-              ...and {manifest.entries.length - PREVIEW_LIMIT} more
+              …and {manifest.entries.length - PREVIEW_LIMIT} more
             </div>
           {/if}
         </div>
       {/if}
     </div>
 
-    <div class="modal-footer">
+    <div class="modal-foot">
       <button class="btn btn-ghost" onclick={onClose}>Cancel</button>
+      <div class="sp"></div>
       <button
-        class="btn btn-secondary"
+        class="btn btn-soft"
         onclick={handlePreview}
         disabled={isPreviewing || isStarting || !url.trim()}
       >
-        {#if isPreviewing}
-          <span class="material-symbols-outlined spin" style="font-size: 16px">progress_activity</span>
-          Discovering...
-        {:else}
-          <span class="material-symbols-outlined" style="font-size: 16px">travel_explore</span>
-          Preview
-        {/if}
+        <Icon name="travel_explore" size={16} />
+        {isPreviewing ? 'Discovering…' : 'Preview'}
       </button>
       <button
         class="btn btn-primary"
         onclick={handleStart}
         disabled={isStarting || isPreviewing || !url.trim()}
       >
-        <span class="material-symbols-outlined" style="font-size: 16px">folder_copy</span>
-        {isStarting ? 'Starting...' : 'Start Mirror'}
+        <Icon name="folder_copy" size={16} />
+        {isStarting ? 'Starting…' : 'Start Mirror'}
       </button>
     </div>
   </div>

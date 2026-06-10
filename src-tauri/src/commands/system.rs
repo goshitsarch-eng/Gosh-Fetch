@@ -111,8 +111,10 @@ pub fn get_default_download_path() -> String {
         })
 }
 
-pub fn get_app_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+pub fn get_app_version(app: &tauri::AppHandle) -> String {
+    // The resolved Tauri config version (tauri.conf.json points at
+    // package.json, the single source of truth for the app version).
+    app.package_info().version.to_string()
 }
 
 /// Free/total disk space for a path (defaults to the user's download dir).
@@ -195,10 +197,10 @@ pub fn read_settings_json(path: String) -> Result<serde_json::Value> {
     Ok(serde_json::from_str(&content)?)
 }
 
-pub fn get_app_info() -> serde_json::Value {
+pub fn get_app_info(app: &tauri::AppHandle) -> serde_json::Value {
     serde_json::json!({
         "name": "Gosh-Fetch",
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": get_app_version(app),
         "description": "Gosh Fetch - the modern download manager powered by gosh-dl",
         "license": "AGPL-3.0",
         "repository": "https://github.com/goshitsarch-eng/Gosh-Fetch",

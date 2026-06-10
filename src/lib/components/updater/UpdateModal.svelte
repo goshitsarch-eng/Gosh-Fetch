@@ -58,7 +58,7 @@
       <div class="update-modal-header">
         <div class="update-modal-header-left">
           <div class="update-modal-icon-wrap">
-            <span class="material-symbols-outlined">cloud_download</span>
+            <span class="ms">cloud_download</span>
           </div>
           <div>
             <h2 id="update-modal-title">Updating Gosh-Fetch</h2>
@@ -96,7 +96,7 @@
       {#if updater.releaseNotes}
         <div class="update-modal-notes-section">
           <div class="update-modal-notes-label">
-            <span class="material-symbols-outlined" style="font-size: 16px">sticky_note_2</span>
+            <span class="ms" style="font-size: 16px">sticky_note_2</span>
             <span>RELEASE NOTES</span>
           </div>
           <div class="update-modal-notes-body">
@@ -109,12 +109,12 @@
       <div class="update-modal-footer">
         {#if isComplete}
           <button class="btn btn-primary" onclick={handleInstall}>
-            <span class="material-symbols-outlined" style="font-size: 16px">restart_alt</span>
+            <span class="ms" style="font-size: 16px">restart_alt</span>
             Install &amp; Restart
           </button>
         {:else}
           <div class="update-modal-footer-note">
-            <span class="material-symbols-outlined spin" style="font-size: 14px">sync</span>
+            <span class="ms spin" style="font-size: 14px">sync</span>
             <span>Gosh-Fetch will restart automatically once the update is ready.</span>
           </div>
         {/if}

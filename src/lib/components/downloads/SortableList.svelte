@@ -68,7 +68,7 @@
   {#each dndItems as item (item.id)}
     <div class="sortable-card-wrapper" animate:flip={{ duration: flipDurationMs }}>
       <div class="drag-handle">
-        <span class="material-symbols-outlined" style="font-size: 16px">drag_indicator</span>
+        <span class="ms" style="font-size: 16px">drag_indicator</span>
       </div>
       {@render renderItem(item.download)}
     </div>

@@ -4,6 +4,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { exit } from '@tauri-apps/plugin-process';
+  import Icon from '../lib/components/ui/Icon.svelte';
 
   interface TrayDownload {
     name: string;
@@ -35,7 +36,7 @@
     };
   });
 
-  // --- Utility functions (ported from src-electron/tray-popup.html) ---
+  // --- Utility functions ---
 
   const KB = 1024;
   const MB = KB * 1024;
@@ -55,7 +56,7 @@
     if (seconds < 60) return seconds + 's';
     if (seconds < 3600) {
       const mins = Math.floor(seconds / 60);
-      return mins + 'm remaining';
+      return mins + 'm left';
     }
     if (seconds < 86400) {
       const hours = Math.floor(seconds / 3600);
@@ -65,12 +66,6 @@
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     return days + 'd ' + hours + 'h';
-  }
-
-  function getProgressColor(percent: number): string {
-    if (percent < 30) return 'amber';
-    if (percent > 65) return 'green';
-    return 'blue';
   }
 
   function getPercent(d: TrayDownload): number {
@@ -149,92 +144,71 @@
 </script>
 
 <div class="tray-container">
-  <!-- Header: Global Speed -->
+  <!-- Header: ink block with live speeds -->
   <div class="tray-header">
-    <div class="speed-stats">
-      <span class="speed-label">Global Speed</span>
-      <div class="speed-row">
-        <span class="speed-value upload">
-          <span class="material-symbols-outlined icon arrow">arrow_upward</span>
-          <span>{formatSpeed(uploadSpeed)}</span>
-        </span>
-        <span class="speed-value download">
-          <span class="material-symbols-outlined icon arrow">arrow_downward</span>
-          <span>{formatSpeed(downloadSpeed)}</span>
-        </span>
-      </div>
+    <div class="tray-brand">
+      <Icon name="downloading" fill size={18} />
+      <b>Gosh·Fetch</b>
     </div>
-    <button class="icon-btn" onclick={openSettings} title="Settings">
-      <span class="material-symbols-outlined icon">settings</span>
-    </button>
+    <div class="tray-speeds">
+      <span class="dn">↓ {formatSpeed(downloadSpeed)}</span>
+      <span class="up">↑ {formatSpeed(uploadSpeed)}</span>
+    </div>
   </div>
 
   <!-- Active Downloads -->
-  <div class="tray-section">
-    <div class="section-header">
-      <span class="section-label">Active Tasks ({activeDownloads.length})</span>
-      <a
-        class="view-all"
-        href="#/"
-        role="button"
-        onclick={(e) => {
-          e.preventDefault();
-          openApp();
-        }}>View All</a
-      >
+  <div class="tray-list">
+    <div class="tray-section-head">
+      <span class="tag-label">Active tasks · {String(activeDownloads.length).padStart(2, '0')}</span>
+      <button class="tray-viewall" onclick={openApp}>View all</button>
     </div>
     {#if displayDownloads.length === 0}
-      <div class="empty-state visible">No active downloads</div>
+      <div class="tray-empty">No active downloads</div>
     {:else}
-      {#each displayDownloads as d}
+      {#each displayDownloads as d (d.name)}
         {@const percent = getPercent(d)}
         {@const speed = d.downloadSpeed || 0}
         {@const remaining = (d.totalSize || 0) - (d.completedSize || 0)}
-        <div class="download-item">
-          <div class="download-top">
-            <span class="download-name" title={d.name}>{truncateName(d.name, 28)}</span>
-            <span class="download-percent">{percent}%</span>
+        <div class="tray-item">
+          <div class="tray-item-top">
+            <span class="tray-item-name" title={d.name}>{truncateName(d.name, 28)}</span>
+            <span class="tray-item-pct">{percent}%</span>
           </div>
-          <div class="progress-bar">
-            <div class="progress-fill {getProgressColor(percent)}" style="width: {percent}%"></div>
+          <div class="pbar" style="height: 5px; min-width: 0">
+            <div class="pfill active" style="width: {percent}%"></div>
           </div>
-          <div class="download-meta">
-            <span class="download-speed">{formatSpeed(speed)}</span>
-            <span class="download-eta">{formatEta(remaining, speed)}</span>
+          <div class="tray-item-meta">
+            <span class="spd">↓ {formatSpeed(speed)}</span>
+            <span>{formatEta(remaining, speed)}</span>
           </div>
         </div>
       {/each}
     {/if}
   </div>
 
-  <div class="divider"></div>
-
-  <!-- Actions -->
-  <div class="tray-section">
-    <button class="action-btn primary" onclick={openApp}>
-      <span class="material-symbols-outlined icon">open_in_new</span>
-      <span>Open Gosh-Fetch</span>
+  <!-- Quick actions -->
+  <div class="tray-actions">
+    <button class="tray-act" onclick={addUrl}>
+      <Icon name="add_link" size={16} /> Add URL
     </button>
-    <button class="action-btn" onclick={addUrl}>
-      <span class="material-symbols-outlined icon">add_link</span>
-      <span>Add URL...</span>
+    <button class="tray-act" onclick={pauseAll}>
+      <Icon name="pause" size={16} /> Pause all
     </button>
-    <div class="divider"></div>
-    <button class="action-btn" onclick={pauseAll}>
-      <span class="material-symbols-outlined icon">pause_circle</span>
-      <span>Pause All</span>
-    </button>
-    <button class="action-btn" onclick={resumeAll}>
-      <span class="material-symbols-outlined icon">play_circle</span>
-      <span>Resume All</span>
+    <button class="tray-act" onclick={resumeAll}>
+      <Icon name="play_arrow" size={16} /> Resume all
     </button>
   </div>
 
-  <!-- Footer: Quit -->
+  <!-- Footer -->
   <div class="tray-footer">
-    <button class="action-btn quit" onclick={quitApp}>
-      <span class="material-symbols-outlined icon">power_settings_new</span>
-      <span>Quit</span>
+    <button class="btn btn-soft tray-open" onclick={openApp}>
+      <Icon name="open_in_full" size={15} /> Open
+    </button>
+    <button class="btn btn-ghost tray-sq" onclick={openSettings} title="Settings">
+      <Icon name="settings" size={15} />
+    </button>
+    <button class="btn btn-ghost tray-sq" onclick={quitApp} title="Quit">
+      <Icon name="power_settings_new" size={15} />
     </button>
   </div>
 </div>
@@ -247,29 +221,14 @@
   }
 
   .tray-container {
-    --bg: #101922;
-    --surface: #1a242d;
-    --surface-hover: #24303b;
-    --primary: #137fec;
-    --text: #e2e8f0;
-    --text-secondary: #cbd5e1;
-    --text-muted: #64748b;
-    --text-faint: #475569;
-    --emerald: #10b981;
-    --amber: #f59e0b;
-    --red: #ef4444;
-    --border: rgba(255, 255, 255, 0.08);
-    --border-light: rgba(255, 255, 255, 0.05);
-
     width: 320px;
     display: flex;
     flex-direction: column;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.1);
+    border: 1.5px solid var(--ink);
+    box-shadow: 6px 6px 0 0 var(--hard);
     overflow: hidden;
-    font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-family: var(--font);
     color: var(--text);
     -webkit-font-smoothing: antialiased;
     user-select: none;
@@ -280,266 +239,161 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
-    background: rgba(16, 25, 34, 0.5);
-    border-bottom: 1px solid var(--border-light);
+    gap: 10px;
+    padding: 13px 16px;
+    background: var(--ink);
+    color: var(--paper);
+    border-bottom: 1.5px solid var(--ink);
   }
-
-  .speed-stats {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .speed-label {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-  }
-
-  .speed-row {
-    display: flex;
-    gap: 16px;
-  }
-
-  .speed-value {
+  .tray-brand {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--text-secondary);
+    gap: 9px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
   }
-
-  .speed-value .arrow {
-    font-size: 16px;
-    font-variation-settings: 'FILL' 0, 'wght' 500;
+  .tray-brand :global(.ms) {
+    color: var(--signal);
   }
-
-  .speed-value.upload .arrow {
-    color: var(--emerald);
-  }
-
-  .speed-value.download {
-    color: var(--text);
+  .tray-speeds {
+    display: flex;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 11.5px;
     font-weight: 700;
   }
-
-  .speed-value.download .arrow {
-    color: var(--primary);
+  .tray-speeds .dn {
+    color: var(--signal);
+  }
+  .tray-speeds .up {
+    opacity: 0.7;
   }
 
-  .icon-btn {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 50%;
+  /* List */
+  .tray-list {
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .tray-section-head {
     display: flex;
     align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-  }
-
-  .icon-btn:hover {
-    color: var(--text);
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  .icon-btn .icon {
-    font-size: 20px;
-  }
-
-  /* Sections */
-  .tray-section {
-    display: flex;
-    flex-direction: column;
-    padding: 8px 0;
-  }
-
-  .section-header {
-    display: flex;
     justify-content: space-between;
-    align-items: center;
-    padding: 6px 16px;
+    padding: 10px 16px 6px;
   }
-
-  .section-label {
-    font-size: 11px;
+  .tray-viewall {
+    border: none;
+    background: none;
+    font-family: var(--mono);
+    font-size: 9.5px;
     font-weight: 600;
-    text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: var(--text-muted);
+    text-transform: uppercase;
+    color: var(--signal-ink);
+    padding: 0;
   }
-
-  .view-all {
-    font-size: 12px;
-    color: var(--primary);
-    cursor: pointer;
-    text-decoration: none;
-    font-weight: 500;
-  }
-
-  .view-all:hover {
+  .tray-viewall:hover {
     text-decoration: underline;
   }
 
-  /* Download Items */
-  .download-item {
-    padding: 8px 16px;
-    transition: background 0.15s ease;
-    cursor: default;
+  .tray-empty {
+    padding: 26px 16px;
+    text-align: center;
+    color: var(--text-3);
+    font-family: var(--mono);
+    font-size: 11.5px;
   }
 
-  .download-item:hover {
-    background: var(--surface-hover);
+  .tray-item {
+    padding: 9px 16px;
+    border-bottom: 1.5px solid var(--border);
   }
-
-  .download-top {
+  .tray-item:last-child {
+    border-bottom: none;
+  }
+  .tray-item-top {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 6px;
+    gap: 8px;
+    margin-bottom: 7px;
   }
-
-  .download-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-secondary);
+  .tray-item-name {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 600;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 220px;
+    min-width: 0;
   }
-
-  .download-percent {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-    font-weight: 500;
-    flex-shrink: 0;
-    margin-left: 8px;
+  .tray-item-pct {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--signal-ink);
+    flex: none;
   }
-
-  .progress-bar {
-    height: 6px;
-    width: 100%;
-    background: var(--bg);
-    border-radius: 999px;
-    overflow: hidden;
-  }
-
-  .progress-fill {
-    height: 100%;
-    border-radius: 999px;
-    transition: width 0.3s ease;
-  }
-
-  .progress-fill.blue {
-    background: var(--primary);
-  }
-  .progress-fill.green {
-    background: var(--emerald);
-  }
-  .progress-fill.amber {
-    background: var(--amber);
-  }
-
-  .download-meta {
+  .tray-item-meta {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-top: 4px;
-  }
-
-  .download-speed,
-  .download-eta {
+    margin-top: 6px;
+    font-family: var(--mono);
     font-size: 10px;
-    color: var(--text-faint);
+    color: var(--text-3);
   }
-
-  /* Divider */
-  .divider {
-    height: 1px;
-    background: var(--border-light);
-    margin: 4px 16px;
-  }
-
-  /* Action Buttons */
-  .action-btn {
-    width: 100%;
-    text-align: left;
-    padding: 10px 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.15s ease;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 500;
-  }
-
-  .action-btn:hover {
-    background: var(--surface-hover);
-  }
-
-  .action-btn .icon {
-    font-size: 20px;
-    color: var(--text-muted);
-  }
-
-  .action-btn.primary {
-    color: var(--text);
+  .tray-item-meta .spd {
+    color: var(--signal-ink);
     font-weight: 700;
   }
 
-  .action-btn.primary:hover {
-    background: rgba(19, 127, 236, 0.15);
+  /* Quick actions */
+  .tray-actions {
+    display: flex;
+    border-top: 1.5px solid var(--ink);
   }
-
-  .action-btn.primary .icon {
-    color: var(--primary);
+  .tray-act {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 6px;
+    border: none;
+    border-right: 1.5px solid var(--ink);
+    background: var(--surface);
+    color: var(--text-2);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    transition: all 0.1s;
   }
-
-  .action-btn.quit {
-    color: var(--text-secondary);
+  .tray-act:last-child {
+    border-right: none;
   }
-
-  .action-btn.quit:hover {
-    background: rgba(239, 68, 68, 0.1);
-    color: var(--red);
-  }
-
-  .action-btn.quit:hover .icon {
-    color: var(--red);
+  .tray-act:hover {
+    background: var(--ink);
+    color: var(--paper);
   }
 
   /* Footer */
   .tray-footer {
-    background: rgba(16, 25, 34, 0.3);
-    border-top: 1px solid var(--border-light);
-    padding: 4px 0;
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1.5px solid var(--ink);
+    background: var(--surface-inset);
   }
-
-  /* Empty State */
-  .empty-state {
-    padding: 20px 16px;
-    text-align: center;
-    color: var(--text-faint);
-    font-size: 12px;
+  .tray-open {
+    flex: 1;
+    padding: 7px;
+    font-size: 11px;
   }
-
-  /* Icon (Material Symbols) */
-  .icon {
-    font-size: 20px;
-    line-height: 1;
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  .tray-sq {
+    padding: 7px 11px;
+    font-size: 11px;
   }
 </style>

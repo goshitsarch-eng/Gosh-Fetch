@@ -9,15 +9,14 @@
   import Scheduler from './routes/Scheduler.svelte';
   import Mirror from './routes/Mirror.svelte';
   import TrayPopup from './routes/TrayPopup.svelte';
-  import Sidebar from './lib/components/layout/Sidebar.svelte';
-  import StatusBar from './lib/components/layout/StatusBar.svelte';
+  import Masthead from './lib/components/layout/Masthead.svelte';
+  import ModeBar from './lib/components/layout/ModeBar.svelte';
   import Onboarding from './lib/components/Onboarding.svelte';
   import UpdateToast from './lib/components/updater/UpdateToast.svelte';
   import UpdateModal from './lib/components/updater/UpdateModal.svelte';
   import { startEventBridge } from './lib/api/events';
   import { downloads } from './lib/stores/downloads.svelte';
   import { stats } from './lib/stores/stats.svelte';
-  import { theme } from './lib/stores/theme.svelte';
   import { ui } from './lib/stores/ui.svelte';
   import { updater } from './lib/stores/updater.svelte';
   import './App.css';
@@ -102,9 +101,6 @@
   $effect(() => {
     if (isTrayPopup) return;
 
-    // Initialize theme from storage
-    theme.setTheme(theme.theme);
-
     // Restore incomplete downloads once on app startup
     void downloads.restoreIncomplete();
     void downloads.fetchDownloads();
@@ -163,27 +159,23 @@
   <TrayPopup />
 {:else}
   <div
-    class="app-layout"
+    class="app"
     role="application"
     ondragover={handleDragOver}
     ondragleave={handleDragLeave}
     ondrop={handleDrop}
   >
-    <Sidebar />
-    <div class="main-area">
-      <main class="main-content">
-        {#if !stats.isConnected}
-          <div class="connection-banner">
-            <span class="material-symbols-outlined" style="font-size: 14px">wifi_off</span>
-            <span>Engine disconnected</span>
-            <span class="material-symbols-outlined spin" style="font-size: 12px">sync</span>
-            <span>Reconnecting...</span>
-          </div>
-        {/if}
-        <Router {routes} />
-      </main>
-      <StatusBar />
-    </div>
+    <Masthead />
+    <ModeBar />
+
+    {#if !stats.isConnected}
+      <div class="conn-strip">
+        <span class="ms" style="font-size: 13px">wifi_off</span>
+        <span>Engine disconnected — reconnecting…</span>
+      </div>
+    {/if}
+
+    <Router {routes} />
 
     {#if showOnboarding}
       <Onboarding onComplete={() => (showOnboarding = false)} />
@@ -195,7 +187,7 @@
     {#if isDragOver}
       <div class="drop-overlay">
         <div class="drop-overlay-content">
-          <div class="drop-icon">+</div>
+          <span class="ms" style="font-size: 44px">place_item</span>
           <p>Drop URL or .torrent file to add download</p>
         </div>
       </div>

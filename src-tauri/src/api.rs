@@ -321,13 +321,13 @@ pub fn get_default_download_path() -> String {
 }
 
 #[tauri::command]
-pub fn get_app_version() -> String {
-    commands::get_app_version()
+pub fn get_app_version(app: tauri::AppHandle) -> String {
+    commands::get_app_version(&app)
 }
 
 #[tauri::command]
-pub fn get_app_info() -> serde_json::Value {
-    commands::get_app_info()
+pub fn get_app_info(app: tauri::AppHandle) -> serde_json::Value {
+    commands::get_app_info(&app)
 }
 
 #[tauri::command]

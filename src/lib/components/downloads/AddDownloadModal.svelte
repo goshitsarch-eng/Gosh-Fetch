@@ -4,6 +4,7 @@
   import { selectFile, selectDirectory } from '../../api/system';
   import { downloads } from '../../stores/downloads.svelte';
   import { ui } from '../../stores/ui.svelte';
+  import Icon from '../ui/Icon.svelte';
   import TorrentFilePicker from './TorrentFilePicker.svelte';
   import './AddDownloadModal.css';
 
@@ -14,6 +15,7 @@
   let error = $state<string | null>(null);
 
   // Advanced options state
+  let advOpen = $state(false);
   let saveDir = $state('');
   let outFilename = $state('');
   let speedLimit = $state('');
@@ -21,6 +23,7 @@
   let priority = $state('normal');
   let customHeaders = $state('');
   let checksum = $state('');
+  let mirrors = $state('');
   let sequential = $state(false);
 
   // File picker state for torrent files
@@ -54,6 +57,10 @@
       hasOpts = true;
     }
     if (checksum.trim()) { opts.checksum = checksum.trim(); hasOpts = true; }
+    if (mirrors.trim()) {
+      opts.mirrors = mirrors.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+      hasOpts = true;
+    }
     if (sequential) { opts.sequential = true; hasOpts = true; }
 
     return hasOpts ? opts : undefined;
@@ -203,6 +210,22 @@
 
   let hasMagnetContent = $derived(urls.split('\n').some(l => l.trim().startsWith('magnet:')));
   let showSequential = $derived(mode === 'torrent' || hasMagnetContent);
+
+  // Source preview for the first pasted line
+  let firstLine = $derived(urls.split('\n').map(l => l.trim()).filter(l => l.length > 0)[0] ?? '');
+  let previewIsTorrent = $derived(
+    firstLine.startsWith('magnet:') || firstLine.toLowerCase().endsWith('.torrent')
+  );
+  let previewName = $derived.by(() => {
+    if (!firstLine) return '';
+    if (firstLine.startsWith('magnet:')) return 'magnet link';
+    try {
+      const p = new URL(firstLine).pathname.split('/').pop();
+      return p || 'download';
+    } catch {
+      return 'download';
+    }
+  });
 </script>
 
 {#if showFilePicker && torrentInfo}
@@ -213,210 +236,230 @@
     onCancel={() => (showFilePicker = false)}
   />
 {:else}
-  <div class="modal-backdrop" onclick={onClose} onkeydown={handleKeyDown} role="dialog" aria-modal="true" aria-labelledby="add-download-title">
-    <div class="modal add-modal" onclick={(e) => e.stopPropagation()} bind:this={modalEl}>
-      <!-- Header -->
-      <div class="add-modal-header">
-        <h2 id="add-download-title">Add New Download</h2>
-        <button class="close-btn" onclick={onClose} aria-label="Close">
-          <span class="material-symbols-outlined">close</span>
-        </button>
+  <div
+    class="scrim"
+    onclick={(e) => e.target === e.currentTarget && onClose()}
+    onkeydown={handleKeyDown}
+    role="presentation"
+  >
+    <div class="modal" bind:this={modalEl} role="dialog" aria-modal="true" aria-labelledby="add-download-title">
+      <div class="modal-head">
+        <div class="dl-icon http"><Icon name="add_link" size={21} /></div>
+        <div style="flex: 1">
+          <div class="ttl" id="add-download-title">Add Download</div>
+          <div class="sub">Paste a URL, magnet link, or pick a .torrent file</div>
+        </div>
+        <button class="icon-btn" onclick={onClose} aria-label="Close"><Icon name="close" /></button>
       </div>
 
-      <!-- Body -->
-      <div class="add-modal-body">
-        <!-- Type Selector -->
-        <div class="type-selector" role="tablist" aria-label="Download type">
+      <div class="modal-body">
+        <div class="seg-ctrl" role="tablist" aria-label="Download type">
           <button
-            class={`type-selector-btn${mode === 'link' ? ' active' : ''}`}
+            class:on={mode === 'link'}
             role="tab"
             aria-selected={mode === 'link'}
             onclick={() => (mode = 'link')}
           >
-            <span class="material-symbols-outlined">link</span>
-            Link / Magnet
+            <Icon name="link" size={15} /> Link / Magnet
           </button>
           <button
-            class={`type-selector-btn${mode === 'torrent' ? ' active' : ''}`}
+            class:on={mode === 'torrent'}
             role="tab"
             aria-selected={mode === 'torrent'}
             onclick={() => (mode = 'torrent')}
           >
-            <span class="material-symbols-outlined">description</span>
-            Torrent File
+            <Icon name="description" size={15} /> Torrent File
           </button>
         </div>
 
-        <!-- Link Mode -->
         {#if mode === 'link'}
-          <div class="source-section">
-            <label>Download Sources</label>
-            <div class="source-input-wrapper">
+          <div class="field">
+            <label for="add-source">Source</label>
+            <div class="source-wrap">
               <textarea
-                class="source-textarea"
+                id="add-source"
+                class="input mono"
+                rows="3"
                 bind:value={urls}
-                placeholder="Paste URL or Magnet link here (one per line)..."
+                placeholder="https://example.com/file.iso&#10;magnet:?xt=urn:btih:…  (one per line)"
               ></textarea>
-              <button
-                class="source-paste-btn"
-                onclick={handlePaste}
-                title="Paste from Clipboard"
-                type="button"
-              >
-                <span class="material-symbols-outlined">content_paste</span>
+              <button class="paste-btn" onclick={handlePaste} title="Paste from clipboard" type="button">
+                <Icon name="content_paste" size={16} />
               </button>
             </div>
           </div>
+
+          {#if firstLine}
+            <div class="source-preview">
+              <Icon
+                name={previewIsTorrent ? 'hub' : 'public'}
+                size={20}
+                style="color: {previewIsTorrent ? 'var(--seed)' : 'var(--accent)'}"
+              />
+              <div class="sp-info">
+                <div class="sp-name">{previewName}</div>
+                <div class="sp-sub">{previewIsTorrent ? 'BitTorrent' : 'HTTP / HTTPS'} · saving to {saveDir || defaultSavePath || 'default folder'}</div>
+              </div>
+              <span class="pill {previewIsTorrent ? 'seed' : 'done'}">
+                <span class="pill-dot"></span>{previewIsTorrent ? 'Torrent' : 'Direct'}
+              </span>
+            </div>
+          {/if}
         {/if}
 
-        <!-- Torrent Mode -->
         {#if mode === 'torrent'}
-          <div class="torrent-section">
-            <label>Torrent File</label>
-            <div class="torrent-file-picker">
+          <div class="field">
+            <label for="add-torrent-path">Torrent file</label>
+            <div class="input-group">
               <input
+                id="add-torrent-path"
+                class="input mono"
                 type="text"
                 value={torrentPath}
-                placeholder="Select a .torrent file..."
+                placeholder="Select a .torrent file…"
                 readonly
               />
-              <button
-                class="torrent-browse-btn"
-                onclick={handleBrowseTorrent}
-                title="Browse for torrent file"
-                type="button"
-              >
-                <span class="material-symbols-outlined">folder_open</span>
+              <button class="addon addon-btn" onclick={handleBrowseTorrent} type="button" title="Browse">
+                <Icon name="folder_open" size={17} />
               </button>
             </div>
           </div>
         {/if}
 
-        <!-- Advanced Options -->
-        <details class="advanced-accordion">
-          <summary>
-            <div class="advanced-summary-left">
-              <span class="material-symbols-outlined">tune</span>
-              <span>Advanced Options</span>
-            </div>
-            <span class="material-symbols-outlined advanced-chevron">expand_more</span>
-          </summary>
-          <div class="advanced-grid">
-            <!-- Save Directory (full width) -->
-            <div class="advanced-field full-width">
-              <label>Save Directory</label>
-              <div class="save-dir-input">
+        <div class="disclosure" class:open={advOpen}>
+          <button class="disclosure-head" onclick={() => (advOpen = !advOpen)}>
+            <Icon name="tune" size={18} /> Advanced options
+            <Icon name="expand_more" class="chev" size={20} />
+          </button>
+          {#if advOpen}
+            <div class="disclosure-body">
+              <div class="field full">
+                <label for="add-save-dir">Save directory</label>
+                <div class="input-group">
+                  <input
+                    id="add-save-dir"
+                    class="input mono"
+                    type="text"
+                    value={saveDir}
+                    readonly
+                    placeholder="Default download directory"
+                  />
+                  <button class="addon addon-btn" onclick={handleBrowseDir} type="button" title="Browse">
+                    <Icon name="folder" size={17} />
+                  </button>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="add-rename">Custom filename</label>
+                <input id="add-rename" class="input" type="text" bind:value={outFilename} placeholder="Auto-detect" />
+              </div>
+
+              <div class="field">
+                <label id="add-priority-label">Priority</label>
+                <div class="seg-ctrl" role="group" aria-labelledby="add-priority-label">
+                  {#each ['low', 'normal', 'high', 'critical'] as p (p)}
+                    <button class:on={priority === p} onclick={() => (priority = p)}>{p}</button>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="add-speed-limit">Speed limit</label>
+                <div class="input-group">
+                  <input
+                    id="add-speed-limit"
+                    class="input mono"
+                    type="number"
+                    min="0"
+                    value={speedLimit}
+                    oninput={(e) => (speedLimit = e.currentTarget.value)}
+                    placeholder="0 = unlimited"
+                  />
+                  <span class="addon">MB/s</span>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="add-connections">Connections</label>
                 <input
-                  type="text"
-                  value={saveDir}
-                  readonly
-                  placeholder="Default download directory"
+                  id="add-connections"
+                  class="input mono"
+                  type="number"
+                  min="1"
+                  max="32"
+                  value={connections}
+                  oninput={(e) => (connections = e.currentTarget.value)}
+                  placeholder="Default"
                 />
-                <button class="save-dir-browse" onclick={handleBrowseDir} type="button">
-                  <span class="material-symbols-outlined">folder_open</span>
-                </button>
               </div>
-            </div>
 
-            <!-- Rename File -->
-            <div class="advanced-field">
-              <label>Rename File</label>
-              <input
-                type="text"
-                bind:value={outFilename}
-                placeholder="Original filename"
-              />
-            </div>
+              <div class="field full">
+                <label for="add-checksum">Checksum (MD5 / SHA)</label>
+                <input
+                  id="add-checksum"
+                  class="input mono"
+                  type="text"
+                  bind:value={checksum}
+                  placeholder="Optional integrity hash…"
+                />
+              </div>
 
-            <!-- Priority -->
-            <div class="advanced-field">
-              <label>Priority</label>
-              <div class="advanced-select-wrapper">
-                <select bind:value={priority}>
-                  <option value="critical">Critical</option>
-                  <option value="high">High</option>
-                  <option value="normal">Normal</option>
-                  <option value="low">Low</option>
-                </select>
-                <div class="select-chevron">
-                  <span class="material-symbols-outlined">unfold_more</span>
+              <div class="field full">
+                <label for="add-headers">HTTP headers <span class="label-hint">(one per line)</span></label>
+                <textarea
+                  id="add-headers"
+                  class="input mono"
+                  bind:value={customHeaders}
+                  placeholder={'Authorization: Bearer …\nReferer: https://…'}
+                  rows="2"
+                ></textarea>
+              </div>
+
+              <div class="field full">
+                <label for="add-mirrors">Mirror / failover URLs <span class="label-hint">(one per line)</span></label>
+                <textarea
+                  id="add-mirrors"
+                  class="input mono"
+                  bind:value={mirrors}
+                  placeholder="https://mirror2.example.com/file.iso"
+                  rows="2"
+                ></textarea>
+              </div>
+
+              {#if showSequential}
+                <div class="adv-toggle-row full">
+                  <div class="set-info">
+                    <div class="t" style="font-size: 13px">Sequential download</div>
+                    <div class="d">Download pieces in order for streaming media</div>
+                  </div>
+                  <button
+                    class="switch"
+                    class:on={sequential}
+                    onclick={() => (sequential = !sequential)}
+                    aria-pressed={sequential}
+                    aria-label="Sequential download"
+                  ><i></i></button>
                 </div>
-              </div>
+              {/if}
             </div>
+          {/if}
+        </div>
 
-            <!-- Checksum (full width) -->
-            <div class="advanced-field full-width">
-              <label>Checksum (MD5/SHA)</label>
-              <input
-                type="text"
-                class="mono-input"
-                bind:value={checksum}
-                placeholder="Optional hash verification string..."
-              />
-            </div>
-
-            <!-- Speed Limit -->
-            <div class="advanced-field">
-              <label>Speed Limit (MB/s)</label>
-              <input
-                type="number"
-                min="0"
-                value={speedLimit}
-                oninput={(e) => (speedLimit = e.currentTarget.value)}
-                placeholder="0 = unlimited"
-              />
-            </div>
-
-            <!-- Connections -->
-            <div class="advanced-field">
-              <label>Connections</label>
-              <input
-                type="number"
-                min="1"
-                max="32"
-                value={connections}
-                oninput={(e) => (connections = e.currentTarget.value)}
-                placeholder="Default"
-              />
-            </div>
-
-            <!-- Custom Headers (full width) -->
-            <div class="advanced-field full-width">
-              <label>Custom Headers</label>
-              <textarea
-                bind:value={customHeaders}
-                placeholder={'Authorization: Bearer token\nCookie: session=abc'}
-                rows={2}
-              ></textarea>
-            </div>
-
-            <!-- Sequential Toggle (torrent/magnet only) -->
-            {#if showSequential}
-              <div class="advanced-field full-width">
-                <div class="sequential-toggle">
-                  <span>Sequential download</span>
-                  <label class="toggle-switch">
-                    <input type="checkbox" bind:checked={sequential} />
-                    <div class="toggle-track"></div>
-                    <div class="toggle-thumb"></div>
-                  </label>
-                </div>
-              </div>
-            {/if}
+        {#if error}
+          <div class="add-error">
+            <Icon name="error" size={15} />
+            <span>{error}</span>
           </div>
-        </details>
-
-        {#if error}<div class="add-modal-error">{error}</div>{/if}
+        {/if}
       </div>
 
-      <!-- Footer -->
-      <div class="add-modal-footer">
-        <button class="cancel-btn" onclick={onClose} type="button">
-          Cancel
-        </button>
-        <button class="submit-btn" onclick={handleSubmit} disabled={isSubmitting} type="button">
-          <span class="material-symbols-outlined">download</span>
-          {isSubmitting ? 'Adding...' : 'Start Download'}
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick={onClose} type="button">Cancel</button>
+        <div class="sp"></div>
+        <button class="btn btn-primary" onclick={handleSubmit} disabled={isSubmitting} type="button">
+          <Icon name="download" size={18} />
+          {isSubmitting ? 'Adding…' : 'Download now'}
         </button>
       </div>
     </div>

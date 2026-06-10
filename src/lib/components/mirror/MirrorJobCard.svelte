@@ -2,6 +2,9 @@
   import { mirror } from '../../stores/mirror.svelte';
   import { formatBytes, formatDate } from '../../utils/format';
   import type { MirrorJob } from '../../types/mirror';
+  import Icon from '../ui/Icon.svelte';
+  import StatusPill from '../ui/StatusPill.svelte';
+  import type { PillVariant } from '../ui/StatusPill.svelte';
 
   let { item }: { item: MirrorJob } = $props();
 
@@ -11,6 +14,25 @@
     jobState === 'running' || jobState === 'queued' || jobState === 'paused'
   );
 
+  const pillVariant = $derived.by((): PillVariant => {
+    switch (jobState) {
+      case 'running':
+        return 'active';
+      case 'queued':
+      case 'empty':
+        return 'queued';
+      case 'paused':
+      case 'partial':
+        return 'paused';
+      case 'completed':
+        return 'done';
+      case 'failed':
+        return 'error';
+      default:
+        return 'queued';
+    }
+  });
+
   const bytesPercent = $derived.by((): number | null => {
     if (progress.total_size != null && progress.total_size > 0) {
       return Math.min(100, (progress.completed_size / progress.total_size) * 100);
@@ -19,6 +41,10 @@
     // Total unknown while work is ongoing: indeterminate
     return null;
   });
+
+  const fillVariant = $derived(
+    jobState === 'failed' ? 'error' : jobState === 'completed' ? 'done' : jobState === 'running' ? 'active' : 'paused'
+  );
 
   let showRemoveConfirm = $state(false);
   let deleteFiles = $state(false);
@@ -46,82 +72,84 @@
 </script>
 
 <div class="mirror-card">
-  <div class="mirror-card-body">
-    <div class="mirror-card-icon">
-      <span class="material-symbols-outlined">folder_copy</span>
-    </div>
-    <div class="mirror-card-info">
-      <div class="mirror-card-row-top">
-        <h4 class="mirror-card-url" title={item.job.root_url}>{item.job.root_url}</h4>
-        <div class="mirror-card-actions">
-          {#if isCancellable}
-            <button class="mirror-card-action-btn" onclick={handleCancel} title="Cancel">
-              <span class="material-symbols-outlined">cancel</span>
-            </button>
-          {/if}
-          <button
-            class="mirror-card-action-btn danger"
-            onclick={() => (showRemoveConfirm = true)}
-            title="Remove"
-          >
-            <span class="material-symbols-outlined">delete</span>
-          </button>
-        </div>
-      </div>
+  <div class="dl-icon http"><Icon name="folder_copy" size={19} /></div>
 
-      <div class="mirror-card-meta">
-        <span class="mirror-state-badge {jobState}">{jobState}</span>
-        <span class="meta-dot">&bull;</span>
-        <span>{formatDate(item.job.created_at)}</span>
-        {#if progress.failed_children > 0}
-          <span class="meta-dot">&bull;</span>
-          <span class="mirror-failed-count">{progress.failed_children} failed</span>
+  <div class="mirror-card-info">
+    <div class="mirror-card-top">
+      <span class="mirror-card-url" title={item.job.root_url}>{item.job.root_url}</span>
+      <div class="mirror-card-actions">
+        {#if isCancellable}
+          <button class="act" onclick={handleCancel} title="Cancel"><Icon name="cancel" /></button>
         {/if}
+        <button class="act danger" onclick={() => (showRemoveConfirm = true)} title="Remove">
+          <Icon name="delete" />
+        </button>
       </div>
+    </div>
 
-      <div class="mirror-card-progress">
-        <div class="mirror-progress-labels">
-          <span>{progress.completed_children} / {progress.total_children} files</span>
-          <span>
-            {formatBytes(progress.completed_size)}{progress.total_size != null
-              ? ` of ${formatBytes(progress.total_size)}`
-              : ''}
-          </span>
-        </div>
-        <div class="mirror-progress-track">
-          {#if bytesPercent != null}
-            <div class="mirror-progress-fill" style="width: {bytesPercent}%"></div>
-          {:else}
-            <div class="mirror-progress-fill indeterminate"></div>
-          {/if}
-        </div>
+    <div class="mirror-card-meta">
+      <StatusPill variant={pillVariant} label={jobState} />
+      <span>{formatDate(item.job.created_at)}</span>
+      {#if progress.failed_children > 0}
+        <span class="mirror-failed">{progress.failed_children} failed</span>
+      {/if}
+    </div>
+
+    <div class="mirror-card-progress">
+      <div class="mirror-progress-labels">
+        <span>{progress.completed_children} / {progress.total_children} files</span>
+        <span>
+          {formatBytes(progress.completed_size)}{progress.total_size != null
+            ? ` of ${formatBytes(progress.total_size)}`
+            : ''}
+        </span>
+      </div>
+      <div class="pbar" style="height: 6px">
+        {#if bytesPercent != null}
+          <div class="pfill {fillVariant}" style="width: {bytesPercent}%"></div>
+        {:else}
+          <div class="pfill active mirror-indeterminate"></div>
+        {/if}
       </div>
     </div>
   </div>
 
   {#if showRemoveConfirm}
     <div
-      class="modal-backdrop"
-      onclick={() => (showRemoveConfirm = false)}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="remove-mirror-title"
+      class="scrim"
+      onclick={(e) => e.target === e.currentTarget && (showRemoveConfirm = false)}
+      onkeydown={(e) => e.key === 'Escape' && (showRemoveConfirm = false)}
+      role="presentation"
     >
-      <div class="modal" onclick={(e) => e.stopPropagation()} style="max-width: 440px" role="document">
-        <div class="modal-header">
-          <h3 class="modal-title" id="remove-mirror-title">Remove Mirror Job</h3>
+      <div class="modal" style="max-width: 440px" role="dialog" aria-modal="true" aria-labelledby="remove-mirror-title">
+        <div class="modal-head">
+          <div class="dl-icon"><Icon name="delete" size={19} /></div>
+          <div style="flex: 1">
+            <div class="ttl" id="remove-mirror-title">Remove Mirror Job</div>
+            <div class="sub">{item.job.root_url}</div>
+          </div>
+          <button class="icon-btn" onclick={() => (showRemoveConfirm = false)} aria-label="Close">
+            <Icon name="close" />
+          </button>
         </div>
         <div class="modal-body">
-          <p>Are you sure you want to remove this mirror job?</p>
-          <label class="checkbox-label">
-            <input type="checkbox" bind:checked={deleteFiles} />
-            <span>Also delete downloaded files</span>
-          </label>
+          <p style="margin: 0; font-size: 13px">Are you sure you want to remove this mirror job?</p>
+          <div class="set-row" style="padding: 4px 0; border: none">
+            <div class="set-info"><div class="t" style="font-size: 13px">Also delete downloaded files</div></div>
+            <button
+              class="switch"
+              class:on={deleteFiles}
+              onclick={() => (deleteFiles = !deleteFiles)}
+              aria-pressed={deleteFiles}
+              aria-label="Also delete downloaded files"
+            ><i></i></button>
+          </div>
         </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" onclick={() => (showRemoveConfirm = false)}>Cancel</button>
-          <button class="btn btn-destructive" onclick={handleRemove} disabled={isRemoving}>
-            {isRemoving ? 'Removing...' : 'Remove'}
+        <div class="modal-foot">
+          <button class="btn btn-ghost" onclick={() => (showRemoveConfirm = false)}>Cancel</button>
+          <div class="sp"></div>
+          <button class="btn btn-danger" onclick={handleRemove} disabled={isRemoving}>
+            {isRemoving ? 'Removing…' : 'Remove'}
           </button>
         </div>
       </div>
